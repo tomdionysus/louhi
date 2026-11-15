@@ -87,6 +87,21 @@ one where they differ.
 
 ## Waiting on the maintainer
 
+A. **Placement against the agreement ruling.** the maintainer's ruling, relayed by
+   Dannan on 2026-11-15: anything that can use consensus or agreement waits
+   for Dannan's agreement primitive (CASPaxos registers, 0.9.0,
+   `../dannan/TODO/2026-11-15-agreement-design.md`), with no consensus,
+   lease standing in for it, or workaround built meanwhile. Louhi's earlier
+   decision was "Dannan's placement functions now, a scheduler on a lease
+   later", which accepts a task briefly running twice. The two may conflict.
+   Recommend: task placement as a register per task in Dannan's agreement
+   (any node proposes, agreement picks one node; no scheduler at all), with
+   the placement's fencing token handed to the task for run_once side
+   effects; and the same primitive for address allocation and quota
+   admission. Until 0.9.0, build nothing that places tasks across nodes
+   (step 6) or allocates addresses (step 9); single-node work, `louhi-node`
+   and the API go on. Louhi told Dannan it needs a fencing token and
+   described these uses (2026-11-15); nothing is decided until the maintainer rules.
 0. **Memory limits on the build Pis.** The Raspberry Pi kernel boots with
    `cgroup_disable=memory` (seen in `/proc/cmdline` on node-c;
    `/sys/fs/cgroup/cgroup.controllers` is `cpuset cpu io pids`), so Docker

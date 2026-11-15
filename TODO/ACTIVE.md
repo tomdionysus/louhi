@@ -95,6 +95,9 @@ one where they differ.
 - **Memory controller:** `cgroup_enable=memory` on all four Pis, each
   rebooted while unclaimed, with a board note first.
 - **Docker on node-a and node-b:** install now.
+- **User namespaces:** enforced. The agent refuses tasks on a runtime
+  without them unless the operator allows it, as for memory; Louhi turns on
+  `userns-remap` on the Docker Pis, each when unclaimed, with a board note.
 
 ## Waiting on the maintainer
 
@@ -126,7 +129,7 @@ A. **Placement against the agreement ruling.** Decided by the maintainer on
    ask the Lir Development Cluster session for a moment before rebooting
    node-a, node-b or node-c, each of which runs a standing `lir-node` and a
    claim-board scheduler replica (node-d runs neither and goes first, when
-   unclaimed). Asked; waiting on its answer. Lir (the broker's session)
+   unclaimed). Node-b and node-d done; node-c, then node-a last. Lir (the broker's session)
    agrees to a rolling reboot: one node at a time, each only when it has no
    claims; before the next, every `$lir/nodes/<id>` reads majority 3 of 3 and
    the claim board answers; node-a last, because the board is reached at
@@ -176,6 +179,11 @@ A. **Placement against the agreement ruling.** Decided by the maintainer on
    and link `lir::client` (`lir/client/client.h`). Lir is on Dannan 0.8.2.
    Its outbound connection moves onto Dannan's StreamConnector when that
    0.8 patch ships, with the API unchanged. Nothing waits on the maintainer here now.
+   Lir, later on 2026-11-15: the client now runs on Dannan 0.8.3's
+   StreamConnector at Lir `6b23268` (pushed; the Lir repository is public).
+   Pin that in place of `542517c`; it needs Dannan 0.8.3. Two changes: `Tls`
+   is declared in `client.h`, and a QoS 0 publish's done fires once handed to
+   the connection.
 4. **What a persistent volume is made of.** the maintainer decides later; step 14.
 
 ## The ordered work

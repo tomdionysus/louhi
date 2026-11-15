@@ -2,6 +2,29 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## User namespaces enforced; the Pis prepared (2026-11-15)
+
+- the maintainer: user namespaces are enforced. The agent launches nothing on a
+  runtime without them unless the operator allows it
+  (`Policy::allow_without_user_namespaces`, `louhi-node
+  --allow-without-user-namespaces`), and the node's status is not ready
+  without them, as for memory limits. The fake runtime now has them; the
+  real-Docker agent test allows both, since not every Pi has them.
+- node-d: `cgroup_enable=memory` and Docker `userns-remap: default`
+  (root in a container is uid 165536 on the node), one reboot; no daemon.json
+  before (`/root/louhi-work/daemon.json.before`, `cmdline.txt.before`).
+- node-b: Docker installed, `cgroup_enable=memory`, rebooted with
+  the Lir Development Cluster session's checks passed (lir-node and the
+  scheduler active, standing by for node-a, the board answering alike). Its
+  userns-remap is still to do (a Docker restart).
+
+Gate on node-d (Pi 5, g++, Release, warnings as errors, never
+throttled, Docker 26.1.5 with user namespaces, memory controller on):
+`tools/ci.sh release` **136 passed, none skipped**. The driver's real
+tests, the hardened profile among them, pass under user namespaces; the
+runtime reports memory, CPU and pid limits and user namespaces all on.
+Nothing left on the node.
+
 ## louhi-node (2026-11-15; step 3's node)
 
 - `tools/louhi_node.cpp`: a Dannan node that advertises "louhi" and hosts

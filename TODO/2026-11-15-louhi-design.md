@@ -155,34 +155,35 @@ a fixed rule with the loser replaced, never left ambiguous.
 
 ### Placement and the service scheduler
 
-Dannan's placement functions now, a lease-based scheduler revisited later
-(the maintainer, after the check).
+A register per task in Dannan's agreement primitive (CASPaxos registers,
+Dannan 0.9.0, `../dannan/TODO/2026-11-15-agreement-design.md`), with no
+scheduler (the maintainer, 2026-11-15). This replaces the earlier "placement functions
+now, a scheduler on a lease later": the maintainer ruled that anything that can use
+agreement waits for it, with nothing standing in meanwhile.
 
-Dannan already provides placement as pure functions over the roster, which
-needs no leader: for a task's key and its constraints (capacity, failure
-domain spread, the nodes advertising Louhi), every node computes the same
-node from the same roster. That is the stack's own pattern:
+- A task's placement is the value of its register. Any node may propose a
+  node for it, choosing with Dannan's placement functions over the roster
+  (capacity advert as weight, failure-domain spread, only nodes advertising
+  Louhi); agreement settles one value, and a node runs exactly the tasks
+  whose register names it.
+- When a task's node is gone, any node proposes a replacement against the
+  register's current value; agreement lets one proposal win. A running task
+  is not moved merely because a better node appeared.
+- A service's desired count is reconciled the same way: changes to its task
+  set go through registers, so two nodes acting at once cannot both add the
+  last task.
+- A task that must not run twice (`run_once`) is handed its register's
+  `changed_at`, the ballot of the last change to its placement: monotonic,
+  never reused, comparable by a third party. Its side effects check it, so a
+  task left running on a node cut off from the majority is refused by
+  anything that has seen a later placement.
+- The same primitive serves address allocation (step 9) and quota admission
+  (step 5's cross-node half).
 
-- A task's placement is a function of its key and the roster, with the
-  capacity advert as weight. A node runs the tasks the function gives it.
-- When the roster changes, only the tasks whose answer changed move. A
-  running task is not moved merely because a better node appeared: the
-  function is consulted for tasks that have no live node.
-- A service is reconciled by whichever node the same functions name for
-  that service's key: it compares desired count with live tasks and
-  creates or retires Task records.
-
-What no arrangement on this stack can give is a hard guarantee that a task
-runs exactly once. Rosters differ briefly between nodes and during a
-partition, and Dagda's lease is a soft claim by its own definition, so with
-leases too a task may run twice for one absence window. The design says so
-plainly: services tolerate it, and a task that must not run twice says so
-and is fenced by a lease epoch that its own side effects must check.
-
-A single scheduler holding a Dagda lease is revisited once Dagda's leases
-work across the cluster and there is experience of the functions to judge
-by. Placement sits behind an interface, `sched::Placer`, so that change
-replaces one component and not the agent or the records.
+Nothing that places tasks across nodes (step 6) or allocates addresses
+(step 9) is built before Dannan 0.9.0. A single node places on itself, which
+needs no agreement. Placement sits behind an interface, `sched::Placer`, so
+the agent and the records do not change with it.
 
 ### Projects and quotas
 
@@ -318,8 +319,6 @@ Kept in view, built after the above works, and not designed here:
   kept apart from declared state.
 - **Tenants beyond our own projects**: outside users, usage accounting,
   suspension.
-- **A single scheduler on a Dagda lease**, in place of the placement
-  functions, if experience calls for it.
 - **A microVM driver.**
 - **Running the same task on several nodes and comparing results.**
 - **Computing on data a node cannot read**, as a small coprocessor.
@@ -340,7 +339,8 @@ Each step is a session, ends with its gate, and leaves the tree working.
    collections. Needs a Dagda ref Louhi can pin.
 5. API and `louhi-ctl`: register a definition, run a task, read its status;
    pluggable authentication, the scope check, quota at admission.
-6. Placement across nodes with Dannan's functions, and node loss.
+6. Placement across nodes through Dannan's agreement registers, and node
+   loss. Needs Dannan 0.9.0.
 7. Services: desired count, replacement, rolling deployment, health checks;
    quota enforced by the reconciler.
 8. Events on Lir. Needs Lir's client library.
@@ -352,15 +352,16 @@ Each step is a session, ends with its gate, and leaves the tree working.
     Dagda.
 14. Persistent volumes, once the maintainer has chosen what they are made of.
 
-Steps 1 to 3 need nothing from Dagda, Lugh or Lir. Steps 4 and 8 each wait
-on another project; the order can bend around whichever arrives first.
+Steps 1 to 3 need nothing from Dagda, Lugh or Lir. Steps 4, 6, 8 and 9 each
+wait on another project; the order can bend around whichever arrives first.
 
 ## What waits on others
 
 - **Dagda:** a ref Louhi can pin, for step 4. 0.2.0 has what Louhi needs
   and waits on the maintainer's word to push it.
-- **Lir:** the exported MQTT client library for step 8. One to two sessions
-  of Lir's work, waiting on the maintainer's go to Lir.
+- **Dannan:** the agreement registers (0.9.0), for steps 6 and 9.
+- **Lir:** the exported MQTT client library for step 8. Ready at a Lir
+  commit, on Dannan 0.8.2.
 
-The build Pis: Docker is installed on two of the four, which is enough for
-step 3's first real container.
+The build Pis: Docker is installed on three of the four (node-a waits),
+and the memory controller is being turned on across them.

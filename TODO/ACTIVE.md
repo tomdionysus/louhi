@@ -78,15 +78,31 @@ one where they differ.
 
 ## Waiting on the maintainer
 
-1. **Installing Docker on the Pis.** the maintainer approved it on all four, but the
-   install command (`apt-get install docker.io` over ssh) was refused by the
-   session's permission classifier, so nothing was installed and nothing on
-   any Pi was changed. Either the maintainer runs it, or allows it. Needed for step 3.
-2. **Dagda ref.** Dagda 0.2.0 is held and unpushed, so there is no ref Louhi
-   can pin in hosted CI. Step 4 waits on it.
-3. **When Lir builds the client library.** Lir has been told of the maintainer's
-   decision and asked for nothing; the scheduling is the maintainer's. Step 8 waits on
-   it.
+1. **Docker on node-a and node-b.** Installed on
+   node-c and node-d on 2026-11-15 (Debian `docker.io` and
+   `docker-cli`, 26.1.5; a hello-world container ran on each; the nft
+   ruleset from before is in `/root/louhi-work/nft-before-docker.txt` on
+   each). Node-a and node-b were held by other sessions and are not done.
+   Two machines are enough until multi-node work at step 6.
+2. **Dagda ref.** the maintainer, 2026-11-15: wait, no change to Dagda's order of
+   work; nothing of Louhi's is blocked until step 4. Dagda says 0.2.0
+   has every-node head spaces, `Heads::watch` and
+   `lease::ClaimedCollection`, is tagged locally and held at the maintainer's ruling
+   while Macha's port goes first; pushing it is the maintainer's call and could be
+   today. 0.1.5 is pushed and pinnable now but is on Dannan 0.6 and has no
+   watch. A 0.2.x with the port fixes is days away. Dagda's caution:
+   claimed collections stand on leases, which order work on one node only
+   today, so their uniqueness across nodes must be read in
+   `dagda/lease/claimed_collection.h` before Louhi relies on it for task
+   addresses. Step 4 waits on this.
+3. **Lir's client library.** the maintainer gave the go on 2026-11-15 and Louhi passed
+   it to Lir, saying Lir may want it from the maintainer directly. Lir says it is one
+   to two sessions, independent of Dagda and of Lir's release gate; Louhi
+   would pin a Lir commit. One dependency: whether Dannan has an outbound
+   TLS stream connector, the counterpart of its listener. the maintainer allowed Louhi
+   to ask Dannan as a question only; asked 2026-11-15, the answer goes to
+   Lir. If there is none, what follows is the maintainer's, since Dannan is not to
+   change for Louhi. Step 8 waits on this.
 4. **What a persistent volume is made of.** the maintainer decides later; step 14.
 
 ## The ordered work

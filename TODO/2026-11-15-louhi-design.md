@@ -357,7 +357,10 @@ on another project; the order can bend around whichever arrives first.
 
 ## What waits on others
 
-- **Dagda:** a ref Louhi can pin (0.2.0 is held and unpushed) for step 4.
-- **Lir:** the exported MQTT client library for step 8.
-- **The build Pis:** Docker installed, for step 3's first real container.
-  the maintainer approved all four machines on 2026-11-15; it is not installed yet.
+- **Dagda:** a ref Louhi can pin, for step 4. 0.2.0 has what Louhi needs
+  and waits on the maintainer's word to push it.
+- **Lir:** the exported MQTT client library for step 8. One to two sessions
+  of Lir's work, waiting on the maintainer's go to Lir.
+
+The build Pis: Docker is installed on two of the four, which is enough for
+step 3's first real container.

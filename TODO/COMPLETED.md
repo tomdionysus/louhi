@@ -2,6 +2,41 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Step 5: the API and louhi-ctl (2026-11-15)
+
+Merged from `feature/api` (`5c1fdce`, merge `f309ecb`).
+
+- `louhi/api/api.h`: the design's endpoints over the store, apart from
+  HTTP. Projects and quotas by `louhi:admin` only; every other operation
+  behind `louhi:<project>:<read|register|run>`, checked before anything
+  about the project is said. Revisions from 1; RunTask on this node, epoch
+  1, admitted against the quota (tasks, CPU, memory) counting this node's
+  admitted-but-unwritten tasks; a client token remembered an hour; a
+  stopped task stops counting. Answers posted, never inline.
+- `louhi/api/json.h`: strict, bounded bodies; unknown members refused; the
+  field named, never the value; what the API shows registers back as is.
+- `louhi/api/auth.h`: Bearer only, audience "louhi", unbound, before exp;
+  unparsable scopes skipped.
+- `louhi/api/http.h`: HTTP/1.1 on Dannan's listeners, plain and HTTPS each
+  optional; body and header limits, a read deadline, one request per
+  connection. `louhi/api/client.h`: the client over Dannan's connector.
+- `louhi/auth/lugh.h`: the Lugh plugin, `lugh::client` at `a34770f`. With
+  it, Louhi's own Boost.JSON definitions are dropped (the double-definition
+  question settled); without it (`LOUHI_BUILD_LUGH=OFF`, hosted CI) there
+  is no API and no `louhi-ctl`.
+- `louhi-node --api-http/--api-https --lugh-issuer`; it now joins its io
+  threads before the Api and store go out of scope.
+- `louhi-ctl`: device-flow login, refresh, the AWS-named commands.
+- Fuzz target `api_body`.
+- Found at the first run and fixed: a handler that threw after taking
+  `done` answered through the moved-from function (`bad_function_call`);
+  the refusal now goes through a copy kept by `handle()`.
+
+Gate on node-c (Pi 5, g++, Release, warnings as errors, never
+throttled, Docker with user namespaces): `tools/ci.sh release` **200
+passed** (136 before, 64 new). `tools/ci.sh check`'s format and header
+checks pass. Not yet run: `louhi-ctl login` against a real Lugh.
+
 ## Dannan 0.8.3; step 5's endpoints (2026-11-15)
 
 - Dannan repinned from 0.8.1 to 0.8.3 (`CMakeLists.txt:37`): additive for

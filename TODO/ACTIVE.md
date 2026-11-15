@@ -4,11 +4,12 @@ Last updated: 2026-11-15 (end of session). `COMPLETED.md` is the record.
 
 ## Resume here
 
-**State.** `develop`, pushed to the private `tomdionysus/louhi`. Steps 0 to 3
-are done: records and codecs, the Docker driver, the agent, the store
-interface with the in-memory store, and `louhi-node`; user namespaces and
-memory limits are enforced. Last gate: 136 passed on node-d, Docker
-tests included, under user namespaces, against Dannan `0.8.3`.
+**State.** `develop`, local: the session's push was refused (see "Waiting on
+the maintainer"). Steps 0 to 3 and 5 are done: records and codecs, the Docker driver,
+the agent, the store interface with the in-memory store, `louhi-node`, and
+the API with sign-in by the Lugh plugin and `louhi-ctl`. Last gate: 200
+passed on node-c, Docker tests included, against Dannan `0.8.3`
+and Lugh `a34770f`.
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -18,49 +19,24 @@ questions with a recommendation.
 **How work is done.** Nothing is built or run on the Mac. Builds and tests
 run on the shared Pi 5 build servers, claimed on the board first
 (`CLAUDE.local.md` has hosts and rules). `build/pi.sh <address> [step]
-[gtest filter]` (untracked) syncs the tree and Dannan's history to a Pi and
+[gtest filter]` (untracked) syncs the tree and Dannan's and Lugh's histories to a Pi and
 runs a `tools/ci.sh` step there at `-j2` under `nice 19`. One board wait per
 session at a time: a second `claim-board wait` replaces the first; wait on
 several hosts in one command.
 
 ## Next, in order
 
-1. **Step 5: the API and `louhi-ctl`,** on `louhi-node`. The endpoints are
-   in the design's "API and sign-on" (written 2026-11-15, the maintainer's answers
-   folded in). Pin Lugh at `a34770f` (its pushed `develop`, Dannan 0.8.2,
-   the same minor as Louhi's 0.8.3; Lir pins an older `dbb0573`). What is
-   decided:
-   - HTTP and JSON on Dannan's listener layer (`dannan/listen/listener.h`,
-     `StreamListener` handing up `listen::Stream`s), Beast's HTTP parser over
-     the stream with a body limit and a read deadline. Lir's
-     `lir/http/http.cpp` is the pattern (an `Exchange` per connection, the
-     listener on a strand, stop in two steps); read it, do not copy it.
-   - Sign-in: the Lugh plugin only, no anonymous mode. `lugh_client`
-     (`../lugh`, target `lugh::client`, fetched with `LUGH_BUILD_NODE=OFF`;
-     it takes the Dannan the build already has) verifies access tokens
-     offline with `Verifier` and `HttpsKeySource`. Lir's `lir/auth/lugh.h`
-     is the shape. Tests sign real tokens with `lugh/client/testing.h`.
-   - Authorisation: the token's own claims, as Lir does. Audience "louhi";
-     scopes `louhi:<project>:<action>` and `louhi:admin`; a grant lasts until
-     exp. Not Dannan's `Identity::verify`, which answers only from a Lugh
-     scope source in the same process.
-   - Projects and quotas are created and set through the API, `louhi:admin`
-     only.
-   - Quota at admission: checked on the node that takes the request (single
-     node); cross-node admission is agreement's, step 6.
-   - Run task places on the node that takes it until step 6.
-   - Endpoints, AWS vocabulary: the design's table. Scope actions `read`,
-     `register`, `run`; plain HTTP and HTTPS each the operator's choice.
-   - Watch out: `lugh_client` compiles Boost.JSON's `src.hpp` and so does
-     Louhi (`runtime/docker/boost_json.cpp`); linking both may define it
-     twice. Settle it at the first build (probably by Louhi dropping its own
-     when it links `lugh::client`).
-2. **Step 4's second half**, the Dagda store, waits on a Dagda ref.
-3. **Steps 6 and 9** wait on Dannan 0.9.0's agreement registers.
-4. **Step 8:** pin Lir `6b23268` (needs Dannan 0.8.3, now pinned) and link
+1. **Step 8:** pin Lir `6b23268` (needs Dannan 0.8.3, now pinned) and link
    `lir::client` with `-DLIR_BUILD_SERVER=OFF`. Lir's notes: `Tls` is
    declared in `client.h`; a QoS 0 publish's done fires once handed to the
-   connection.
+   connection. Check first whether Lir is reachable from hosted CI (it may
+   be private, as Lugh is).
+2. **Step 5, owed:** `louhi-ctl login` and a live sign-in have not been run
+   against a real Lugh issuer; `louhi-ctl` has no tests of its own (its
+   requests go through `api::Client`, which is tested). Do it when a Lugh
+   node is reachable from a Pi, with Lugh's word.
+3. **Step 4's second half**, the Dagda store, waits on a Dagda ref.
+4. **Steps 6 and 9** wait on Dannan 0.9.0's agreement registers.
 
 ## The build Pis
 
@@ -77,10 +53,11 @@ Still owed, all at the maintainer's go already given:
   `userns-remap: default` in `/etc/docker/daemon.json`, add
   `cgroup_enable=memory` to `/boot/firmware/cmdline.txt` (copy first to
   `/root/louhi-work/cmdline.txt.before`), one reboot. Lir (2026-11-15,
-  late): its lir-node upgrades are postponed and it will message Louhi
-  before doing them, so node-a need not wait on Lir; the standing cluster
-  has four nodes, so 3 of 4 stay up. If Lir has since said it is upgrading,
-  do not overlap. Post a note, claim the whole machine (cores "all",
+  late): its rolling lir-node upgrade finished at about 22:40Z, all four on
+  7db72d1, and Lir cleared node-a's reboot; the standing cluster has four
+  nodes, so 3 of 4 stay up. Node-a was then held by Miach until 04:32Z,
+  with Dagda next for a seven-hour measurement, so the reboot waits for a
+  free node-a; Lir asked to be told before it. Post a note, claim the whole machine (cores "all",
   until about 20 minutes out) and reboot. Checks after (the Lir Development
   Cluster session's): `systemctl is-active lir-node
   claim-board-scheduler`; `journalctl -u claim-board-scheduler -n 3 -o
@@ -149,6 +126,15 @@ All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is 
 
 ## Waiting on the maintainer
 
+0. **Pushing.** The session's push of `develop` was refused by the
+   permission check on 2026-11-15; the commits since `b2bd30e` are local
+   until the maintainer pushes or allows it.
+0. **Hosted CI and Lugh.** Lugh is private, so hosted CI builds Louhi with
+   `LOUHI_BUILD_LUGH=OFF` (no plugin, no API, no `louhi-ctl`). To build the
+   plugin there, the repository needs a read token for Lugh as a secret, as
+   Lir has (`LUGH_READ_TOKEN`); a job would then check Lugh out and name it
+   with `LOUHI_LUGH_REPOSITORY`. Recommendation: add it.
+
 1. **Dagda ref.** the maintainer: wait. Dagda 0.2.0 (every-node head spaces,
    `Heads::watch`, `lease::ClaimedCollection`) is tagged locally and held at
    the maintainer's ruling. Dagda's caution: claimed collections stand on leases, which
@@ -158,7 +144,7 @@ All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is 
 
 ## Owed at the first release gate
 
-Build and run the three fuzz targets (`record`, `image_reference`,
-`docker_reply`) with clang, `-max_total_time=60` each; the `clang`, `asan`,
+Build and run the four fuzz targets (`record`, `image_reference`,
+`docker_reply`, `api_body`) with clang, `-max_total_time=60` each; the `clang`, `asan`,
 `tsan` and `coverage` steps on a Pi. Hosted CI runs them on every push
 meanwhile.

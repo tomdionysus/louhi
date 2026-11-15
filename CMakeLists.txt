@@ -57,3 +57,7 @@ if(LOUHI_BUILD_TESTING)
   find_package(GTest 1.14 CONFIG REQUIRED)
   add_subdirectory(louhi/test)
 endif()
+
+if(LOUHI_BUILD_FUZZING)
+  add_subdirectory(louhi/fuzz)
+endif()

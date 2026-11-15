@@ -6,6 +6,11 @@
 #
 
 add_executable(louhi_tests
+  model_codec_test.cpp
+  model_image_test.cpp
+  model_keys_test.cpp
+  model_names_test.cpp
+  model_records_test.cpp
   version_test.cpp
 )
 target_link_libraries(louhi_tests PRIVATE louhi GTest::gtest_main louhi_warnings)

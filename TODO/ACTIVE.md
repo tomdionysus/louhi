@@ -4,11 +4,10 @@ Last updated: 2026-11-15. `COMPLETED.md` is the record.
 
 ## Resume here
 
-**State.** `develop` holds one commit, the skeleton with the plan and design,
-made at the maintainer's word and not pushed. Step 0, the skeleton, is written: the
-library target, the version header, `louhi_tests`, the hosted CI set, the
-rules files and the design. Dannan pinned at `0.8.1`. Gate: see "Step 0"
-below. Step 1 has not been started.
+**State.** `develop`, pushed to the private `tomdionysus/louhi` (the maintainer,
+2026-11-15: work autonomously, commit and push). Step 0 (skeleton) and step
+1 (records and codecs) are done; gates in `COMPLETED.md`. Dannan pinned at
+`0.8.1`. Step 2, the runtime driver, is next.
 
 **The design** is [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md).
 It was checked against the stack document
@@ -23,9 +22,21 @@ machines are Louhi's test bed for real containers and overlays (the maintainer,
 2026-11-15). Hosts, addresses and the rules for touching them are in
 `CLAUDE.local.md`.
 
-**Next, in order, when the maintainer says to go on:**
-1. the maintainer's answers to "Waiting on the maintainer".
-2. Step 1: records and codecs.
+`build/pi.sh <address> [step] [gtest filter]` (untracked) syncs the tree and
+Dannan's history to a Pi and runs a `tools/ci.sh` step there at `-j2` under
+`nice 19`. Claim the Pi first.
+
+**Next, in order:**
+1. Step 2: the runtime driver. The interface (`runtime::Driver`), a fake,
+   and the Docker Engine driver over the local socket with Beast and
+   Boost.JSON (Dannan confirmed its stream type is TCP only, so plain Asio's
+   local stream socket is the route), with the hardened profile and limits,
+   and a fuzz target for the daemon's replies. Its tests against a real
+   daemon run on node-c or node-d.
+2. Step 3: `louhi-node` and the agent on one node.
+3. When Louhi reaches step 8: Lir's client is ready (below). It is on
+   Dannan 0.8.2 and a project links one Dannan, so Louhi repins to 0.8.2
+   (tagged) first.
 
 ## Principles
 
@@ -102,22 +113,27 @@ one where they differ.
    TLS stream connector, the counterpart of its listener. the maintainer allowed Louhi
    to ask Dannan as a question only; asked 2026-11-15, the answer goes to
    Lir. If there is none, what follows is the maintainer's, since Dannan is not to
-   change for Louhi. Step 8 waits on this. Lir, later on 2026-11-15: the maintainer
-   approved the client and its interface directly in Lir's session and Lir
-   has started; Dannan is adding an outbound stream connector as a 0.8
-   patch, and Lir builds on a small local seam until it lands. Lir will
-   send the commit to pin when its gate passes.
+   change for Louhi. Lir, later on 2026-11-15: the maintainer approved the client
+   directly in Lir's session. **Ready**: `lir::client` on Lir's develop at
+   `542517c` (351 passed on a Pi), not pushed, so fetched from the sibling
+   checkout; FetchContent Lir at that commit with `-DLIR_BUILD_SERVER=OFF`
+   and link `lir::client` (`lir/client/client.h`). Lir is on Dannan 0.8.2.
+   Its outbound connection moves onto Dannan's StreamConnector when that
+   0.8 patch ships, with the API unchanged. Nothing waits on the maintainer here now.
 4. **What a persistent volume is made of.** the maintainer decides later; step 14.
 
 ## The ordered work
 
 The steps and what each delivers are in the design, "Order of work".
 
-### Step 0: skeleton
+Steps 0 and 1 are done (`COMPLETED.md`).
 
-Written 2026-11-15. Gate on node-c (Pi 5, Debian 13, g++, Ninja,
-Release, warnings as errors, never throttled): `tools/ci.sh release` 2
-passed, against Dannan 0.8.1. The tagline in the header blocks was changed
-after that run (comments only) and the build was not repeated.
-`tools/ci.sh check` (header blocks and clang-format) passes on the Mac. The
-`clang`, `asan`, `tsan` and `coverage` steps have not been run.
+**Owed at the first release gate:** build and run the two fuzz targets
+(`record`, `image_reference`) with clang, once each for
+`-max_total_time=60`; the `clang`, `asan`, `tsan` and `coverage` steps on a
+Pi. Hosted CI runs them on every push meanwhile.
+
+**Hardware note:** node-a and node-d both report
+`throttled=0x50000` (under-voltage has occurred since boot). Builds have
+passed on both; it is the maintainer's hardware to look at, and is reported, not
+acted on.

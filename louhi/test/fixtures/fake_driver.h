@@ -31,7 +31,7 @@ class FakeDriver final : public runtime::Driver {
   };
 
   // What describe() answers.
-  runtime::RuntimeInfo info{"docker", "26.1.5", "1.45", false, 2, true, true, true, true, 4, 8ull << 30};
+  runtime::RuntimeInfo info{"docker", "26.1.5", "1.45", true, 2, true, true, true, true, 4, 8ull << 30};
 
   // --- What a test does to it.
 

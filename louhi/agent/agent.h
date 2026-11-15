@@ -45,7 +45,8 @@
 // reported, and left until an operator unparks it (discipline 2: backoff, a
 // budget, a visible parked state and an operator action).
 //
-// A runtime that cannot enforce memory limits discards them silently, so on
+// A runtime that cannot enforce memory limits discards them silently, and one
+// without user namespaces makes root in a container root on the node, so on
 // such a node no task is launched, and each says why, unless the operator
 // allows it (Policy).
 namespace louhi::agent {
@@ -89,6 +90,9 @@ struct Policy {
   runtime::Deadline pull_deadline{600'000};
   // Launch tasks on a node whose runtime cannot enforce memory limits.
   bool allow_unenforced_memory = false;
+  // Launch tasks on a node whose runtime has no user namespaces, where root
+  // in a container is root on the node.
+  bool allow_without_user_namespaces = false;
 };
 
 class Agent : public std::enable_shared_from_this<Agent> {

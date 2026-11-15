@@ -123,6 +123,9 @@ TEST(AgentOnDocker, RunsAndStopsARealTask) {
 
   Policy policy;
   policy.allow_unenforced_memory = true;
+  // Not every test Pi's Docker has user namespaces; the refusal is tested
+  // against the fake.
+  policy.allow_without_user_namespaces = true;
   Clock clock{&dannan::contract::steady_time_source(), &dannan::contract::system_wall_clock(),
               [&io](std::chrono::milliseconds delay, std::function<void()> fn) {
                 auto timer = std::make_shared<asio::steady_timer>(io, delay);

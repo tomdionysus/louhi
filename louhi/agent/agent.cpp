@@ -166,6 +166,11 @@ void Agent::with_runtime(std::function<void()> then) {
         self->_logger.warn(self->_policy.allow_unenforced_memory ? "this node cannot enforce memory limits; launching tasks anyway, as the operator allows"
                                                                  : "this node cannot enforce memory limits; no task will be launched here");
       }
+      if (!r.user_namespaces) {
+        self->_logger.warn(self->_policy.allow_without_user_namespaces
+                               ? "this node's runtime has no user namespaces; launching tasks anyway, as the operator allows"
+                               : "this node's runtime has no user namespaces; no task will be launched here");
+      }
     } else {
       self->_logger.warn("cannot describe the runtime: " + got.error().message);
     }
@@ -327,6 +332,9 @@ Agent::Step Agent::handle(const Assignment& a, std::vector<ContainerInfo> observ
     }
     if (!_runtime->limits_memory && !_policy.allow_unenforced_memory) {
       return report_step(a, model::TaskState::pending, "not launched: this node's runtime cannot enforce memory limits", {});
+    }
+    if (!_runtime->user_namespaces && !_policy.allow_without_user_namespaces) {
+      return report_step(a, model::TaskState::pending, "not launched: this node's runtime has no user namespaces", {});
     }
     if (p.retry_at && now < *p.retry_at) {
       wake_at(*p.retry_at);

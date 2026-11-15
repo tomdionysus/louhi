@@ -26,6 +26,7 @@
 //              [--domain NAME] [--heartbeat-ms N] [--status-ms N]
 //              [--seconds N] [--log-level LEVEL] [--log-format text|json]
 //              [--docker-socket PATH] [--allow-unenforced-memory]
+//              [--allow-without-user-namespaces]
 //   louhi-node --version
 //
 // The store is the in-memory one until the Dagda store exists (ACTIVE.md):
@@ -92,6 +93,7 @@ struct Options {
   bool version = false;
   std::string docker_socket = "/var/run/docker.sock";
   bool allow_unenforced_memory = false;
+  bool allow_without_user_namespaces = false;
 };
 
 dannan::net::Endpoint endpoint(const std::string& text) {
@@ -128,6 +130,8 @@ dannan::config::Reader reader() {
   add("log.format", Kind::value, "--log-format", "text or json");
   add("runtime.docker_socket", Kind::value, "--docker-socket", "the Docker Engine's local socket");
   add("runtime.allow_unenforced_memory", Kind::toggle, "--allow-unenforced-memory", "launch tasks even where the runtime cannot enforce memory limits");
+  add("runtime.allow_without_user_namespaces", Kind::toggle, "--allow-without-user-namespaces",
+      "launch tasks even where the runtime has no user namespaces (root in a container is root on the node)");
   return out;
 }
 
@@ -157,6 +161,7 @@ Options parse(int argc, char** argv) {
   if (const auto format = settings.choice("log.format", {"text", "json"})) out.log_format = dannan::status::parse_log_format(*format);
   out.docker_socket = settings.path_of("runtime.docker_socket").value_or(out.docker_socket);
   out.allow_unenforced_memory = settings.toggle("runtime.allow_unenforced_memory").value_or(false);
+  out.allow_without_user_namespaces = settings.toggle("runtime.allow_without_user_namespaces").value_or(false);
   if (out.key.empty() || out.state.empty()) throw std::runtime_error("--key and --state are required");
   return out;
 }
@@ -175,6 +180,7 @@ louhi::node::Facts observe(louhi::runtime::Driver& driver, asio::io_context& io,
   louhi::node::Facts facts;
   facts.self = self;
   facts.allow_unenforced_memory = options.allow_unenforced_memory;
+  facts.allow_without_user_namespaces = options.allow_without_user_namespaces;
   facts.store_whole = store_whole;
   if (future.wait_for(deadline + 5s) != std::future_status::ready) {
     facts.runtime_error = "no answer within the deadline";
@@ -238,6 +244,7 @@ int main(int argc, char** argv) {
 
     louhi::agent::Policy policy;
     policy.allow_unenforced_memory = options.allow_unenforced_memory;
+    policy.allow_without_user_namespaces = options.allow_without_user_namespaces;
     louhi::agent::Clock clock{&dannan::contract::steady_time_source(), &dannan::contract::system_wall_clock(),
                               [&io](std::chrono::milliseconds delay, std::function<void()> fn) {
                                 auto timer = std::make_shared<asio::steady_timer>(io, delay);

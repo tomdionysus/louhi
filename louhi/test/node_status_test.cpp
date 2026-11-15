@@ -139,6 +139,21 @@ TEST(NodeStatus, MissingLimitsAndUserNamespacesAreReported) {
   EXPECT_TRUE(has_condition(s, "user namespaces"));
 }
 
+TEST(NodeStatus, NoUserNamespacesIsNotReadyUnlessTheOperatorAllows) {
+  node::Facts facts;
+  facts.self = test::node_id(1);
+  facts.runtime = capable();
+  facts.runtime->user_namespaces = false;
+  auto s = node::node_status(facts, {}, 1, 1);
+  EXPECT_FALSE(s.ready);
+  EXPECT_TRUE(has_condition(s, "user namespaces"));
+
+  facts.allow_without_user_namespaces = true;
+  s = node::node_status(facts, {}, 1, 1);
+  EXPECT_TRUE(s.ready);
+  EXPECT_TRUE(has_condition(s, "user namespaces")) << "allowed, but still reported";
+}
+
 TEST(NodeStatus, AStoreThatIsNotWholeIsReported) {
   node::Facts facts;
   facts.self = test::node_id(1);

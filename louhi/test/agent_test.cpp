@@ -408,6 +408,25 @@ TEST_F(AgentTest, UnlessTheOperatorAllowsIt) {
   EXPECT_EQ(reports.last().state, model::TaskState::running);
 }
 
+// Without user namespaces root in a container is root on the node (the maintainer,
+// 2026-11-15: enforced, as memory is).
+TEST_F(AgentTest, ANodeWithoutUserNamespacesLaunchesNothing) {
+  driver.info.user_namespaces = false;
+  desired.set({assignment(1)});
+  start();
+  EXPECT_TRUE(driver.containers().empty());
+  EXPECT_EQ(reports.last().state, model::TaskState::pending);
+  EXPECT_EQ(reports.last().reason, "not launched: this node's runtime has no user namespaces");
+}
+
+TEST_F(AgentTest, UnlessTheOperatorAllowsTasksWithoutUserNamespaces) {
+  driver.info.user_namespaces = false;
+  policy.allow_without_user_namespaces = true;
+  desired.set({assignment(1)});
+  start();
+  EXPECT_EQ(reports.last().state, model::TaskState::running);
+}
+
 TEST_F(AgentTest, ALostEventStreamIsWatchedAgain) {
   desired.set({assignment(1)});
   start();

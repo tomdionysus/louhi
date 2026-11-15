@@ -46,14 +46,18 @@ model::NodeStatus node_status(const Facts& facts, const std::vector<agent::Assig
     out.runtime_version = bounded(r.version, model::max_version_text);
     out.total.cpu_millis = saturated(static_cast<uint64_t>(r.cpus) * 1000);
     out.total.memory_mib = saturated(r.memory_bytes >> 20);
-    out.ready = r.limits_memory || facts.allow_unenforced_memory;
+    out.ready = (r.limits_memory || facts.allow_unenforced_memory) && (r.user_namespaces || facts.allow_without_user_namespaces);
     if (!r.limits_memory) {
       add(out.conditions, facts.allow_unenforced_memory ? "the runtime cannot enforce memory limits; tasks run anyway, as the operator allows"
                                                         : "the runtime cannot enforce memory limits; no task is launched");
     }
     if (!r.limits_cpu) add(out.conditions, "the runtime cannot enforce CPU limits");
     if (!r.limits_pids) add(out.conditions, "the runtime cannot enforce process limits");
-    if (!r.user_namespaces) add(out.conditions, "the runtime has no user namespaces: root in a container is root on the node");
+    if (!r.user_namespaces) {
+      add(out.conditions, facts.allow_without_user_namespaces
+                              ? "the runtime has no user namespaces: root in a container is root on the node; tasks run anyway, as the operator allows"
+                              : "the runtime has no user namespaces: root in a container is root on the node; no task is launched");
+    }
   }
   if (!facts.store_whole) add(out.conditions, "the store holds only what was declared since this node started");
 

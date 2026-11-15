@@ -27,10 +27,9 @@ Dannan's history to a Pi and runs a `tools/ci.sh` step there at `-j2` under
 `nice 19`. Claim the Pi first.
 
 **Next, in order:**
-1. `louhi-node`: a Dannan node hosting the agent over the store (the
-   in-memory one until the Dagda store), as `lir-node` hosts Lir
-   (`../lir/tools/lir_node.cpp` is the pattern to read). The store
-   interface, in-memory store and the agent's bindings are done.
+1. Step 5: the API and `louhi-ctl` on `louhi-node` (done, `COMPLETED.md`):
+   register a definition, run a task (placed on the node that takes it until
+   step 6), read its status; the scope check and quota at admission.
 2. Step 4's second half, the Dagda store, waits on a Dagda ref (the maintainer: wait).
 3. Steps 6 (placement across nodes) and 9 (addresses) wait on Dannan 0.9.0's
    agreement registers (the maintainer's placement decision).

@@ -2,6 +2,34 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## louhi-node (2026-11-15; step 3's node)
+
+- `tools/louhi_node.cpp`: a Dannan node that advertises "louhi" and hosts
+  the agent over the Docker driver and the in-memory store; settings through
+  Dannan's config reader (`LOUHI_*`, `/usr/local/etc/louhi/config.yaml`);
+  JSON event lines on stdout as `lir-node` does. Stopping it leaves tasks
+  running.
+- `node/status.h`: the node's NodeStatus from what the runtime says and what
+  is placed on it: ready when the runtime answers and can enforce memory
+  limits (or the operator allows it), every degradation a condition,
+  allocation of tasks wanted running, saturating, runtime text bounded so the
+  record always validates. Written under the node's key when it changes.
+- `store/memory_store.h`: `Whole::never`, which the node uses. A node's
+  store in memory remembers nothing across a restart, so an agent over an
+  always-ready one would have taken an empty store for "nothing wanted" and
+  removed every task still running from before (discipline 3). Found in
+  review before it was run.
+- Capacity is not advertised yet: the advert matters only to placement
+  across nodes (step 6), which waits on Dannan 0.9.0.
+
+Gate on node-b (Pi 5, Debian 13, g++, Ninja, Release, warnings as
+errors, never throttled, Docker 26.1.5, memory controller now on):
+`tools/ci.sh release` **133 passed, none skipped**, Docker tests included;
+`louhi-node --version` prints 0.1.0. A 25 s run of `louhi-node` on loopback
+with its own key: listening, the runtime described with memory, CPU and pid
+limits all enforced, ready, two conditions (no user namespaces; the store
+not whole), one pass, stopped cleanly, nothing left on the node.
+
 ## Store interface and the agent over it (2026-11-15; step 4's first half)
 
 What of step 4 does not wait on a Dagda ref.

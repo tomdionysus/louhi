@@ -102,6 +102,13 @@ A. **Placement against the agreement ruling.** the maintainer's ruling, relayed 
    (step 6) or allocates addresses (step 9); single-node work, `louhi-node`
    and the API go on. Louhi told Dannan it needs a fencing token and
    described these uses (2026-11-15); nothing is decided until the maintainer rules.
+   Dannan's answer: a strict read commits under the reader's own ballot, so
+   that ballot is no token; Dannan added `changed_at` to its design, the
+   ballot of the last change that altered a name's value, kept by identity
+   changes and reported per name in `Outcome`: monotonic, never reused,
+   stable for a value's life, comparable by a third party with an encoding
+   provided. That is the token; Louhi's own `placement_epoch` inside the
+   value would also serve, needing nothing of Dannan.
 0. **Memory limits on the build Pis.** The Raspberry Pi kernel boots with
    `cgroup_disable=memory` (seen in `/proc/cmdline` on node-c;
    `/sys/fs/cgroup/cgroup.controllers` is `cpuset cpu io pids`), so Docker

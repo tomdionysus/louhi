@@ -21,7 +21,10 @@ jobs:
   analyze:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # actions: read lets the analysis find its own run, which a private
+    # repository does not grant by default.
     permissions:
+      actions: read
       contents: read
       security-events: write
     container:

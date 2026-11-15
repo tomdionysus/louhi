@@ -2,6 +2,37 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Step 8: events on Lir (2026-11-15)
+
+- The topics written into the design's "Events" first; the maintainer's answer on
+  how the node signs in to Lir: `private_key_jwt` and `client_secret_basic`,
+  both.
+- `louhi/events/events.h`: a task's status retained on
+  `louhi/projects/<p>/tasks/<t>/nodes/<n>`; `task.started`, `task.stopped`,
+  `task.parked` on a change of state, `task.run` and `task.stop_requested`
+  from the API once their writes land, on `louhi/projects/<p>/events`; a
+  node's status retained on `louhi/nodes/<n>`, cleared by its will or on a
+  clean stop. `EventReports` passes the agent's reports to the store first.
+- `louhi/events/lir.h`: the publisher over `lir::client` at Lir
+  `4443c16` (its pushed develop, with discovery in Dannan's roster),
+  fetched with `LIR_BUILD_SERVER=OFF`; publishes Lir does not take are
+  counted. `LOUHI_BUILD_LIR` (on); Lir is public, so hosted CI builds it.
+- `louhi/auth/service_token.h`: the node's own token by the
+  client-credentials grant, refreshed at two thirds of its life, with
+  backoff; Lir's password callback reads it without waiting.
+- `louhi-node --lir [--lir-tls] [--lir-client-id ...]`. A signing key is
+  read as PKCS#8 DER, Dannan's only key format, rather than Louhi parsing
+  PEM itself.
+- Hosted CI's first public run failed TSan on Asio's executor count (a
+  release decrement then an acquire fence, which g++'s TSan cannot model),
+  reached through Dannan's connector; `tools/ci.sh tsan` now uses the
+  fetched Dannan's own suppressions, as Lir does, and CI is green.
+
+Gate on node-c (Pi 5, g++, Release, warnings as errors, never
+throttled, Docker with user namespaces): **207 passed** (200 before, 7
+new). Not yet run: a live publish to Lir, and `ServiceToken` against a
+real Lugh (`ACTIVE.md`, "Owed, end to end").
+
 ## Step 5: the API and louhi-ctl (2026-11-15)
 
 Merged from `feature/api` (`5c1fdce`, merge `f309ecb`).

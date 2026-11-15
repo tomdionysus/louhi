@@ -5,11 +5,12 @@ Last updated: 2026-11-15 (end of session). `COMPLETED.md` is the record.
 ## Resume here
 
 **State.** `develop`, pushed to `tomdionysus/louhi`, public since
-2026-11-15 at the maintainer's word. Steps 0 to 3 and 5 are done: records and codecs, the Docker driver,
-the agent, the store interface with the in-memory store, `louhi-node`, and
-the API with sign-in by the Lugh plugin and `louhi-ctl`. Last gate: 200
-passed on node-c, Docker tests included, against Dannan `0.8.3`
-and Lugh `a34770f`.
+2026-11-15 at the maintainer's word. Steps 0 to 3, 5 and 8 are done: records and codecs, the Docker
+driver, the agent, the store interface with the in-memory store,
+`louhi-node`, the API with sign-in by the Lugh plugin and `louhi-ctl`, and
+events on Lir. Last gate: 207 passed on node-c, Docker tests
+included, against Dannan `0.8.3`, Lugh `a34770f` and Lir `4443c16`; hosted
+CI green (without Lugh).
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -19,24 +20,30 @@ questions with a recommendation.
 **How work is done.** Nothing is built or run on the Mac. Builds and tests
 run on the shared Pi 5 build servers, claimed on the board first
 (`CLAUDE.local.md` has hosts and rules). `build/pi.sh <address> [step]
-[gtest filter]` (untracked) syncs the tree and Dannan's and Lugh's histories to a Pi and
+[gtest filter]` (untracked) syncs the tree and Dannan's, Lugh's and Lir's histories to a Pi and
 runs a `tools/ci.sh` step there at `-j2` under `nice 19`. One board wait per
 session at a time: a second `claim-board wait` replaces the first; wait on
 several hosts in one command.
 
 ## Next, in order
 
-1. **Step 8:** pin Lir `6b23268` (needs Dannan 0.8.3, now pinned) and link
-   `lir::client` with `-DLIR_BUILD_SERVER=OFF`. Lir's notes: `Tls` is
-   declared in `client.h`; a QoS 0 publish's done fires once handed to the
-   connection. Check first whether Lir is reachable from hosted CI (it may
-   be private, as Lugh is).
-2. **Step 5, owed:** `louhi-ctl login` and a live sign-in have not been run
-   against a real Lugh issuer; `louhi-ctl` has no tests of its own (its
-   requests go through `api::Client`, which is tested). Do it when a Lugh
-   node is reachable from a Pi, with Lugh's word.
+1. **Owed, end to end:** `louhi-ctl login` and a live sign-in against a
+   real Lugh issuer; `ServiceToken` (the node's client-credentials token,
+   `louhi/auth/service_token.h`) against a real Lugh; and a live publish
+   to Lir. `louhi-node` finds Lir in its Dannan roster, so the last means
+   joining a Dannan cluster that has Lir in it: the standing cluster, with
+   Lir's and the maintainer's word, or a Lir node of Louhi's own on a Pi. Neither
+   `louhi-ctl` nor `ServiceToken` has tests of its own.
+2. **Step 13's first half,** which waits on nobody: a tag resolved to a
+   digest when a revision is registered (the registry's manifest, the
+   untrusted reply bounded and fuzzed), so every task of a revision runs
+   the same bytes; and ephemeral storage limits enforced. The image store
+   on Dagda is its second half.
 3. **Step 4's second half**, the Dagda store, waits on a Dagda ref.
-4. **Steps 6 and 9** wait on Dannan 0.9.0's agreement registers.
+4. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers: a
+   service's task set changes through registers (design, "Placement"), so
+   services wait with placement (the maintainer's ruling: anything that can use
+   agreement waits for it).
 
 ## The build Pis
 

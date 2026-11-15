@@ -8,7 +8,7 @@ Last updated: 2026-11-15 (end of session). `COMPLETED.md` is the record.
 are done: records and codecs, the Docker driver, the agent, the store
 interface with the in-memory store, and `louhi-node`; user namespaces and
 memory limits are enforced. Last gate: 136 passed on node-d, Docker
-tests included, under user namespaces. Dannan pinned at `0.8.1`.
+tests included, under user namespaces, against Dannan `0.8.3`.
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -25,10 +25,11 @@ several hosts in one command.
 
 ## Next, in order
 
-1. **Repin Dannan to `0.8.3`** (tagged and pushed), its own commit and gate.
-   Lugh's client and Lir's client are both on 0.8.3, and one process links
-   one Dannan.
-2. **Step 5: the API and `louhi-ctl`,** on `louhi-node`. What is decided:
+1. **Step 5: the API and `louhi-ctl`,** on `louhi-node`. The endpoints are
+   in the design's "API and sign-on" (written 2026-11-15, the maintainer's answers
+   folded in). Pin Lugh at `a34770f` (its pushed `develop`, Dannan 0.8.2,
+   the same minor as Louhi's 0.8.3; Lir pins an older `dbb0573`). What is
+   decided:
    - HTTP and JSON on Dannan's listener layer (`dannan/listen/listener.h`,
      `StreamListener` handing up `listen::Stream`s), Beast's HTTP parser over
      the stream with a body limit and a read deadline. Lir's
@@ -48,17 +49,15 @@ several hosts in one command.
    - Quota at admission: checked on the node that takes the request (single
      node); cross-node admission is agreement's, step 6.
    - Run task places on the node that takes it until step 6.
-   - Endpoints, AWS vocabulary: register a task definition, run a task, stop
-     it, describe and list tasks and statuses, put a project and its quota.
-     Write the endpoint list into the design's "API and sign-on" before
-     coding, and ask the maintainer only what it leaves open.
+   - Endpoints, AWS vocabulary: the design's table. Scope actions `read`,
+     `register`, `run`; plain HTTP and HTTPS each the operator's choice.
    - Watch out: `lugh_client` compiles Boost.JSON's `src.hpp` and so does
      Louhi (`runtime/docker/boost_json.cpp`); linking both may define it
      twice. Settle it at the first build (probably by Louhi dropping its own
      when it links `lugh::client`).
-3. **Step 4's second half**, the Dagda store, waits on a Dagda ref.
-4. **Steps 6 and 9** wait on Dannan 0.9.0's agreement registers.
-5. **Step 8:** pin Lir `6b23268` (needs Dannan 0.8.3) and link
+2. **Step 4's second half**, the Dagda store, waits on a Dagda ref.
+3. **Steps 6 and 9** wait on Dannan 0.9.0's agreement registers.
+4. **Step 8:** pin Lir `6b23268` (needs Dannan 0.8.3, now pinned) and link
    `lir::client` with `-DLIR_BUILD_SERVER=OFF`. Lir's notes: `Tls` is
    declared in `client.h`; a QoS 0 publish's done fires once handed to the
    connection.
@@ -138,6 +137,8 @@ All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is 
 - **API:** Louhi's own, declarative, AWS's vocabulary; no Kubernetes or EC2
   compatibility. Sign-in by the Lugh plugin only, no anonymous mode;
   authorisation from the token's audience ("louhi") and scopes, as Lir does.
+  Scope actions `read`, `register`, `run`, with `louhi:<project>:*` and
+  `louhi:admin`; plain HTTP and HTTPS each the operator's choice.
 - **Workload identity:** deferred.
 - **MQTT client:** Lir's exported client; Louhi writes none.
 - **Overlay carrier:** both: WireGuard (with a VPC tag inside) where two

@@ -2,6 +2,17 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Dannan 0.8.3; step 5's endpoints (2026-11-15)
+
+- Dannan repinned from 0.8.1 to 0.8.3 (`CMakeLists.txt:37`): additive for
+  Louhi (the stream connector, RS256, placement copying only its answer).
+  Gate on node-d (Pi 5, g++, Release, warnings as errors, never
+  throttled, Docker with user namespaces): `tools/ci.sh release` **136
+  passed**.
+- The API's endpoints written into the design's "API and sign-on". the maintainer's
+  answers: scope actions `read`, `register`, `run`; plain HTTP and HTTPS
+  each the operator's choice, as Lir serves.
+
 ## User namespaces enforced; the Pis prepared (2026-11-15)
 
 - the maintainer: user namespaces are enforced. The agent launches nothing on a

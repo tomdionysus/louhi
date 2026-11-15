@@ -302,6 +302,54 @@ through the API by `louhi:admin` only. A command-line tool, `louhi-ctl`,
 signs in by the device flow. Tasks get no Lugh identity for now (the maintainer:
 deferred).
 
+**The endpoints (step 5).** JSON over HTTP/1.1, one version prefix, a
+project in every path a project owns, AWS's names for the operations. Every
+request carries `Authorization: Bearer <access token>`; none is answered
+without one.
+
+| Method and path | AWS's name | Scope |
+|---|---|---|
+| `PUT /v1/projects/{project}` | (none) | `louhi:admin` |
+| `GET /v1/projects` | (none) | any; lists the projects the token holds a scope in, all for admin |
+| `GET /v1/projects/{project}` | (none) | `louhi:{project}:read` |
+| `PUT /v1/projects/{project}/quota` | (none) | `louhi:admin` |
+| `GET /v1/projects/{project}/quota` | (none) | `louhi:{project}:read` |
+| `POST /v1/projects/{project}/task-definitions` | RegisterTaskDefinition | `louhi:{project}:register` |
+| `GET /v1/projects/{project}/task-definitions` | ListTaskDefinitionFamilies | `louhi:{project}:read` |
+| `GET /v1/projects/{project}/task-definitions/{family}` | ListTaskDefinitions | `louhi:{project}:read` |
+| `GET /v1/projects/{project}/task-definitions/{family}/{revision}` | DescribeTaskDefinition | `louhi:{project}:read` |
+| `POST /v1/projects/{project}/tasks` | RunTask | `louhi:{project}:run` |
+| `GET /v1/projects/{project}/tasks` | ListTasks | `louhi:{project}:read` |
+| `GET /v1/projects/{project}/tasks/{task}` | DescribeTasks | `louhi:{project}:read` |
+| `POST /v1/projects/{project}/tasks/{task}/stop` | StopTask | `louhi:{project}:run` |
+| `GET /v1/nodes` | (none) | `louhi:admin` |
+
+- The actions are `read`, `register` and `run` (the maintainer, 2026-11-15);
+  `louhi:admin` grants everything and `louhi:{project}:*` every action in
+  one project. A scope that does not parse is skipped, as Lir skips one.
+- Plain HTTP, and HTTPS on its own port with the operator's certificate,
+  each the operator's choice, as Lir serves (the maintainer, 2026-11-15).
+- A token bound to a key or a certificate (`cnf`) is refused until its
+  binding can be checked, as Lir refuses one it cannot check.
+- RegisterTaskDefinition takes the family and the definition, and answers
+  the revision it was given: one more than the family's highest. Revisions
+  are allocated on the node that takes the request; two nodes allocating
+  at once is agreement's to settle (step 6), as quota admission is.
+- RunTask takes a family, a revision (the latest when left out), a count
+  (1 to 10, as ECS's) and an optional client token: a retry carrying the
+  same token within an hour answers the tasks the first made rather than
+  making more, on the node that took the first. Admission checks the
+  project's quota and refuses, with the limit that would be passed, what
+  would exceed it.
+- DescribeTasks answers the task and every node's status of it. Lists take
+  `limit` (at most 100) and `next`, the key to start after.
+- Errors are `{"error": code, "message": text}`: 400 `invalid` (the field at
+  fault named, never its value), 401 `unauthenticated` (with the
+  verifier's reason), 403 `forbidden` (the scope wanted), 404 `not_found`,
+  409 `quota` (the limit passed), 413 `too_large`, 503 `not_ready`. A body
+  is at most 1 MiB; a request not read whole in 30 seconds is closed.
+- Watching is left for step 8: Lir carries the events.
+
 A principal disabled in Lugh keeps access until its token expires (five
 minutes by default). Lugh has designed, not built, principal-change events
 published over Lir (`../lugh/TODO/2026-11-15-principal-events.md`):

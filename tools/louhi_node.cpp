@@ -11,6 +11,7 @@
 // object per line on stdout:
 //
 //   {"event":"listening","id":"...","port":N}
+//   {"event":"api","http":N,"https":N}                 when the API is served
 //   {"event":"status","ready":true,"tasks":N,"passes":N,"conditions":N}   every --status-ms
 //   {"event":"stopped"}
 //
@@ -27,13 +28,20 @@
 //              [--seconds N] [--log-level LEVEL] [--log-format text|json]
 //              [--docker-socket PATH] [--allow-unenforced-memory]
 //              [--allow-without-user-namespaces]
+//              [--api-http HOST:PORT] [--api-https HOST:PORT --api-tls-chain FILE --api-tls-key FILE]
+//              [--lugh-issuer URL]... [--lugh-ca FILE]
 //   louhi-node --version
+//
+// The API (design, "API and sign-on") is served when at least one Lugh
+// issuer and at least one of --api-http and --api-https are given; sign-in
+// is by the Lugh plugin only, so without an issuer there is no API. A build
+// without the plugin (LOUHI_BUILD_LUGH off) serves none.
 //
 // The store is the in-memory one until the Dagda store exists (ACTIVE.md):
 // it holds only what was declared since this node started, so the node
-// treats it as never whole and removes nothing it does not recognise. Until
-// the API (step 5), nothing declares tasks to it; the node checks and reports
-// its runtime, and adopts what it already runs.
+// treats it as never whole and removes nothing it does not recognise. Tasks
+// run through the API are placed on the node that took them (step 6 places
+// across nodes).
 
 #include <signal.h>
 
@@ -56,12 +64,18 @@
 #include "dannan/node.h"
 #include "louhi/agent/agent.h"
 #include "louhi/agent/store_bindings.h"
+#include "louhi/api/api.h"
+#include "louhi/api/auth.h"
+#include "louhi/api/http.h"
 #include "louhi/model/codec.h"
 #include "louhi/model/keys.h"
 #include "louhi/node/status.h"
 #include "louhi/runtime/docker/docker_driver.h"
 #include "louhi/store/memory_store.h"
 #include "louhi/version.h"
+#ifdef LOUHI_WITH_LUGH
+#include "louhi/auth/lugh.h"
+#endif
 
 namespace {
 
@@ -94,6 +108,12 @@ struct Options {
   std::string docker_socket = "/var/run/docker.sock";
   bool allow_unenforced_memory = false;
   bool allow_without_user_namespaces = false;
+  std::optional<dannan::net::Endpoint> api_http;
+  std::optional<dannan::net::Endpoint> api_https;
+  std::string api_tls_chain;
+  std::string api_tls_key;
+  std::vector<std::string> lugh_issuers;
+  std::string lugh_ca;
 };
 
 dannan::net::Endpoint endpoint(const std::string& text) {
@@ -132,6 +152,12 @@ dannan::config::Reader reader() {
   add("runtime.allow_unenforced_memory", Kind::toggle, "--allow-unenforced-memory", "launch tasks even where the runtime cannot enforce memory limits");
   add("runtime.allow_without_user_namespaces", Kind::toggle, "--allow-without-user-namespaces",
       "launch tasks even where the runtime has no user namespaces (root in a container is root on the node)");
+  add("api.http", Kind::value, "--api-http", "HOST:PORT for the API over plain HTTP");
+  add("api.https", Kind::value, "--api-https", "HOST:PORT for the API over HTTPS");
+  add("api.tls_chain", Kind::value, "--api-tls-chain", "the HTTPS certificate chain, PEM, leaf first");
+  add("api.tls_key", Kind::value, "--api-tls-key", "the HTTPS certificate's key, PEM");
+  add("lugh.issuer", Kind::list, "--lugh-issuer", "a trusted Lugh, as its tokens name it");
+  add("lugh.ca", Kind::value, "--lugh-ca", "the roots the issuers' HTTPS chains to; the system's when absent");
   return out;
 }
 
@@ -162,7 +188,15 @@ Options parse(int argc, char** argv) {
   out.docker_socket = settings.path_of("runtime.docker_socket").value_or(out.docker_socket);
   out.allow_unenforced_memory = settings.toggle("runtime.allow_unenforced_memory").value_or(false);
   out.allow_without_user_namespaces = settings.toggle("runtime.allow_without_user_namespaces").value_or(false);
+  if (const auto http = settings.text("api.http")) out.api_http = endpoint(*http);
+  if (const auto https = settings.text("api.https")) out.api_https = endpoint(*https);
+  out.api_tls_chain = settings.path_of("api.tls_chain").value_or("");
+  out.api_tls_key = settings.path_of("api.tls_key").value_or("");
+  out.lugh_issuers = settings.list("lugh.issuer");
+  out.lugh_ca = settings.path_of("lugh.ca").value_or("");
   if (out.key.empty() || out.state.empty()) throw std::runtime_error("--key and --state are required");
+  if (out.api_https && (out.api_tls_chain.empty() || out.api_tls_key.empty())) throw std::runtime_error("--api-https needs --api-tls-chain and --api-tls-key");
+  if ((out.api_http || out.api_https) && out.lugh_issuers.empty()) throw std::runtime_error("the API needs a --lugh-issuer: there is no anonymous sign-in");
   return out;
 }
 
@@ -264,6 +298,40 @@ int main(int argc, char** argv) {
     say("{\"event\":\"listening\",\"id\":\"" + dannan::identity::to_string(self) + "\",\"port\":" + std::to_string(node.port()) + "}");
 
     auto logger = context.logger("louhi.node");
+
+    // The API, when an issuer and a listener are given.
+    louhi::api::Api api(store, dannan::contract::system_wall_clock(), self, io.get_executor(), context.logger("louhi.api"));
+#ifdef LOUHI_WITH_LUGH
+    std::unique_ptr<louhi::auth::LughPlugin> lugh;
+    std::unique_ptr<louhi::api::Authenticator> authenticator;
+#endif
+    std::unique_ptr<louhi::api::HttpServer> server;
+    if (options.api_http || options.api_https) {
+#ifdef LOUHI_WITH_LUGH
+      louhi::auth::LughConfig lugh_config;
+      lugh_config.issuers = options.lugh_issuers;
+      lugh_config.ca_path = options.lugh_ca;
+      lugh =
+          std::make_unique<louhi::auth::LughPlugin>(io, std::move(lugh_config), dannan::contract::steady_time_source(), dannan::contract::system_wall_clock());
+      lugh->start();
+      authenticator = std::make_unique<louhi::api::Authenticator>(lugh->verifier(), dannan::contract::system_wall_clock());
+      louhi::api::HttpConfig http;
+      if (options.api_http) http.plain = louhi::api::HttpListen{options.api_http->host, options.api_http->port};
+      if (options.api_https) {
+        louhi::api::HttpsListen https;
+        https.host = options.api_https->host;
+        https.port = options.api_https->port;
+        https.certificates.chain = options.api_tls_chain;
+        https.certificates.key = options.api_tls_key;
+        http.tls = std::move(https);
+      }
+      server = std::make_unique<louhi::api::HttpServer>(io, api, *authenticator, std::move(http), context.logger("louhi.http"));
+      server->start();
+      say("{\"event\":\"api\",\"http\":" + std::to_string(server->port()) + ",\"https\":" + std::to_string(server->tls_port()) + "}");
+#else
+      throw std::runtime_error("this build has no Lugh plugin, so it serves no API");
+#endif
+    }
     std::optional<louhi::model::NodeStatus> last;
     uint64_t sequence = 0;
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(options.seconds);
@@ -289,6 +357,10 @@ int main(int argc, char** argv) {
       std::this_thread::sleep_for(50ms);
     }
 
+    if (server) server->stop();
+#ifdef LOUHI_WITH_LUGH
+    if (lugh) lugh->stop();
+#endif
     store.unwatch(tasks_watch);
     store.unwatch(definitions_watch);
     std::promise<void> agent_stopped;
@@ -296,13 +368,21 @@ int main(int argc, char** argv) {
     if (agent_stopped.get_future().wait_for(60s) != std::future_status::ready) logger.warn("the agent's pass did not finish within 60 s; stopping anyway");
     context.nodes().withdraw("louhi");
     node.stop();
+    // The io threads end here, while everything their handlers name (the
+    // Api, the store, the plugin) still stands; what is still queued is
+    // destroyed unrun with the io context.
+    work.reset();
+    io.stop();
+    for (auto& thread : threads) thread.join();
+    threads.clear();
   } catch (const std::exception& error) {
     std::cerr << "louhi-node: " << error.what() << "\n";
     status = 1;
   }
   work.reset();
   io.stop();
-  for (auto& thread : threads) thread.join();
+  for (auto& thread : threads)
+    if (thread.joinable()) thread.join();
   say("{\"event\":\"stopped\"}");
   return status;
 }

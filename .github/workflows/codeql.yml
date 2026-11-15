@@ -49,7 +49,7 @@ jobs:
 
       - name: Build
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLOUHI_DANNAN_REPOSITORY=https://github.com/tomdionysus/dannan.git
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLOUHI_DANNAN_REPOSITORY=https://github.com/tomdionysus/dannan.git -DLOUHI_BUILD_LUGH=OFF
           cmake --build build -j "$(nproc)"
 
       - uses: github/codeql-action/analyze@v4

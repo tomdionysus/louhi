@@ -9,6 +9,10 @@ add_executable(louhi_tests
   agent_docker_test.cpp
   agent_specs_test.cpp
   agent_test.cpp
+  api_auth_test.cpp
+  api_http_test.cpp
+  api_json_test.cpp
+  api_test.cpp
   model_codec_test.cpp
   model_image_test.cpp
   model_keys_test.cpp
@@ -21,6 +25,9 @@ add_executable(louhi_tests
   store_test.cpp
   version_test.cpp
 )
+if(LOUHI_BUILD_LUGH)
+  target_sources(louhi_tests PRIVATE auth_lugh_test.cpp)
+endif()
 target_link_libraries(louhi_tests PRIVATE louhi GTest::gtest_main louhi_warnings)
 # Dannan's fixtures (temp_dir.h) write only inside Louhi's build tree.
 target_compile_definitions(louhi_tests PRIVATE DANNAN_TEST_TEMP_ROOT="${PROJECT_BINARY_DIR}/test-tmp")

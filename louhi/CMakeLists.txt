@@ -12,6 +12,11 @@ add_library(louhi SHARED
   agent/agent.cpp
   agent/specs.cpp
   agent/store_bindings.cpp
+  api/api.cpp
+  api/auth.cpp
+  api/client.cpp
+  api/http.cpp
+  api/json.cpp
   model/codec.cpp
   model/ids.cpp
   model/image.cpp
@@ -20,7 +25,6 @@ add_library(louhi SHARED
   model/records.cpp
   node/status.cpp
   runtime/docker/api.cpp
-  runtime/docker/boost_json.cpp
   runtime/docker/docker_driver.cpp
   runtime/docker/local_http.cpp
   runtime/driver.cpp
@@ -38,4 +42,13 @@ target_link_libraries(louhi
   PUBLIC dannan::dannan Boost::headers OpenSSL::SSL OpenSSL::Crypto Threads::Threads
   PRIVATE louhi_warnings
 )
+# Boost.JSON's definitions are compiled once in a process: lugh_client's when
+# the Lugh plugin is built (it compiles them itself), Louhi's otherwise.
+if(LOUHI_BUILD_LUGH)
+  target_sources(louhi PRIVATE auth/lugh.cpp)
+  target_link_libraries(louhi PUBLIC lugh::client)
+  target_compile_definitions(louhi PUBLIC LOUHI_WITH_LUGH=1)
+else()
+  target_sources(louhi PRIVATE runtime/docker/boost_json.cpp)
+endif()
 set_target_properties(louhi PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})

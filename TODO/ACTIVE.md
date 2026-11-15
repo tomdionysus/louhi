@@ -62,8 +62,9 @@ Still owed, all at the maintainer's go already given:
   Cluster session's): `systemctl is-active lir-node
   claim-board-scheduler`; `journalctl -u claim-board-scheduler -n 3 -o
   cat` says "acting" on node-a, and node-b's log goes back to "standing
-  by: node-a acts"; `curl -s
-  'http://192.0.2.10:8183/retained?filter=stack/%23'` returns the same
+  by: node-a acts"; the board's
+  `/retained?filter=stack/%23` on node-a (address in `CLAUDE.local.md`)
+  returns the same
   as another node's. Node-a logged 110 under-voltage events in 24 h: if it
   is slow to come back, suspect its power supply first. Tell Lir when done.
 - **node-b:** `userns-remap: default` and `systemctl restart docker`

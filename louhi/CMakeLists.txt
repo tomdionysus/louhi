@@ -18,6 +18,7 @@ add_library(louhi SHARED
   model/keys.cpp
   model/names.cpp
   model/records.cpp
+  node/status.cpp
   runtime/docker/api.cpp
   runtime/docker/boost_json.cpp
   runtime/docker/docker_driver.cpp

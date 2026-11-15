@@ -53,6 +53,10 @@ configure_file(louhi/include/louhi/version.h.in ${PROJECT_BINARY_DIR}/generated/
 
 add_subdirectory(louhi)
 
+# One node of Louhi: a Dannan node hosting the agent.
+add_executable(louhi-node tools/louhi_node.cpp)
+target_link_libraries(louhi-node PRIVATE louhi louhi_warnings)
+
 if(LOUHI_BUILD_TESTING)
   find_package(GTest 1.14 CONFIG REQUIRED)
   add_subdirectory(louhi/test)

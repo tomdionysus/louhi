@@ -14,6 +14,7 @@ add_executable(louhi_tests
   model_keys_test.cpp
   model_names_test.cpp
   model_records_test.cpp
+  node_status_test.cpp
   runtime_docker_api_test.cpp
   runtime_docker_driver_test.cpp
   runtime_local_http_test.cpp

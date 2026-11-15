@@ -62,6 +62,7 @@ case "$step" in
   release)
     configure release -DCMAKE_BUILD_TYPE=Release
     "$out/release/louhi_tests"
+    "$out/release/louhi-node" --version
     ;;
   clang)
     CXX=clang++ configure clang -DCMAKE_BUILD_TYPE=Release

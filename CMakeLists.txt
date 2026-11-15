@@ -34,7 +34,7 @@ find_package(Threads REQUIRED)
 set(LOUHI_DANNAN_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dannan" CACHE STRING "Dannan's repository: a directory or a URL")
 # Not a cache variable: a moved pin must take effect in a build tree that
 # already exists.
-set(LOUHI_DANNAN_TAG "0.8.1")
+set(LOUHI_DANNAN_TAG "0.8.3")
 include(FetchContent)
 FetchContent_Declare(dannan GIT_REPOSITORY "${LOUHI_DANNAN_REPOSITORY}" GIT_TAG "${LOUHI_DANNAN_TAG}")
 set(DANNAN_BUILD_TESTING OFF CACHE BOOL "" FORCE)

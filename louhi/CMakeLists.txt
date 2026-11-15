@@ -17,6 +17,7 @@ add_library(louhi SHARED
   api/client.cpp
   api/http.cpp
   api/json.cpp
+  events/events.cpp
   model/codec.cpp
   model/ids.cpp
   model/image.cpp
@@ -45,10 +46,15 @@ target_link_libraries(louhi
 # Boost.JSON's definitions are compiled once in a process: lugh_client's when
 # the Lugh plugin is built (it compiles them itself), Louhi's otherwise.
 if(LOUHI_BUILD_LUGH)
-  target_sources(louhi PRIVATE auth/lugh.cpp)
+  target_sources(louhi PRIVATE auth/lugh.cpp auth/service_token.cpp)
   target_link_libraries(louhi PUBLIC lugh::client)
   target_compile_definitions(louhi PUBLIC LOUHI_WITH_LUGH=1)
 else()
   target_sources(louhi PRIVATE runtime/docker/boost_json.cpp)
+endif()
+if(LOUHI_BUILD_LIR)
+  target_sources(louhi PRIVATE events/lir.cpp)
+  target_link_libraries(louhi PUBLIC lir::client)
+  target_compile_definitions(louhi PUBLIC LOUHI_WITH_LIR=1)
 endif()
 set_target_properties(louhi PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})

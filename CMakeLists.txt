@@ -53,6 +53,18 @@ if(LOUHI_BUILD_LUGH)
   FetchContent_MakeAvailable(lugh)
 endif()
 
+# Lir's client, for publishing Louhi's events (design, "Events"), at a commit
+# of its develop on Louhi's Dannan, which it takes rather than fetching its
+# own. Only lir::mqtt and lir::client are built. Off: no events.
+option(LOUHI_BUILD_LIR "Build the events publisher on Lir's client" ON)
+if(LOUHI_BUILD_LIR)
+  set(LOUHI_LIR_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../lir" CACHE STRING "Lir's repository: a directory or a URL")
+  set(LOUHI_LIR_REF "4443c16942762aab551fe66b08ad2f9b3341e0c6")
+  FetchContent_Declare(lir GIT_REPOSITORY "${LOUHI_LIR_REPOSITORY}" GIT_TAG "${LOUHI_LIR_REF}")
+  set(LIR_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(lir)
+endif()
+
 add_library(louhi_warnings INTERFACE)
 target_compile_options(louhi_warnings INTERFACE -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")

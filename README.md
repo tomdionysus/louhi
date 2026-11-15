@@ -11,8 +11,8 @@ CPU and memory) and how many should run, never which machine, and Louhi places i
 restarts it by its policy, and reports what it sees. It runs on
 [Dannan](https://github.com/tomdionysus/dannan), the network, keeps its records in
 [Dagda](https://github.com/tomdionysus/dagda), the store, signs callers in with
-[Lugh](https://github.com/tomdionysus/lugh), the directory, and is to announce what
-happens on [Lir](https://github.com/tomdionysus/lir), the event system.
+[Lugh](https://github.com/tomdionysus/lugh), the directory, and announces what happens
+on [Lir](https://github.com/tomdionysus/lir), the event system.
 
 ## Why it exists
 
@@ -71,6 +71,12 @@ Louhi is the compute layer written once for this stack:
   until it expires.
 - **`louhi-ctl`.** The API from a terminal: device-flow sign-in to Lugh, tokens refreshed
   as they run out, one command per operation.
+- **Events on Lir.** Each task's status as its node observes it, retained on
+  `louhi/projects/<project>/tasks/<task>/nodes/<node>`; `task.run`, `task.started`,
+  `task.stopped`, `task.parked` and `task.stop_requested` on `louhi/projects/<project>/events`;
+  each node's status retained on `louhi/nodes/<node>`, cleared when it goes. A Lugh scope
+  `lir:sub:louhi/projects/<project>/#` is one project's events. Notifications only: the
+  records are the truth.
 
 ## The stack
 
@@ -95,8 +101,9 @@ in exactly one.
 - **[Lugh](https://github.com/tomdionysus/lugh)** is the directory and sign-on. To Louhi
   it is an identity provider: the Lugh plugin links Lugh's client library to verify tokens,
   and `louhi-ctl` signs in through it.
-- **[Lir](https://github.com/tomdionysus/lir)** is the event system. Louhi is to publish
-  task and service lifecycle events to it as any MQTT client does, through `lir::client`.
+- **[Lir](https://github.com/tomdionysus/lir)** is the event system. Louhi publishes its
+  events to it as any MQTT client does, through Lir's own `lir::client`, finding Lir's
+  nodes in Dannan's roster.
 
 Hosted systems never address one another: Lugh is to Louhi only an identity provider, and
 Lir only an MQTT broker.
@@ -107,8 +114,8 @@ Lir only an MQTT broker.
 
 A C++20 compiler, CMake 3.24 or later, Boost 1.83 or later (Asio, Beast and JSON; Debian
 13's is 1.83), OpenSSL 3, yaml-cpp (for Dannan) and GoogleTest for the tests. Dannan is
-fetched from `../dannan` at the pinned release (0.8.3) and Lugh's client from `../lugh` at
-a pinned commit, so clone both beside this repository. Nodes are Linux only; macOS builds
+fetched from `../dannan` at the pinned release (0.8.3), and Lugh's and Lir's clients from
+`../lugh` and `../lir` at pinned commits, so clone them beside this repository. Nodes are Linux only; macOS builds
 the library and runs the unit tests against fakes.
 
 ```
@@ -121,10 +128,12 @@ cmake --build build -j8
 |---|---|---|
 | `LOUHI_BUILD_TESTING` | `OFF` | Build `louhi_tests` |
 | `LOUHI_BUILD_LUGH` | `ON` | Build the Lugh plugin, the API's sign-in and `louhi-ctl`; off, the node serves no API |
+| `LOUHI_BUILD_LIR` | `ON` | Build the events publisher on Lir's client |
 | `LOUHI_BUILD_FUZZING` | `OFF` | Build the libFuzzer targets (clang) |
 | `LOUHI_WARNINGS_AS_ERRORS` | `OFF` | Treat compiler warnings as errors |
 | `LOUHI_DANNAN_REPOSITORY` | `../dannan` | Where Dannan is fetched from: a directory or a URL |
 | `LOUHI_LUGH_REPOSITORY` | `../lugh` | Where Lugh is fetched from |
+| `LOUHI_LIR_REPOSITORY` | `../lir` | Where Lir is fetched from |
 
 Set `LOUHI_DOCKER_SOCKET=/var/run/docker.sock` to run the driver's tests against a real
 Docker daemon; without it they are skipped. `tools/ci.sh` runs each CI step as hosted CI
@@ -159,6 +168,13 @@ HTTPS, `--api-https HOST:PORT --api-tls-chain chain.pem --api-tls-key key.pem`. 
 nodes join with `--bootstrap HOST:PORT`. `--allow-unenforced-memory` and
 `--allow-without-user-namespaces` let a node launch tasks where the runtime cannot box them
 in as it should; the node says so in its status.
+
+`--lir` publishes events to the Lir nodes in the node's Dannan cluster (`--lir-tls`, and
+`--lir-tls-trust PEM`, for TLS). The node signs in to Lir with a token of its own from the
+first Lugh issuer, as a Lugh service principal: `--lir-client-id ID` with either
+`--lir-client-key key.der --lir-client-kid KID` (a PKCS#8 DER key, `private_key_jwt`) or
+`--lir-client-secret S` (kept in `secrets.yaml`). Without a client, it connects with no
+password, for a Lir that allows anonymous clients.
 
 Every flag is also a key in a YAML file and a `LOUHI_*` variable, read by the stack's one
 settings reader (Dannan's): the file (`--config PATH`, `$LOUHI_CONFIG`, or
@@ -214,7 +230,8 @@ louhi/agent/          the node agent and its translation of records to container
 louhi/store/          the store contract and the in-memory store
 louhi/node/           the node's status report
 louhi/api/            the API: operations, request JSON, sign-in, HTTP server and client
-louhi/auth/           the Lugh plugin
+louhi/auth/           the Lugh plugin and the node's own service token
+louhi/events/         the events and their publisher on Lir
 louhi/test/           GoogleTest, one binary (louhi_tests); fixtures in louhi/test/fixtures/
 louhi/fuzz/           libFuzzer targets for untrusted bytes
 tools/                louhi-node, louhi-ctl, ci.sh
@@ -226,11 +243,12 @@ Conventions, shared with the stack: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
-In development; no release is cut yet. Built and tested (200 tests, the Docker driver's
+In development; no release is cut yet. Built and tested (207 tests, the Docker driver's
 against a real daemon under user namespaces): the records and their codecs; the Docker
 driver with the hardened profile and limits; the agent on one node, with restart, backoff
 and the parked state; `louhi-node`; the API with Lugh sign-in, project scopes and quota
-admission; and `louhi-ctl`.
+admission; `louhi-ctl`; and the events, against a fake publisher. Not yet run end to end:
+`louhi-ctl` against a real Lugh, and the events against a real Lir.
 
 What it does not do yet, in the order it is to be built:
 
@@ -240,7 +258,6 @@ What it does not do yet, in the order it is to be built:
   task runs on the node that took the request, and quota is admitted on that node's view.
 - **Services**: a desired count kept running, replacement, rolling deployment, health
   checks.
-- **Events on Lir.**
 - **Task networking**: an address per task in a subnet of a VPC, route tables, security
   groups, service discovery, then gateways and load balancers, carried between nodes over
   Dannan or WireGuard.

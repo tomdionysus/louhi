@@ -41,6 +41,10 @@
 // The executor rule: `done` is posted to the executor given at construction,
 // exactly once, never called inline. Thread-safe. The Api outlives every
 // request it was handed until that request's `done` has run.
+namespace louhi::events {
+class Events;
+}
+
 namespace louhi::api {
 
 struct Request {
@@ -68,9 +72,11 @@ class Api {
   static constexpr std::chrono::hours client_token_life{1};
 
   // The store and the clock outlive this. `self` is this node: tasks are
-  // placed on it until placement across nodes exists (step 6).
+  // placed on it until placement across nodes exists (step 6). `events`,
+  // when given, outlives this and is told of each task run and each stop
+  // asked for, once its write has landed.
   Api(store::Store& store, const dannan::contract::WallClock& wall, model::NodeId self, store::Executor executor, dannan::status::ScopedLogger logger,
-      store::Deadline write_deadline = store::Deadline(10'000));
+      store::Deadline write_deadline = store::Deadline(10'000), events::Events* events = nullptr);
 
   void handle(const Grant& grant, const Request& request, std::function<void(Response)> done);
 
@@ -109,6 +115,7 @@ class Api {
   store::Executor _executor;
   dannan::status::ScopedLogger _logger;
   const store::Deadline _write_deadline;
+  events::Events* const _events;
 
   mutable dannan::contract::Mutex _admission;
   // What this node admitted whose write has not completed, by key.

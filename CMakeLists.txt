@@ -40,6 +40,19 @@ FetchContent_Declare(dannan GIT_REPOSITORY "${LOUHI_DANNAN_REPOSITORY}" GIT_TAG 
 set(DANNAN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(dannan)
 
+# Lugh's client, for the Lugh plugin (sign-in to the API), at a commit of its
+# develop on Dannan's minor; it takes the Dannan above rather than fetching
+# its own. Off builds Louhi without it, and louhi-node then serves no API:
+# there is no anonymous mode (the maintainer, 2026-11-15).
+option(LOUHI_BUILD_LUGH "Build the Lugh plugin and the API's sign-in" ON)
+if(LOUHI_BUILD_LUGH)
+  set(LOUHI_LUGH_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../lugh" CACHE STRING "Lugh's repository: a directory or a URL")
+  set(LOUHI_LUGH_REF "a34770f4aa9447885f8d882559cfe6752783bf1a")
+  FetchContent_Declare(lugh GIT_REPOSITORY "${LOUHI_LUGH_REPOSITORY}" GIT_TAG "${LOUHI_LUGH_REF}")
+  set(LUGH_BUILD_NODE OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(lugh)
+endif()
+
 add_library(louhi_warnings INTERFACE)
 target_compile_options(louhi_warnings INTERFACE -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -56,6 +69,12 @@ add_subdirectory(louhi)
 # One node of Louhi: a Dannan node hosting the agent.
 add_executable(louhi-node tools/louhi_node.cpp)
 target_link_libraries(louhi-node PRIVATE louhi louhi_warnings)
+
+# The API from a terminal; it signs in through Lugh, so it needs the plugin.
+if(LOUHI_BUILD_LUGH)
+  add_executable(louhi-ctl tools/louhi_ctl.cpp)
+  target_link_libraries(louhi-ctl PRIVATE louhi louhi_warnings)
+endif()
 
 if(LOUHI_BUILD_TESTING)
   find_package(GTest 1.14 CONFIG REQUIRED)

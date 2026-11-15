@@ -18,7 +18,8 @@
 # Builds go under build-ci/ (LOUHI_CI_OUT to move it), one job per CPU
 # (LOUHI_CI_JOBS to set it: 2 on the shared Pis). Dannan is fetched at the
 # pinned tag from the sibling checkout when there is one, else from its public
-# repository (LOUHI_DANNAN_REPOSITORY to name another). Needs g++ cmake
+# repository (LOUHI_DANNAN_REPOSITORY to name another); Lugh likewise, from
+# LOUHI_LUGH_REPOSITORY or the sibling, or not at all. Needs g++ cmake
 # ninja-build libboost-dev libssl-dev libyaml-cpp-dev libgtest-dev, and for
 # its step clang, clang-format or lcov.
 
@@ -35,6 +36,16 @@ if [ -z "${LOUHI_DANNAN_REPOSITORY:-}" ]; then
     LOUHI_DANNAN_REPOSITORY=https://github.com/tomdionysus/dannan.git
   fi
 fi
+# Lugh is private: from LOUHI_LUGH_REPOSITORY or the sibling checkout, else
+# Louhi is built without the Lugh plugin (and so with no API).
+if [ -z "${LOUHI_LUGH_REPOSITORY:-}" ] && [ -d "$top/../lugh/.git" ]; then
+  LOUHI_LUGH_REPOSITORY=$top/../lugh
+fi
+if [ -n "${LOUHI_LUGH_REPOSITORY:-}" ]; then
+  lugh="-DLOUHI_BUILD_LUGH=ON -DLOUHI_LUGH_REPOSITORY=$LOUHI_LUGH_REPOSITORY"
+else
+  lugh="-DLOUHI_BUILD_LUGH=OFF"
+fi
 
 # Warnings are errors in every build but the sanitizers': instrumented, g++
 # warns inside libstdc++ and Asio, not in Louhi. The release and clang steps
@@ -42,7 +53,7 @@ fi
 configure() {
   dir="$1"
   shift
-  cmake -S "$top" -B "$out/$dir" -G Ninja -DLOUHI_BUILD_TESTING=ON -DLOUHI_WARNINGS_AS_ERRORS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" "$@"
+  cmake -S "$top" -B "$out/$dir" -G Ninja -DLOUHI_BUILD_TESTING=ON -DLOUHI_WARNINGS_AS_ERRORS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" $lugh "$@"
   cmake --build "$out/$dir" -j "$jobs"
 }
 

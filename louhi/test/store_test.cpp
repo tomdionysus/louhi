@@ -48,6 +48,20 @@ dannan::status::ScopedLogger quiet() { return dannan::status::ScopedLogger(danna
 
 }  // namespace
 
+// A node's store in memory remembers nothing across a restart, so it is never
+// whole: an agent over it must not take an empty store for "nothing wanted"
+// and remove the tasks still running from before (discipline 3).
+TEST(MemoryStore, ANodesStoreIsNeverWhole) {
+  asio::io_context io;
+  store::MemoryStore s(store::MemoryStore::Whole::never);
+  EXPECT_FALSE(s.ready());
+  put(s, io, "a/1", {1});
+  EXPECT_FALSE(s.ready()) << "what was written since start is not the whole";
+  EXPECT_EQ(s.get("a/1"), model::Bytes({1}));
+  agent::StoreDesired desired(s, test::node_id(1), quiet());
+  EXPECT_FALSE(desired.ready());
+}
+
 TEST(MemoryStore, GetListPutErase) {
   asio::io_context io;
   store::MemoryStore s;

@@ -14,13 +14,20 @@
 #include "louhi/store/store.h"
 
 // The store in one process's memory: for tests, and for a single node until
-// the Dagda store exists. Always ready; the later write wins; nothing
-// survives the process.
+// the Dagda store exists. The later write wins; nothing survives the process.
+//
+// A node's store is made `Whole::never`: it holds only what was written since
+// the process started, so an absence in it proves nothing, and an agent over
+// it removes nothing it does not recognise (discipline 3). Tests that stand
+// for a whole store use the default.
 namespace louhi::store {
 
 class MemoryStore final : public Store {
  public:
-  bool ready() const override { return true; }
+  enum class Whole : uint8_t { always, never };
+  explicit MemoryStore(Whole whole = Whole::always) : _whole(whole) {}
+
+  bool ready() const override { return _whole == Whole::always; }
   std::optional<Bytes> get(const std::string& key) const override;
   std::vector<std::pair<std::string, Bytes>> list(const std::string& prefix) const override;
   void put(const std::string& key, Bytes value, Deadline deadline, Executor executor, Completion<Done> done) override;
@@ -36,6 +43,7 @@ class MemoryStore final : public Store {
   };
   void notify(const std::string& key) DANNAN_EXCLUDES(_mutex);
 
+  const Whole _whole;
   mutable dannan::contract::Mutex _mutex;
   std::map<std::string, Bytes> _records DANNAN_GUARDED_BY(_mutex);
   std::map<uint64_t, Watcher> _watchers DANNAN_GUARDED_BY(_mutex);

@@ -11,6 +11,7 @@
 add_library(louhi SHARED
   agent/agent.cpp
   agent/specs.cpp
+  agent/store_bindings.cpp
   model/codec.cpp
   model/ids.cpp
   model/image.cpp
@@ -23,6 +24,7 @@ add_library(louhi SHARED
   runtime/docker/local_http.cpp
   runtime/driver.cpp
   runtime/labels.cpp
+  store/memory_store.cpp
   version.cpp
 )
 target_include_directories(louhi

@@ -42,13 +42,17 @@ std::string key(const TaskStatus& record) { return task_statuses_prefix(record.t
 
 std::string key(const NodeStatus& record) { return "node/" + dannan::identity::to_string(record.node); }
 
+std::string task_definition_key(std::string_view project, std::string_view family, uint32_t revision) {
+  return task_definitions_prefix(project, family) + revision_text(revision);
+}
+
 std::string task_definitions_prefix(std::string_view project, std::string_view family) {
   return "taskdef/" + named("project", project) + "/" + named("family", family) + "/";
 }
 
 std::string services_prefix(std::string_view project) { return "service/" + named("project", project) + "/"; }
 
-std::string tasks_prefix(std::string_view project) { return "task/" + named("project", project) + "/"; }
+std::string tasks_prefix(std::string_view project) { return project.empty() ? std::string("task/") : "task/" + named("project", project) + "/"; }
 
 std::string task_statuses_prefix(const TaskId& task) { return "taskstatus/" + to_string(task) + "/"; }
 

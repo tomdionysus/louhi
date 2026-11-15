@@ -2,6 +2,28 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Store interface and the agent over it (2026-11-15; step 4's first half)
+
+What of step 4 does not wait on a Dagda ref.
+
+- `store/store.h`: the store as Louhi needs it: local reads by key and by
+  prefix, asynchronous writes with a deadline, prefix watches as prompts.
+  It promises no uniqueness, transaction or linearizable write, because
+  Dagda does not.
+- `store/memory_store.h`: the store in memory, for tests and a single node
+  until the Dagda store exists.
+- `agent/store_bindings.h`: `StoreDesired` (the tasks placed on this node
+  with the revisions they name; an undecodable record or a missing revision
+  is left out and logged) and `StoreReports` (statuses written under each
+  status's own key).
+- `model/keys.h`: `task_definition_key`, and `tasks_prefix("")` lists every
+  project's tasks.
+
+Gate on node-b (Pi 5, Debian 13, g++, Ninja, Release, warnings as
+errors, never throttled, no Docker): `tools/ci.sh release` 123 ran, **115
+passed, 8 skipped** (the Docker tests, which skip without a daemon; they
+passed on node-c at step 3 and nothing they test changed).
+
 ## Step 3: the node agent (2026-11-15)
 
 The `louhi::agent` subsystem: what runs a node's tasks.

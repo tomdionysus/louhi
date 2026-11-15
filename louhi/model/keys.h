@@ -34,8 +34,12 @@ std::string key(const Task& record);
 std::string key(const TaskStatus& record);
 std::string key(const NodeStatus& record);
 
+// The key of one revision, as a task names it.
+std::string task_definition_key(std::string_view project, std::string_view family, uint32_t revision);
+
 // Prefixes for listing. Each throws std::invalid_argument for a project or
-// family that is not a name.
+// family that is not a name. tasks_prefix of an empty project lists every
+// project's tasks.
 std::string task_definitions_prefix(std::string_view project, std::string_view family);
 std::string services_prefix(std::string_view project);
 std::string tasks_prefix(std::string_view project);

@@ -17,6 +17,7 @@ add_executable(louhi_tests
   runtime_docker_api_test.cpp
   runtime_docker_driver_test.cpp
   runtime_local_http_test.cpp
+  store_test.cpp
   version_test.cpp
 )
 target_link_libraries(louhi_tests PRIVATE louhi GTest::gtest_main louhi_warnings)

@@ -12,7 +12,7 @@
 #   tools/ci.sh release    g++ release build, warnings as errors, and the tests
 #   tools/ci.sh clang      the same with clang++ (and -Wthread-safety)
 #   tools/ci.sh asan       AddressSanitizer and UndefinedBehaviorSanitizer
-#   tools/ci.sh tsan       ThreadSanitizer
+#   tools/ci.sh tsan       ThreadSanitizer, with Dannan's suppressions
 #   tools/ci.sh coverage   a coverage build's tests; lcov report build-ci/coverage.info
 #
 # Builds go under build-ci/ (LOUHI_CI_OUT to move it), one job per CPU
@@ -87,7 +87,11 @@ case "$step" in
   tsan)
     flags="-fsanitize=thread -fno-omit-frame-pointer"
     configure tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLOUHI_WARNINGS_AS_ERRORS=OFF -DCMAKE_CXX_FLAGS="$flags" -DCMAKE_EXE_LINKER_FLAGS="$flags" -DCMAKE_SHARED_LINKER_FLAGS="$flags"
-    TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1" "$out/tsan/louhi_tests"
+    # Dannan's suppressions, from the Dannan this build fetched: the Asio
+    # internals TSan cannot model (its executor count's fence, its kqueue
+    # reactor), which Louhi meets on the same Asio. Nothing of Louhi's is
+    # suppressed.
+    TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1 suppressions=$out/tsan/_deps/dannan-src/dannan/test/tsan-suppressions.txt" "$out/tsan/louhi_tests"
     ;;
   coverage)
     configure coverage -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=--coverage -DCMAKE_EXE_LINKER_FLAGS=--coverage -DCMAKE_SHARED_LINKER_FLAGS=--coverage

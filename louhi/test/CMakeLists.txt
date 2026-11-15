@@ -6,6 +6,9 @@
 #
 
 add_executable(louhi_tests
+  agent_docker_test.cpp
+  agent_specs_test.cpp
+  agent_test.cpp
   model_codec_test.cpp
   model_image_test.cpp
   model_keys_test.cpp

@@ -9,6 +9,8 @@
 # "louhi/x.h"; everything else is included from the repository root as
 # "louhi/<subsystem>/x.h".
 add_library(louhi SHARED
+  agent/agent.cpp
+  agent/specs.cpp
   model/codec.cpp
   model/ids.cpp
   model/image.cpp

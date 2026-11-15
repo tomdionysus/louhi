@@ -6,9 +6,8 @@ Last updated: 2026-11-15. `COMPLETED.md` is the record.
 
 **State.** `develop`, pushed to the private `tomdionysus/louhi` (the maintainer,
 2026-11-15: work autonomously, commit and push). Steps 0 (skeleton), 1
-(records and codecs) and 2 (the runtime driver) are done; gates in
-`COMPLETED.md`. Dannan pinned at `0.8.1`. Step 3, the node and its agent, is
-next.
+(records and codecs), 2 (the runtime driver) and 3 (the node agent) are
+done; gates in `COMPLETED.md`. Dannan pinned at `0.8.1`.
 
 **The design** is [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md).
 It was checked against the stack document
@@ -28,14 +27,11 @@ Dannan's history to a Pi and runs a `tools/ci.sh` step there at `-j2` under
 `nice 19`. Claim the Pi first.
 
 **Next, in order:**
-1. Step 3: `louhi-node` and the agent on one node. A fake driver
-   (test fixture), the reconciler from an in-memory store with placement
-   named by the operator, restart with backoff, a budget and a parked state
-   (discipline 2), recovery from the runtime alone after a restart
-   (disciplines 1 and 3), events only as prompts to re-list. The node
-   describes its runtime at start and refuses to run tasks that need a limit
-   the runtime cannot enforce, unless the operator says otherwise; that is
-   the build Pis today (below). First real container on a Pi.
+1. Step 4 waits on a Dagda ref (the maintainer: wait). What does not wait: the store
+   as an interface Louhi owns (records by key, prefix listing, watches), an
+   in-memory implementation, and `Desired` and `Reports` over it, so the
+   Dagda implementation later replaces one component. Then `louhi-node` as
+   a Dannan node hosting the agent over that store.
 2. When Louhi reaches step 8: Lir's client is ready (below). It is on
    Dannan 0.8.2 and a project links one Dannan, so Louhi repins to 0.8.2
    (tagged) first.

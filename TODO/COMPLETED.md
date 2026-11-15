@@ -2,6 +2,42 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Step 3: the node agent (2026-11-15)
+
+The `louhi::agent` subsystem: what runs a node's tasks.
+
+- `agent/specs.h`: records to the driver's specs. Names and labels tie every
+  container and volume to its task; images pinned to their digest; declared
+  CPU and memory are a container's own, the rest shared and never nothing.
+- `agent/agent.h`: the reconciler. Each pass lists what the runtime has by
+  Louhi's labels and acts on the difference with what is placed here:
+  launches (pull, volumes, create, start in order), starts what was made but
+  not started, removes and remakes a half-made task, stops a task run on its
+  own when an essential container exits (kept for inspection, never
+  relaunched), relaunches a service's task after a doubling backoff up to a
+  budget within a window and then parks it until an operator unparks it
+  (discipline 2), retries a failed launch after a backoff with the reason
+  reported, tears down what is wanted stopped, and removes what nothing wants
+  only once the desired state is whole. It keeps only pacing between passes;
+  an agent started over running containers adopts them (disciplines 1 and
+  3). Runtime events only prompt a pass; a lost stream is watched again.
+  Statuses are reported only on change, with a rising sequence. A node whose
+  runtime cannot enforce memory limits launches nothing unless the operator
+  allows it.
+- `test/fixtures/fake_driver.h`: a runtime in memory, for deterministic tests
+  with stepped clocks and no sleep.
+- `louhi-node` is not built yet: it becomes a Dannan node with the store
+  (the next steps). The real-container gate is a test instead.
+
+Gate on node-c (Pi 5, Debian 13, g++, Ninja, Release, warnings as
+errors, never throttled, Docker 26.1.5): `tools/ci.sh release` **118
+passed**, first run. Among them `AgentOnDocker.RunsAndStopsARealTask`: a
+busybox task placed on the node was launched through Docker, reported
+running, exited with 4 and was reported stopped with that reason, then
+wanted stopped and removed with its volume; nothing was left on the node. It
+ran with the memory override, because the Pi kernel has no memory controller
+(`ACTIVE.md`, "Waiting on the maintainer", 0).
+
 ## Step 2: the runtime driver (2026-11-15)
 
 The `louhi::runtime` subsystem: the container runtime as the agent sees it,

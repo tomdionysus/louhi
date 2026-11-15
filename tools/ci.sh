@@ -18,7 +18,8 @@
 # Builds go under build-ci/ (LOUHI_CI_OUT to move it), one job per CPU
 # (LOUHI_CI_JOBS to set it: 2 on the shared Pis). Dannan is fetched at the
 # pinned tag from the sibling checkout when there is one, else from its public
-# repository (LOUHI_DANNAN_REPOSITORY to name another); Lugh likewise, from
+# repository (LOUHI_DANNAN_REPOSITORY to name another), and Lir likewise
+# (LOUHI_LIR_REPOSITORY); Lugh, which is private, from
 # LOUHI_LUGH_REPOSITORY or the sibling, or not at all. Needs g++ cmake
 # ninja-build libboost-dev libssl-dev libyaml-cpp-dev libgtest-dev, and for
 # its step clang, clang-format or lcov.
@@ -34,6 +35,13 @@ if [ -z "${LOUHI_DANNAN_REPOSITORY:-}" ]; then
     LOUHI_DANNAN_REPOSITORY=$top/../dannan
   else
     LOUHI_DANNAN_REPOSITORY=https://github.com/tomdionysus/dannan.git
+  fi
+fi
+if [ -z "${LOUHI_LIR_REPOSITORY:-}" ]; then
+  if [ -d "$top/../lir/.git" ]; then
+    LOUHI_LIR_REPOSITORY=$top/../lir
+  else
+    LOUHI_LIR_REPOSITORY=https://github.com/tomdionysus/lir.git
   fi
 fi
 # Lugh is private: from LOUHI_LUGH_REPOSITORY or the sibling checkout, else
@@ -53,7 +61,7 @@ fi
 configure() {
   dir="$1"
   shift
-  cmake -S "$top" -B "$out/$dir" -G Ninja -DLOUHI_BUILD_TESTING=ON -DLOUHI_WARNINGS_AS_ERRORS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" $lugh "$@"
+  cmake -S "$top" -B "$out/$dir" -G Ninja -DLOUHI_BUILD_TESTING=ON -DLOUHI_WARNINGS_AS_ERRORS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" -DLOUHI_LIR_REPOSITORY="$LOUHI_LIR_REPOSITORY" $lugh "$@"
   cmake --build "$out/$dir" -j "$jobs"
 }
 

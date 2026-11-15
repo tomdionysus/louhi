@@ -30,7 +30,14 @@
 //              [--allow-without-user-namespaces]
 //              [--api-http HOST:PORT] [--api-https HOST:PORT --api-tls-chain FILE --api-tls-key FILE]
 //              [--lugh-issuer URL]... [--lugh-ca FILE]
+//              [--lir [--lir-tls [--lir-tls-trust FILE]]
+//               [--lir-client-id ID (--lir-client-key DER --lir-client-kid KID | --lir-client-secret S)]]
 //   louhi-node --version
+//
+// With --lir, events are published to Lir (design, "Events"), its nodes found
+// in Dannan's roster. With --lir-client-id, the node signs in to Lir with a
+// token from the first Lugh issuer, by the client-credentials grant; without
+// it, with no password.
 //
 // The API (design, "API and sign-on") is served when at least one Lugh
 // issuer and at least one of --api-http and --api-https are given; sign-in
@@ -51,11 +58,14 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <fstream>
 #include <future>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -67,6 +77,7 @@
 #include "louhi/api/api.h"
 #include "louhi/api/auth.h"
 #include "louhi/api/http.h"
+#include "louhi/events/events.h"
 #include "louhi/model/codec.h"
 #include "louhi/model/keys.h"
 #include "louhi/node/status.h"
@@ -75,6 +86,10 @@
 #include "louhi/version.h"
 #ifdef LOUHI_WITH_LUGH
 #include "louhi/auth/lugh.h"
+#include "louhi/auth/service_token.h"
+#endif
+#ifdef LOUHI_WITH_LIR
+#include "louhi/events/lir.h"
 #endif
 
 namespace {
@@ -114,6 +129,13 @@ struct Options {
   std::string api_tls_key;
   std::vector<std::string> lugh_issuers;
   std::string lugh_ca;
+  bool lir = false;
+  bool lir_tls = false;
+  std::string lir_tls_trust;
+  std::string lir_client_id;
+  std::string lir_client_key;
+  std::string lir_client_kid;
+  std::string lir_client_secret;
 };
 
 dannan::net::Endpoint endpoint(const std::string& text) {
@@ -158,6 +180,13 @@ dannan::config::Reader reader() {
   add("api.tls_key", Kind::value, "--api-tls-key", "the HTTPS certificate's key, PEM");
   add("lugh.issuer", Kind::list, "--lugh-issuer", "a trusted Lugh, as its tokens name it");
   add("lugh.ca", Kind::value, "--lugh-ca", "the roots the issuers' HTTPS chains to; the system's when absent");
+  add("lir.enabled", Kind::toggle, "--lir", "publish events to Lir, its nodes found in Dannan's roster");
+  add("lir.tls", Kind::toggle, "--lir-tls", "connect to Lir over TLS");
+  add("lir.tls_trust", Kind::value, "--lir-tls-trust", "the roots Lir's certificate chains to, PEM; the system's when absent");
+  add("lir.client_id", Kind::value, "--lir-client-id", "this node's Lugh client, for its token to Lir");
+  add("lir.client_key", Kind::value, "--lir-client-key", "the client's signing key, PKCS#8 DER (private_key_jwt)");
+  add("lir.client_kid", Kind::value, "--lir-client-kid", "the signing key's kid, as registered in Lugh");
+  add("lir.client_secret", Kind::value, "--lir-client-secret", "the client's secret (client_secret_basic); keep it in secrets.yaml");
   return out;
 }
 
@@ -194,10 +223,29 @@ Options parse(int argc, char** argv) {
   out.api_tls_key = settings.path_of("api.tls_key").value_or("");
   out.lugh_issuers = settings.list("lugh.issuer");
   out.lugh_ca = settings.path_of("lugh.ca").value_or("");
+  out.lir = settings.toggle("lir.enabled").value_or(false);
+  out.lir_tls = settings.toggle("lir.tls").value_or(false);
+  out.lir_tls_trust = settings.path_of("lir.tls_trust").value_or("");
+  out.lir_client_id = settings.text("lir.client_id").value_or("");
+  out.lir_client_key = settings.path_of("lir.client_key").value_or("");
+  out.lir_client_kid = settings.text("lir.client_kid").value_or("");
+  out.lir_client_secret = settings.text("lir.client_secret").value_or("");
   if (out.key.empty() || out.state.empty()) throw std::runtime_error("--key and --state are required");
+  if (!out.lir_client_id.empty()) {
+    if (out.lugh_issuers.empty()) throw std::runtime_error("--lir-client-id needs a --lugh-issuer to get its token from");
+    if (out.lir_client_key.empty() == out.lir_client_secret.empty())
+      throw std::runtime_error("--lir-client-id needs exactly one of --lir-client-key and --lir-client-secret");
+    if (!out.lir_client_key.empty() && out.lir_client_kid.empty()) throw std::runtime_error("--lir-client-key needs --lir-client-kid");
+  }
   if (out.api_https && (out.api_tls_chain.empty() || out.api_tls_key.empty())) throw std::runtime_error("--api-https needs --api-tls-chain and --api-tls-key");
   if ((out.api_http || out.api_https) && out.lugh_issuers.empty()) throw std::runtime_error("the API needs a --lugh-issuer: there is no anonymous sign-in");
   return out;
+}
+
+[[maybe_unused]] std::string read_file(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) throw std::runtime_error("cannot read " + path);
+  return std::string(std::istreambuf_iterator<char>(in), {});
 }
 
 uint64_t unix_ms() {
@@ -276,6 +324,59 @@ int main(int argc, char** argv) {
     louhi::agent::StoreReports reports(store, io.get_executor(), context.logger("louhi.reports"));
     louhi::runtime::docker::DockerDriver driver(io.get_executor(), options.docker_socket);
 
+    // Events on Lir, when asked for: the agent's reports and the node's status
+    // are published as well as stored.
+#ifdef LOUHI_WITH_LUGH
+    std::shared_ptr<louhi::auth::ServiceToken> service_token;
+#endif
+#ifdef LOUHI_WITH_LIR
+    std::unique_ptr<louhi::events::LirPublisher> lir;
+#endif
+    std::unique_ptr<louhi::events::Events> events;
+    std::unique_ptr<louhi::events::EventReports> event_reports;
+    if (options.lir) {
+#ifdef LOUHI_WITH_LIR
+      louhi::events::LirConfig lir_config;
+      lir_config.nodes = &context.nodes();
+      if (options.lir_tls) {
+        lir::client::Tls tls;
+        tls.trust = options.lir_tls_trust;
+        lir_config.tls = std::move(tls);
+      }
+      lir_config.client_id = "louhi-" + dannan::identity::to_string(self);
+      if (!options.lir_client_id.empty()) {
+#ifdef LOUHI_WITH_LUGH
+        louhi::auth::ServiceTokenConfig token;
+        token.issuer = options.lugh_issuers.front();
+        token.ca_path = options.lugh_ca;
+        token.identity.client_id = options.lir_client_id;
+        if (!options.lir_client_key.empty()) {
+          const std::string der = read_file(options.lir_client_key);
+          token.identity.method = lugh::client::ClientIdentity::Method::private_key_jwt;
+          token.identity.key = std::make_shared<const dannan::identity::SigningKey>(
+              dannan::identity::SigningKey::from_pkcs8(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(der.data()), der.size())));
+          token.identity.kid = options.lir_client_kid;
+        } else {
+          token.identity.method = lugh::client::ClientIdentity::Method::client_secret_basic;
+          token.identity.secret = std::make_shared<const dannan::identity::Secret>(
+              std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(options.lir_client_secret.data()), options.lir_client_secret.size()));
+        }
+        service_token = louhi::auth::ServiceToken::make(io, std::move(token), dannan::contract::system_wall_clock(), context.logger("louhi.token"));
+        lir_config.password = [service_token] { return service_token->current(); };
+#else
+        throw std::runtime_error("this build has no Lugh plugin, so it cannot get a token for Lir");
+#endif
+      }
+      lir = std::make_unique<louhi::events::LirPublisher>(io.get_executor(), std::move(lir_config), louhi::events::node_topic(self),
+                                                          dannan::contract::steady_time_source(), context.logger("louhi.lir"));
+      events = std::make_unique<louhi::events::Events>(*lir, self, dannan::contract::system_wall_clock());
+      event_reports = std::make_unique<louhi::events::EventReports>(reports, desired, *events);
+#else
+      throw std::runtime_error("this build has no Lir client, so it publishes no events");
+#endif
+    }
+    louhi::agent::Reports& agent_reports = event_reports ? static_cast<louhi::agent::Reports&>(*event_reports) : reports;
+
     louhi::agent::Policy policy;
     policy.allow_unenforced_memory = options.allow_unenforced_memory;
     policy.allow_without_user_namespaces = options.allow_without_user_namespaces;
@@ -286,10 +387,16 @@ int main(int argc, char** argv) {
                                   if (!failed) fn();
                                 });
                               }};
-    auto agent = std::make_shared<louhi::agent::Agent>(driver, desired, reports, self, clock, io.get_executor(), context.logger("louhi.agent"), policy);
+    auto agent = std::make_shared<louhi::agent::Agent>(driver, desired, agent_reports, self, clock, io.get_executor(), context.logger("louhi.agent"), policy);
 
     node.start();
     context.nodes().advertise("louhi", {});
+#ifdef LOUHI_WITH_LUGH
+    if (service_token) service_token->start();
+#endif
+#ifdef LOUHI_WITH_LIR
+    if (lir) lir->start();
+#endif
     // Desired state moving is a prompt to the agent, never the change itself.
     const auto tasks_watch = store.watch(louhi::model::tasks_prefix(""), io.get_executor(), [agent] { agent->poke(); });
     const auto definitions_watch = store.watch("taskdef/", io.get_executor(), [agent] { agent->poke(); });
@@ -300,7 +407,8 @@ int main(int argc, char** argv) {
     auto logger = context.logger("louhi.node");
 
     // The API, when an issuer and a listener are given.
-    louhi::api::Api api(store, dannan::contract::system_wall_clock(), self, io.get_executor(), context.logger("louhi.api"));
+    louhi::api::Api api(store, dannan::contract::system_wall_clock(), self, io.get_executor(), context.logger("louhi.api"), louhi::store::Deadline(10'000),
+                        events.get());
 #ifdef LOUHI_WITH_LUGH
     std::unique_ptr<louhi::auth::LughPlugin> lugh;
     std::unique_ptr<louhi::api::Authenticator> authenticator;
@@ -348,6 +456,7 @@ int main(int argc, char** argv) {
                     [logger, key](louhi::runtime::Result<louhi::runtime::Done> r) {
                       if (!r.ok()) logger.warn("writing " + key + ": " + r.error().message);
                     });
+          if (events) events->node_status(now);
           last = now;
         }
         say(std::string("{\"event\":\"status\",\"ready\":") + (now.ready ? "true" : "false") + ",\"tasks\":" + std::to_string(now.tasks) +
@@ -366,6 +475,20 @@ int main(int argc, char** argv) {
     std::promise<void> agent_stopped;
     agent->stop([&agent_stopped] { agent_stopped.set_value(); });
     if (agent_stopped.get_future().wait_for(60s) != std::future_status::ready) logger.warn("the agent's pass did not finish within 60 s; stopping anyway");
+#ifdef LOUHI_WITH_LIR
+    // A clean stop sends DISCONNECT, so the will does not run: the node's
+    // retained status is cleared here first, as the will would have.
+    if (lir) {
+      events->node_gone();
+      std::promise<void> lir_stopped;
+      lir->stop([&lir_stopped] { lir_stopped.set_value(); });
+      if (lir_stopped.get_future().wait_for(10s) != std::future_status::ready) logger.warn("Lir's client did not stop within 10 s; stopping anyway");
+      if (lir->dropped() > 0) logger.warn(std::to_string(lir->dropped()) + " events were not taken by Lir");
+    }
+#endif
+#ifdef LOUHI_WITH_LUGH
+    if (service_token) service_token->stop();
+#endif
     context.nodes().withdraw("louhi");
     node.stop();
     // The io threads end here, while everything their handlers name (the

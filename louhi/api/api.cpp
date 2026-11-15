@@ -16,6 +16,7 @@
 #include <set>
 
 #include "louhi/api/json.h"
+#include "louhi/events/events.h"
 #include "louhi/model/codec.h"
 #include "louhi/model/keys.h"
 #include "louhi/model/names.h"
@@ -103,8 +104,8 @@ Response error_response(unsigned status, std::string_view code, std::string_view
 }
 
 Api::Api(store::Store& store, const dannan::contract::WallClock& wall, model::NodeId self, store::Executor executor, dannan::status::ScopedLogger logger,
-         store::Deadline write_deadline)
-    : _store(store), _wall(wall), _self(self), _executor(std::move(executor)), _logger(std::move(logger)), _write_deadline(write_deadline) {}
+         store::Deadline write_deadline, events::Events* events)
+    : _store(store), _wall(wall), _self(self), _executor(std::move(executor)), _logger(std::move(logger)), _write_deadline(write_deadline), _events(events) {}
 
 void Api::answer(Done& done, Response response) {
   boost::asio::post(_executor, [done = std::move(done), response = std::move(response)]() mutable { done(std::move(response)); });
@@ -445,11 +446,12 @@ void Api::run_task(const Grant& grant, const Path& path, const Request& request,
   for (const auto& task : made) {
     const std::string key = model::key(task);
     gather->tasks.push_back(to_json(task));
-    write(key, model::encode(task), {200, json::value()}, [this, key, gather](Response response) {
+    write(key, model::encode(task), {200, json::value()}, [this, key, task, gather](Response response) {
       {
         dannan::contract::Lock lock(_admission);
         _pending_tasks.erase(key);
       }
+      if (response.status == 200 && _events) _events->task_run(task);
       if (response.status != 200 && !gather->failed) gather->failed = std::move(response);
       if (--gather->left > 0) return;
       if (gather->failed) return gather->done(std::move(*gather->failed));
@@ -513,7 +515,10 @@ void Api::stop_task(const Grant& grant, const Path& path, const Request& request
   task.desired = model::DesiredState::stopped;
   task.stop_reason = body.reason.empty() ? "stopped by " + grant.subject().substr(0, 256) : body.reason;
   task.validate();
-  write(model::key(task), model::encode(task), {200, to_json(task)}, std::move(done));
+  write(model::key(task), model::encode(task), {200, to_json(task)}, [this, task, done = std::move(done)](Response response) {
+    if (response.status == 200 && _events) _events->task_stop_requested(task);
+    done(std::move(response));
+  });
 }
 
 void Api::list_nodes(const Grant& grant, const Request& request, Done done) {

@@ -282,6 +282,35 @@ messages. Node joins and leaves are already on `$dannan/roster`. Lir
 carries notifications only: the truth is in Dagda, and a consumer that was
 away recovers from there.
 
+**The topics (step 8).** A project's topics sit under its own prefix, so a
+Lugh scope `lir:sub:louhi/projects/<project>/#` is exactly one project's
+events. Every payload is JSON as the API shows the record; ids as the API
+writes them. All QoS 1.
+
+| Topic | Retained | Publisher | Payload |
+|---|---|---|---|
+| `louhi/projects/{project}/tasks/{task}/nodes/{node}` | yes | the node running it | its TaskStatus, the last one kept (stopped) until the task record is removed, which nothing does yet |
+| `louhi/projects/{project}/events` | no | the node where it happened | `{"event", "task", "node", "at", "reason"}` |
+| `louhi/nodes/{node}` | yes | that node | its NodeStatus; cleared by its will when it goes |
+
+- Events: `task.run` and `task.stop_requested` from the API node that took
+  the request; `task.started`, `task.stopped` and `task.parked` from the
+  running node, on the change in its status. `service.*` come with step 7.
+- One writer per retained topic: the node is in every task status topic,
+  so a task that runs on two nodes for a moment (a placement that moved)
+  has two, and neither overwrites the other.
+- A node restarted republishes what it observes; an event may come twice,
+  and its `at` and the status's `sequence` tell a consumer which is newer.
+- Lir being away never holds up the agent: publishes are queued by
+  `lir::client` up to its bound, then dropped and counted.
+- `louhi-node` signs in to Lir with a Lugh access token of its own, fresh
+  at each CONNECT, granted `lir:pub:louhi/#` and `lir:retain:louhi/#`. It
+  gets the token by the client-credentials grant as a Lugh service
+  principal, proving itself by `private_key_jwt` (a PKCS#8 key on the node)
+  or `client_secret_basic` (a secret in `secrets.yaml`), the operator's
+  choice (the maintainer, 2026-11-15: both). With neither, it connects with no
+  password, for a Lir that allows anonymous clients.
+
 ### API and sign-on
 
 Louhi's own declarative HTTP API on any node (the maintainer: own API, AWS's

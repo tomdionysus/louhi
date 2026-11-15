@@ -1,41 +1,101 @@
 # Louhi - Active Work
 
-Last updated: 2026-11-15. `COMPLETED.md` is the record.
+Last updated: 2026-11-15 (end of session). `COMPLETED.md` is the record.
 
 ## Resume here
 
-**State.** `develop`, pushed to the private `tomdionysus/louhi` (the maintainer,
-2026-11-15: work autonomously, commit and push). Steps 0 (skeleton), 1
-(records and codecs), 2 (the runtime driver) and 3 (the node agent) are
-done; gates in `COMPLETED.md`. Dannan pinned at `0.8.1`.
+**State.** `develop`, pushed to the private `tomdionysus/louhi`. Steps 0 to 3
+are done: records and codecs, the Docker driver, the agent, the store
+interface with the in-memory store, and `louhi-node`; user namespaces and
+memory limits are enforced. Last gate: 136 passed on node-d, Docker
+tests included, under user namespaces. Dannan pinned at `0.8.1`.
 
-**The design** is [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md).
-It was checked against the stack document
-(`../dagda/TODO/2026-11-03-stack.md`) and the sibling code on 2026-11-15, and
-rewritten after that check to the maintainer's direction: ECS and Fargate style
-container compute with its networking and storage substrate, on a cluster we
-own. Read it before anything else here.
+**Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
+then this file's Decisions. the maintainer's standing instruction: work autonomously
+until he is needed, commit and push; decisions go to him as interactive
+questions with a recommendation.
 
-**How work is done.** No builds or test runs on the Mac. Builds and tests run
-on the shared Pi 5 build servers, claimed on the board first; the same
-machines are Louhi's test bed for real containers and overlays (the maintainer,
-2026-11-15). Hosts, addresses and the rules for touching them are in
-`CLAUDE.local.md`.
+**How work is done.** Nothing is built or run on the Mac. Builds and tests
+run on the shared Pi 5 build servers, claimed on the board first
+(`CLAUDE.local.md` has hosts and rules). `build/pi.sh <address> [step]
+[gtest filter]` (untracked) syncs the tree and Dannan's history to a Pi and
+runs a `tools/ci.sh` step there at `-j2` under `nice 19`. One board wait per
+session at a time: a second `claim-board wait` replaces the first; wait on
+several hosts in one command.
 
-`build/pi.sh <address> [step] [gtest filter]` (untracked) syncs the tree and
-Dannan's history to a Pi and runs a `tools/ci.sh` step there at `-j2` under
-`nice 19`. Claim the Pi first.
+## Next, in order
 
-**Next, in order:**
-1. Step 5: the API and `louhi-ctl` on `louhi-node` (done, `COMPLETED.md`):
-   register a definition, run a task (placed on the node that takes it until
-   step 6), read its status; the scope check and quota at admission.
-2. Step 4's second half, the Dagda store, waits on a Dagda ref (the maintainer: wait).
-3. Steps 6 (placement across nodes) and 9 (addresses) wait on Dannan 0.9.0's
-   agreement registers (the maintainer's placement decision).
-4. When Louhi reaches step 8: Lir's client is ready (below). It is on
-   Dannan 0.8.2 and a project links one Dannan, so Louhi repins to 0.8.2
-   (tagged) first.
+1. **Repin Dannan to `0.8.3`** (tagged and pushed), its own commit and gate.
+   Lugh's client and Lir's client are both on 0.8.3, and one process links
+   one Dannan.
+2. **Step 5: the API and `louhi-ctl`,** on `louhi-node`. What is decided:
+   - HTTP and JSON on Dannan's listener layer (`dannan/listen/listener.h`,
+     `StreamListener` handing up `listen::Stream`s), Beast's HTTP parser over
+     the stream with a body limit and a read deadline. Lir's
+     `lir/http/http.cpp` is the pattern (an `Exchange` per connection, the
+     listener on a strand, stop in two steps); read it, do not copy it.
+   - Sign-in: the Lugh plugin only, no anonymous mode. `lugh_client`
+     (`../lugh`, target `lugh::client`, fetched with `LUGH_BUILD_NODE=OFF`;
+     it takes the Dannan the build already has) verifies access tokens
+     offline with `Verifier` and `HttpsKeySource`. Lir's `lir/auth/lugh.h`
+     is the shape. Tests sign real tokens with `lugh/client/testing.h`.
+   - Authorisation: the token's own claims, as Lir does. Audience "louhi";
+     scopes `louhi:<project>:<action>` and `louhi:admin`; a grant lasts until
+     exp. Not Dannan's `Identity::verify`, which answers only from a Lugh
+     scope source in the same process.
+   - Projects and quotas are created and set through the API, `louhi:admin`
+     only.
+   - Quota at admission: checked on the node that takes the request (single
+     node); cross-node admission is agreement's, step 6.
+   - Run task places on the node that takes it until step 6.
+   - Endpoints, AWS vocabulary: register a task definition, run a task, stop
+     it, describe and list tasks and statuses, put a project and its quota.
+     Write the endpoint list into the design's "API and sign-on" before
+     coding, and ask the maintainer only what it leaves open.
+   - Watch out: `lugh_client` compiles Boost.JSON's `src.hpp` and so does
+     Louhi (`runtime/docker/boost_json.cpp`); linking both may define it
+     twice. Settle it at the first build (probably by Louhi dropping its own
+     when it links `lugh::client`).
+3. **Step 4's second half**, the Dagda store, waits on a Dagda ref.
+4. **Steps 6 and 9** wait on Dannan 0.9.0's agreement registers.
+5. **Step 8:** pin Lir `6b23268` (needs Dannan 0.8.3) and link
+   `lir::client` with `-DLIR_BUILD_SERVER=OFF`. Lir's notes: `Tls` is
+   declared in `client.h`; a QoS 0 publish's done fires once handed to the
+   connection.
+
+## The build Pis
+
+| Host | Docker | User namespaces | Memory controller | Standing services |
+|---|---|---|---|---|
+| node-b | yes | **no** (to do) | on | lir-node, scheduler |
+| node-c | yes | yes | on | lir-node, scheduler, redis |
+| node-d | yes | yes | on | lir-node (a fourth Lir node since 2026-11-15) |
+| node-a | **no** (to do) | **no** | **off** (to do) | lir-node, scheduler (the acting one) |
+
+Still owed, all at the maintainer's go already given:
+- **node-a:** install Docker (`docker.io`, `docker-cli`; save the
+  nft ruleset first to `/root/louhi-work/nft-before-docker.txt`), set
+  `userns-remap: default` in `/etc/docker/daemon.json`, add
+  `cgroup_enable=memory` to `/boot/firmware/cmdline.txt` (copy first to
+  `/root/louhi-work/cmdline.txt.before`), one reboot. Lir (2026-11-15,
+  late): its lir-node upgrades are postponed and it will message Louhi
+  before doing them, so node-a need not wait on Lir; the standing cluster
+  has four nodes, so 3 of 4 stay up. If Lir has since said it is upgrading,
+  do not overlap. Post a note, claim the whole machine (cores "all",
+  until about 20 minutes out) and reboot. Checks after (the Lir Development
+  Cluster session's): `systemctl is-active lir-node
+  claim-board-scheduler`; `journalctl -u claim-board-scheduler -n 3 -o
+  cat` says "acting" on node-a, and node-b's log goes back to "standing
+  by: node-a acts"; `curl -s
+  'http://192.0.2.10:8183/retained?filter=stack/%23'` returns the same
+  as another node's. Node-a logged 110 under-voltage events in 24 h: if it
+  is slow to come back, suspect its power supply first. Tell Lir when done.
+- **node-b:** `userns-remap: default` and `systemctl restart docker`
+  when node-b is unclaimed, with a note; no reboot. Then check `docker info`
+  shows `name=userns`.
+
+Previous settings are kept in `/root/louhi-work/` on each Pi
+(`cmdline.txt.before`, `daemon.json.before`, `nft-before-docker.txt`).
 
 ## Principles
 
@@ -51,153 +111,53 @@ Dannan's history to a Pi and runs a `tools/ci.sh` step there at `-j2` under
 
 ## Decisions
 
-All the maintainer's, 2026-11-15, in the order given. A later one overrides an earlier
-one where they differ.
+All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is in git.
 
-- Louhi is the compute part of the stack: Dannan networking, Dagda storage,
-  Lugh auth, Lir events, Louhi compute.
-- Dannan is not to change for Louhi; Louhi might use it.
-- The build cluster's Pi 5 machines are also a test bed for Louhi.
-- Stack dialect, GPLv3, the stack layout.
-- **Runtime:** the Docker Engine API over its local socket is the first
-  driver, behind an interface.
-- **Node platform:** Linux only.
-- **Docker on the build Pis:** yes, on all four.
-- **Scheduling:** wait for the store. Put back to the maintainer after the check; see
-  "Waiting on the maintainer", 1.
-- **MQTT client:** Lir exports one; Louhi does not write its own.
-- **Overlay carrier:** both. A kernel tunnel where two nodes reach each
-  other directly, Dannan frames otherwise.
-- **Tenancy:** public tenants from the start. See "Waiting on the maintainer", 2.
-- **API:** Louhi's own, declarative, with AWS's vocabulary; no Kubernetes or
-  EC2 compatibility.
-- **Workload identity:** deferred.
+- **Scope:** Louhi is the stack's compute layer (Dannan networking, Dagda
+  storage, Lugh auth, Lir events, Louhi compute): ECS and Fargate style
+  container compute with the networking and storage substrate to enable it.
+- **The cluster is owned by us;** every node is trusted. Trusted hosts and
+  contributed machines are for later, and nothing built may close that off.
+- **Dannan is not to change for Louhi;** Louhi uses it as it stands.
+- Stack dialect, GPLv3, the stack layout; tagline "Louhi - The Distributed
+  Compute Layer".
+- **Runtime:** the Docker Engine API over its local socket, behind an
+  interface. **Node platform:** Linux only.
 - **Sandbox:** hardened containers now, the runtime interface shaped for a
-  microVM driver later.
-- **Tagline:** "Louhi - The Distributed Compute Layer".
-- **Focus:** ECS and Fargate style distributed container compute, and the
-  networking and storage substrate to enable it.
-- **The cluster is owned by us.** Every node is trusted. Trusted hosts and
-  contributed machines are for later.
-- **Placement (replaces "wait for the store"):** Dannan's placement
-  functions now; a single scheduler on a lease revisited later.
-- **Tenants (replaces "public tenants"):** our own projects, each with
-  enforced quotas from the start.
-- **Persistent volumes:** what they are made of is decided later.
-- **Kernel tunnel:** WireGuard with a VPC tag inside.
-- **Placement (replaces "placement functions now"):** a register per task in
-  Dannan's agreement (0.9.0): any node proposes, agreement settles one node,
-  no scheduler. Dannan's `changed_at` is the fencing token handed to run_once
-  tasks. The same primitive serves address allocation and quota admission.
-  Nothing that places tasks across nodes (step 6) or allocates addresses
-  (step 9) is built until 0.9.0; single-node work, `louhi-node` and the API go
-  on.
-- **Memory controller:** `cgroup_enable=memory` on all four Pis, each
-  rebooted while unclaimed, with a board note first.
-- **Docker on node-a and node-b:** install now.
-- **User namespaces:** enforced. The agent refuses tasks on a runtime
-  without them unless the operator allows it, as for memory; Louhi turns on
-  `userns-remap` on the Docker Pis, each when unclaimed, with a board note.
+  microVM driver later. **Memory limits and user namespaces are enforced:**
+  the agent launches nothing on a runtime lacking either unless the
+  operator allows it.
+- **Placement:** a register per task in Dannan's agreement (0.9.0): any node
+  proposes, agreement settles one node, no scheduler. Dannan's `changed_at`
+  is the fencing token handed to run_once tasks. The same primitive serves
+  address allocation and quota admission across nodes. Nothing that places
+  tasks across nodes (step 6) or allocates addresses (step 9) is built
+  before 0.9.0; no stand-in meanwhile (the maintainer's ruling on agreement).
+- **Tenants:** our own projects, each with enforced quotas from the start.
+  Projects and quotas are created through the API by `louhi:admin` only.
+- **API:** Louhi's own, declarative, AWS's vocabulary; no Kubernetes or EC2
+  compatibility. Sign-in by the Lugh plugin only, no anonymous mode;
+  authorisation from the token's audience ("louhi") and scopes, as Lir does.
+- **Workload identity:** deferred.
+- **MQTT client:** Lir's exported client; Louhi writes none.
+- **Overlay carrier:** both: WireGuard (with a VPC tag inside) where two
+  nodes reach each other directly, Dannan frames otherwise.
+- **Persistent volumes:** what they are made of is decided later (step 14).
+- **The build Pis** are also Louhi's test bed: Docker, user namespaces and
+  the memory controller on all four.
 
 ## Waiting on the maintainer
 
-A. **Placement against the agreement ruling.** Decided by the maintainer on
-   2026-11-15: a register per task in Dannan's agreement (see "Decisions").
-   Kept below as the record of how it was reached. the maintainer's ruling, relayed by
-   Dannan on 2026-11-15: anything that can use consensus or agreement waits
-   for Dannan's agreement primitive (CASPaxos registers, 0.9.0,
-   `../dannan/TODO/2026-11-15-agreement-design.md`), with no consensus,
-   lease standing in for it, or workaround built meanwhile. Louhi's earlier
-   decision was "Dannan's placement functions now, a scheduler on a lease
-   later", which accepts a task briefly running twice. The two may conflict.
-   Recommend: task placement as a register per task in Dannan's agreement
-   (any node proposes, agreement picks one node; no scheduler at all), with
-   the placement's fencing token handed to the task for run_once side
-   effects; and the same primitive for address allocation and quota
-   admission. Until 0.9.0, build nothing that places tasks across nodes
-   (step 6) or allocates addresses (step 9); single-node work, `louhi-node`
-   and the API go on. Louhi told Dannan it needs a fencing token and
-   described these uses (2026-11-15); nothing is decided until the maintainer rules.
-   Dannan's answer: a strict read commits under the reader's own ballot, so
-   that ballot is no token; Dannan added `changed_at` to its design, the
-   ballot of the last change that altered a name's value, kept by identity
-   changes and reported per name in `Outcome`: monotonic, never reused,
-   stable for a value's life, comparable by a third party with an encoding
-   provided. That is the token; Louhi's own `placement_epoch` inside the
-   value would also serve, needing nothing of Dannan.
-0. **Memory limits on the build Pis.** the maintainer, 2026-11-15: on all four, and
-   ask the Lir Development Cluster session for a moment before rebooting
-   node-a, node-b or node-c, each of which runs a standing `lir-node` and a
-   claim-board scheduler replica (node-d runs neither and goes first, when
-   unclaimed). Node-b and node-d done; node-c, then node-a last. Lir (the broker's session)
-   agrees to a rolling reboot: one node at a time, each only when it has no
-   claims; before the next, every `$lir/nodes/<id>` reads majority 3 of 3 and
-   the claim board answers; node-a last, because the board is reached at
-   node-a's `lir-node`. Before that, the Raspberry Pi kernel boots with
-   `cgroup_disable=memory` (seen in `/proc/cmdline` on node-c;
-   `/sys/fs/cgroup/cgroup.controllers` is `cpuset cpu io pids`), so Docker
-   discards every container's memory limit with only a warning. A node that
-   cannot limit memory cannot keep one task from starving the others or the
-   node. The fix is `cgroup_enable=memory` added to
-   `/boot/firmware/cmdline.txt` and a reboot, per Pi: the maintainer's hardware and
-   disruptive to every session, so not done. Recommend doing it on the
-   machines Louhi tests on. Until then Louhi's node will refuse tasks there
-   unless started with an explicit operator override, which the tests will
-   use. Needed properly by step 3's real-container gate.
-1. **Docker on node-a and node-b.** the maintainer, 2026-11-15:
-   install now. node-b done that day (26.1.5, hello-world ran, its
-   nft ruleset was empty before, `lir-node` and the scheduler unaffected).
-   node-a was held for a measured whole-machine run; it waits until
-   free. Before that: installed on
-   node-c and node-d on 2026-11-15 (Debian `docker.io` and
-   `docker-cli`, 26.1.5; a hello-world container ran on each; the nft
-   ruleset from before is in `/root/louhi-work/nft-before-docker.txt` on
-   each). Node-a and node-b were held by other sessions and are not done.
-   Two machines are enough until multi-node work at step 6.
-2. **Dagda ref.** the maintainer, 2026-11-15: wait, no change to Dagda's order of
-   work; nothing of Louhi's is blocked until step 4. Dagda says 0.2.0
-   has every-node head spaces, `Heads::watch` and
-   `lease::ClaimedCollection`, is tagged locally and held at the maintainer's ruling
-   while Macha's port goes first; pushing it is the maintainer's call and could be
-   today. 0.1.5 is pushed and pinnable now but is on Dannan 0.6 and has no
-   watch. A 0.2.x with the port fixes is days away. Dagda's caution:
-   claimed collections stand on leases, which order work on one node only
-   today, so their uniqueness across nodes must be read in
-   `dagda/lease/claimed_collection.h` before Louhi relies on it for task
-   addresses. Step 4 waits on this.
-3. **Lir's client library.** the maintainer gave the go on 2026-11-15 and Louhi passed
-   it to Lir, saying Lir may want it from the maintainer directly. Lir says it is one
-   to two sessions, independent of Dagda and of Lir's release gate; Louhi
-   would pin a Lir commit. One dependency: whether Dannan has an outbound
-   TLS stream connector, the counterpart of its listener. the maintainer allowed Louhi
-   to ask Dannan as a question only; asked 2026-11-15, the answer goes to
-   Lir. If there is none, what follows is the maintainer's, since Dannan is not to
-   change for Louhi. Lir, later on 2026-11-15: the maintainer approved the client
-   directly in Lir's session. **Ready**: `lir::client` on Lir's develop at
-   `542517c` (351 passed on a Pi), not pushed, so fetched from the sibling
-   checkout; FetchContent Lir at that commit with `-DLIR_BUILD_SERVER=OFF`
-   and link `lir::client` (`lir/client/client.h`). Lir is on Dannan 0.8.2.
-   Its outbound connection moves onto Dannan's StreamConnector when that
-   0.8 patch ships, with the API unchanged. Nothing waits on the maintainer here now.
-   Lir, later on 2026-11-15: the client now runs on Dannan 0.8.3's
-   StreamConnector at Lir `6b23268` (pushed; the Lir repository is public).
-   Pin that in place of `542517c`; it needs Dannan 0.8.3. Two changes: `Tls`
-   is declared in `client.h`, and a QoS 0 publish's done fires once handed to
-   the connection.
-4. **What a persistent volume is made of.** the maintainer decides later; step 14.
+1. **Dagda ref.** the maintainer: wait. Dagda 0.2.0 (every-node head spaces,
+   `Heads::watch`, `lease::ClaimedCollection`) is tagged locally and held at
+   the maintainer's ruling. Dagda's caution: claimed collections stand on leases, which
+   order work on one node only today. Step 4's second half waits on this.
+2. **Under-voltage:** node-a (110 events in 24 h) and node-d
+   report `throttled=0x50000`. Builds pass; the maintainer's hardware, reported only.
 
-## The ordered work
+## Owed at the first release gate
 
-The steps and what each delivers are in the design, "Order of work".
-
-Steps 0 and 1 are done (`COMPLETED.md`).
-
-**Owed at the first release gate:** build and run the two fuzz targets
-(`record`, `image_reference`) with clang, once each for
-`-max_total_time=60`; the `clang`, `asan`, `tsan` and `coverage` steps on a
-Pi. Hosted CI runs them on every push meanwhile.
-
-**Hardware note:** node-a and node-d both report
-`throttled=0x50000` (under-voltage has occurred since boot). Builds have
-passed on both; it is the maintainer's hardware to look at, and is reported, not
-acted on.
+Build and run the three fuzz targets (`record`, `image_reference`,
+`docker_reply`) with clang, `-max_total_time=60` each; the `clang`, `asan`,
+`tsan` and `coverage` steps on a Pi. Hosted CI runs them on every push
+meanwhile.

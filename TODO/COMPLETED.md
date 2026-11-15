@@ -17,6 +17,10 @@ The record, newest first. `ACTIVE.md` is the plan.
   the Lir Development Cluster session's checks passed (lir-node and the
   scheduler active, standing by for node-a, the board answering alike). Its
   userns-remap is still to do (a Docker restart).
+- node-c: `cgroup_enable=memory` and `userns-remap: default`, one
+  reboot, the same checks passed (lir-node, scheduler, Docker and redis
+  active; standing by for node-a; the board answering alike).
+- node-a is still to do (`ACTIVE.md`, "The build Pis").
 
 Gate on node-d (Pi 5, g++, Release, warnings as errors, never
 throttled, Docker 26.1.5 with user namespaces, memory controller on):

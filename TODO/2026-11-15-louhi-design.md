@@ -290,12 +290,17 @@ listener layer with Louhi's own HTTP on top, as the stack settled.
 Register a task definition, run a task, create or update a service, read
 and list, watch.
 
-Authentication is pluggable, as everywhere in the stack: a Lugh plugin
-verifies access tokens in-process with `lugh_client`, and Louhi builds
-without it. Authorisation goes through Dannan's `Identity::verify` against
-a prefix that names the project and the action, which is the seam the stack
-settled for every hosted system. A command-line tool, `louhi-ctl`, signs in
-by the device flow. Tasks get no Lugh identity for now (the maintainer: deferred).
+Sign-in is by the Lugh plugin only, with no anonymous mode (the maintainer,
+2026-11-15): `lugh_client` verifies access tokens in process, offline,
+against keys it fetches from each trusted issuer. Authorisation is from the
+verified token itself, as Lir's is (the maintainer, 2026-11-15): "louhi" among its
+audiences, and its scope claim granting `louhi:<project>:<action>` or
+`louhi:admin`, until its exp. Dannan's `Identity::verify` is not used: it
+answers only from a Lugh scope source installed in the same process, and
+`louhi-node` hosts no Lugh. Projects and their quotas are created and set
+through the API by `louhi:admin` only. A command-line tool, `louhi-ctl`,
+signs in by the device flow. Tasks get no Lugh identity for now (the maintainer:
+deferred).
 
 A principal disabled in Lugh keeps access until its token expires (five
 minutes by default). Lugh has designed, not built, principal-change events

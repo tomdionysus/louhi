@@ -5,9 +5,10 @@ Last updated: 2026-11-15. `COMPLETED.md` is the record.
 ## Resume here
 
 **State.** `develop`, pushed to the private `tomdionysus/louhi` (the maintainer,
-2026-11-15: work autonomously, commit and push). Step 0 (skeleton) and step
-1 (records and codecs) are done; gates in `COMPLETED.md`. Dannan pinned at
-`0.8.1`. Step 2, the runtime driver, is next.
+2026-11-15: work autonomously, commit and push). Steps 0 (skeleton), 1
+(records and codecs) and 2 (the runtime driver) are done; gates in
+`COMPLETED.md`. Dannan pinned at `0.8.1`. Step 3, the node and its agent, is
+next.
 
 **The design** is [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md).
 It was checked against the stack document
@@ -27,14 +28,15 @@ Dannan's history to a Pi and runs a `tools/ci.sh` step there at `-j2` under
 `nice 19`. Claim the Pi first.
 
 **Next, in order:**
-1. Step 2: the runtime driver. The interface (`runtime::Driver`), a fake,
-   and the Docker Engine driver over the local socket with Beast and
-   Boost.JSON (Dannan confirmed its stream type is TCP only, so plain Asio's
-   local stream socket is the route), with the hardened profile and limits,
-   and a fuzz target for the daemon's replies. Its tests against a real
-   daemon run on node-c or node-d.
-2. Step 3: `louhi-node` and the agent on one node.
-3. When Louhi reaches step 8: Lir's client is ready (below). It is on
+1. Step 3: `louhi-node` and the agent on one node. A fake driver
+   (test fixture), the reconciler from an in-memory store with placement
+   named by the operator, restart with backoff, a budget and a parked state
+   (discipline 2), recovery from the runtime alone after a restart
+   (disciplines 1 and 3), events only as prompts to re-list. The node
+   describes its runtime at start and refuses to run tasks that need a limit
+   the runtime cannot enforce, unless the operator says otherwise; that is
+   the build Pis today (below). First real container on a Pi.
+2. When Louhi reaches step 8: Lir's client is ready (below). It is on
    Dannan 0.8.2 and a project links one Dannan, so Louhi repins to 0.8.2
    (tagged) first.
 
@@ -89,6 +91,17 @@ one where they differ.
 
 ## Waiting on the maintainer
 
+0. **Memory limits on the build Pis.** The Raspberry Pi kernel boots with
+   `cgroup_disable=memory` (seen in `/proc/cmdline` on node-c;
+   `/sys/fs/cgroup/cgroup.controllers` is `cpuset cpu io pids`), so Docker
+   discards every container's memory limit with only a warning. A node that
+   cannot limit memory cannot keep one task from starving the others or the
+   node. The fix is `cgroup_enable=memory` added to
+   `/boot/firmware/cmdline.txt` and a reboot, per Pi: the maintainer's hardware and
+   disruptive to every session, so not done. Recommend doing it on the
+   machines Louhi tests on. Until then Louhi's node will refuse tasks there
+   unless started with an explicit operator override, which the tests will
+   use. Needed properly by step 3's real-container gate.
 1. **Docker on node-a and node-b.** Installed on
    node-c and node-d on 2026-11-15 (Debian `docker.io` and
    `docker-cli`, 26.1.5; a hello-world container ran on each; the nft

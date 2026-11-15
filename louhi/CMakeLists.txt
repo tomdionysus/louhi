@@ -15,6 +15,12 @@ add_library(louhi SHARED
   model/keys.cpp
   model/names.cpp
   model/records.cpp
+  runtime/docker/api.cpp
+  runtime/docker/boost_json.cpp
+  runtime/docker/docker_driver.cpp
+  runtime/docker/local_http.cpp
+  runtime/driver.cpp
+  runtime/labels.cpp
   version.cpp
 )
 target_include_directories(louhi

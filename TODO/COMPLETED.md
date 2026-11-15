@@ -2,6 +2,57 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Step 2: the runtime driver (2026-11-15)
+
+The `louhi::runtime` subsystem: the container runtime as the agent sees it,
+and the Docker Engine driver.
+
+- `runtime/driver.h`: the `Driver` contract in Louhi's terms (describe,
+  pull, volumes, create, start, stop, remove, list, watch), every operation
+  with a deadline and the caller's executor, completing once, posted, never
+  inline; `Result<T>` with an `Error` kind (unavailable, refused, not found,
+  timed out, malformed). `RuntimeInfo` says which limits the node can
+  enforce.
+- `runtime/labels.h`: the labels and names Louhi gives what it makes, so a
+  node re-derives what it runs from the runtime alone.
+- `runtime/docker/api.h`: the Docker Engine API (v1.41) as pure functions.
+  The hardened profile: Docker's network off, no privilege, all capabilities
+  dropped but eight, no new privileges, Docker's seccomp left on, an init,
+  private IPC, no restart policy, CPU, memory and process limits always set,
+  no swap, volume mounts only, never a host path. Scratch volumes are bounded
+  tmpfs. Strict, bounded parsers for every reply, the pull progress stream
+  and the event stream (Louhi's containers only).
+- `runtime/docker/local_http.h`: HTTP/1.1 over the daemon's local socket
+  with Boost.Beast, one connection per request, a deadline on each, bounded
+  replies and stream lines, cancellable streams.
+- `runtime/docker/docker_driver.h`: the driver; a name or id that goes into
+  a request path is checked first, so no caller can change the endpoint.
+- Fuzz target `docker_reply` (every reply parser on any bytes). Not yet run
+  (owed at the release gate).
+
+Gate on node-c (Pi 5, Debian 13, g++, Ninja, Release, warnings as
+errors, never throttled, Docker 26.1.5): `tools/ci.sh release` **96
+passed**, the seven driver tests among them run against the real daemon
+(pull with digest, the hardened profile as the daemon records it, start,
+list by label, the event stream with an exit code, stop, remove, a name in
+use refused, a path-changing name refused unsent). Nothing was left behind
+on the node (no Louhi containers or volumes; the busybox:1.36 image is kept
+as a cache). Hosted CI on the previous push passed every job.
+
+Found on the way, each fixed with its test:
+- A complete stream line over its bound slipped through when its newline
+  came in the same read (a bug; the test was right).
+- The chunked-stream test's data had one chunk size miscounted (the test was
+  wrong).
+- **The Pi kernel boots with `cgroup_disable=memory`**: Docker on the build
+  Pis discards memory limits without an error (`Memory: 0` in the record,
+  "WARNING: No memory limit support"). The driver now reports
+  `limits_memory`, `limits_swap`, `limits_cpu` and `limits_pids`, and the
+  test asserts that a node saying it cannot limit memory indeed records none.
+  Fixing the node is the maintainer's (`ACTIVE.md`, "Waiting on the maintainer").
+- CodeQL's upload failed on the private repository for want of
+  `actions: read` (`ade032c`).
+
 ## Step 1: records and codecs (2026-11-15)
 
 The `louhi::model` subsystem: every record of the design's "Records" as a

@@ -29,7 +29,9 @@ find_package(Threads REQUIRED)
 
 # Dannan, the network layer, at its tag, cloned from the sibling checkout
 # into the build tree, so building Louhi never touches ../dannan.
-set(LOUHI_DANNAN_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dannan" CACHE PATH "Dannan's repository")
+# A string, not a path: CI names a URL, which a PATH cache entry would turn
+# into a directory under the source tree.
+set(LOUHI_DANNAN_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dannan" CACHE STRING "Dannan's repository: a directory or a URL")
 # Not a cache variable: a moved pin must take effect in a build tree that
 # already exists.
 set(LOUHI_DANNAN_TAG "0.8.1")

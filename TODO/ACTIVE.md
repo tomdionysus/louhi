@@ -32,7 +32,9 @@ Dannan's history to a Pi and runs a `tools/ci.sh` step there at `-j2` under
    (`../lir/tools/lir_node.cpp` is the pattern to read). The store
    interface, in-memory store and the agent's bindings are done.
 2. Step 4's second half, the Dagda store, waits on a Dagda ref (the maintainer: wait).
-2. When Louhi reaches step 8: Lir's client is ready (below). It is on
+3. Steps 6 (placement across nodes) and 9 (addresses) wait on Dannan 0.9.0's
+   agreement registers (the maintainer's placement decision).
+4. When Louhi reaches step 8: Lir's client is ready (below). It is on
    Dannan 0.8.2 and a project links one Dannan, so Louhi repins to 0.8.2
    (tagged) first.
 
@@ -84,10 +86,22 @@ one where they differ.
   enforced quotas from the start.
 - **Persistent volumes:** what they are made of is decided later.
 - **Kernel tunnel:** WireGuard with a VPC tag inside.
+- **Placement (replaces "placement functions now"):** a register per task in
+  Dannan's agreement (0.9.0): any node proposes, agreement settles one node,
+  no scheduler. Dannan's `changed_at` is the fencing token handed to run_once
+  tasks. The same primitive serves address allocation and quota admission.
+  Nothing that places tasks across nodes (step 6) or allocates addresses
+  (step 9) is built until 0.9.0; single-node work, `louhi-node` and the API go
+  on.
+- **Memory controller:** `cgroup_enable=memory` on all four Pis, each
+  rebooted while unclaimed, with a board note first.
+- **Docker on node-a and node-b:** install now.
 
 ## Waiting on the maintainer
 
-A. **Placement against the agreement ruling.** the maintainer's ruling, relayed by
+A. **Placement against the agreement ruling.** Decided by the maintainer on
+   2026-11-15: a register per task in Dannan's agreement (see "Decisions").
+   Kept below as the record of how it was reached. the maintainer's ruling, relayed by
    Dannan on 2026-11-15: anything that can use consensus or agreement waits
    for Dannan's agreement primitive (CASPaxos registers, 0.9.0,
    `../dannan/TODO/2026-11-15-agreement-design.md`), with no consensus,
@@ -109,7 +123,15 @@ A. **Placement against the agreement ruling.** the maintainer's ruling, relayed 
    stable for a value's life, comparable by a third party with an encoding
    provided. That is the token; Louhi's own `placement_epoch` inside the
    value would also serve, needing nothing of Dannan.
-0. **Memory limits on the build Pis.** The Raspberry Pi kernel boots with
+0. **Memory limits on the build Pis.** the maintainer, 2026-11-15: on all four, and
+   ask the Lir Development Cluster session for a moment before rebooting
+   node-a, node-b or node-c, each of which runs a standing `lir-node` and a
+   claim-board scheduler replica (node-d runs neither and goes first, when
+   unclaimed). Asked; waiting on its answer. Lir (the broker's session)
+   agrees to a rolling reboot: one node at a time, each only when it has no
+   claims; before the next, every `$lir/nodes/<id>` reads majority 3 of 3 and
+   the claim board answers; node-a last, because the board is reached at
+   node-a's `lir-node`. Before that, the Raspberry Pi kernel boots with
    `cgroup_disable=memory` (seen in `/proc/cmdline` on node-c;
    `/sys/fs/cgroup/cgroup.controllers` is `cpuset cpu io pids`), so Docker
    discards every container's memory limit with only a warning. A node that
@@ -120,7 +142,11 @@ A. **Placement against the agreement ruling.** the maintainer's ruling, relayed 
    machines Louhi tests on. Until then Louhi's node will refuse tasks there
    unless started with an explicit operator override, which the tests will
    use. Needed properly by step 3's real-container gate.
-1. **Docker on node-a and node-b.** Installed on
+1. **Docker on node-a and node-b.** the maintainer, 2026-11-15:
+   install now. node-b done that day (26.1.5, hello-world ran, its
+   nft ruleset was empty before, `lir-node` and the scheduler unaffected).
+   node-a was held for a measured whole-machine run; it waits until
+   free. Before that: installed on
    node-c and node-d on 2026-11-15 (Debian `docker.io` and
    `docker-cli`, 26.1.5; a hello-world container ran on each; the nft
    ruleset from before is in `/root/louhi-work/nft-before-docker.txt` on

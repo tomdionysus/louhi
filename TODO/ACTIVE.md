@@ -102,7 +102,11 @@ one where they differ.
    TLS stream connector, the counterpart of its listener. the maintainer allowed Louhi
    to ask Dannan as a question only; asked 2026-11-15, the answer goes to
    Lir. If there is none, what follows is the maintainer's, since Dannan is not to
-   change for Louhi. Step 8 waits on this.
+   change for Louhi. Step 8 waits on this. Lir, later on 2026-11-15: the maintainer
+   approved the client and its interface directly in Lir's session and Lir
+   has started; Dannan is adding an outbound stream connector as a 0.8
+   patch, and Lir builds on a small local seam until it lands. Lir will
+   send the commit to pin when its gate passes.
 4. **What a persistent volume is made of.** the maintainer decides later; step 14.
 
 ## The ordered work

@@ -4,8 +4,8 @@ Last updated: 2026-11-15 (end of session). `COMPLETED.md` is the record.
 
 ## Resume here
 
-**State.** `develop`, local: the session's push was refused (see "Waiting on
-the maintainer"). Steps 0 to 3 and 5 are done: records and codecs, the Docker driver,
+**State.** `develop`, pushed to `tomdionysus/louhi`, public since
+2026-11-15 at the maintainer's word. Steps 0 to 3 and 5 are done: records and codecs, the Docker driver,
 the agent, the store interface with the in-memory store, `louhi-node`, and
 the API with sign-in by the Lugh plugin and `louhi-ctl`. Last gate: 200
 passed on node-c, Docker tests included, against Dannan `0.8.3`
@@ -127,9 +127,6 @@ All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is 
 
 ## Waiting on the maintainer
 
-0. **Pushing.** The session's push of `develop` was refused by the
-   permission check on 2026-11-15; the commits since `b2bd30e` are local
-   until the maintainer pushes or allows it.
 0. **Hosted CI and Lugh.** Lugh is private, so hosted CI builds Louhi with
    `LOUHI_BUILD_LUGH=OFF` (no plugin, no API, no `louhi-ctl`). To build the
    plugin there, the repository needs a read token for Lugh as a secret, as

@@ -9,8 +9,9 @@ Last updated: 2026-11-16 (end of session). `COMPLETED.md` is the record.
 records and codecs, the Docker driver, the agent, the store interface with
 the in-memory store, `louhi-node`, the API with sign-in by the Lugh plugin
 and `louhi-ctl`, events on Lir, and images by digest with storage bounds.
-Last gate: 237 passed on node-c, Docker tests included. Pins:
-Dannan `0.8.3`, Lugh `382416d`, Lir `4443c16`.
+Last gate: 238 passed on node-c, Docker on xfs with project quotas,
+so storage bounds are kept for real. Pins: Dannan `0.8.3`, Lugh `382416d`,
+Lir `4443c16`.
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -29,56 +30,51 @@ session: a second `claim-board wait` replaces the first.
 
 ## Next, in order
 
-1. **Step 13, owed:** a storage bound kept by a real runtime, which needs a
-   Pi with `/var/lib/docker` on xfs with `pquota` (waits on the maintainer, below);
-   a private registry signed in to for real. The image store on Dagda is
-   step 13's second half and waits on the Dagda ref.
+1. **Tests of their own for `louhi-ctl` and `ServiceToken`**
+   (`louhi/auth/service_token.h`), against fakes (the maintainer, 2026-11-16: next).
 2. **Owed, end to end:** `louhi-ctl login` against a real Lugh issuer;
-   `ServiceToken` (`louhi/auth/service_token.h`) against a real Lugh; a live
-   publish to Lir (waits on the maintainer, below). Neither `louhi-ctl` nor
-   `ServiceToken` has tests of its own.
-3. **Step 4's second half,** the Dagda store: waits on a Dagda ref.
-4. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers. A
+   `ServiceToken` against a real Lugh; a private registry signed in to for
+   real; task events (not only the node's status) published live to Lir,
+   which needs the API and so a Lugh issuer. On the standing cluster,
+   `louhi/#` is open to anonymous clients and stays open (the maintainer, via Lir).
+   Join at `192.0.2.10:7537` (port 7537), with the key from Lir's
+   `build/pi-cluster/cluster.key`, copied 0600 and deleted after. Tell the
+   Lir session before and after, and space joins out: a departed member
+   counts until Dannan's horizon, and with node-d down the cluster keeps a
+   majority only while all three Lir nodes are up.
+3. **The image store on Dagda,** step 13's second half: waits on the Dagda
+   ref.
+4. **Step 4's second half,** the Dagda store: waits on a Dagda ref.
+5. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers. A
    service's task set changes through registers, so services wait with
    placement (the maintainer: anything that can use agreement waits for it).
 
 ## Waiting on the maintainer
 
-1. **Live events on Lir.** `louhi-node` finds Lir in its Dannan roster, so
-   a live publish means joining a Dannan cluster with Lir in it: the
-   standing cluster (Lir's anonymous scopes there allow only `stack/#` and
-   `test/#`; nothing under `louhi/` until the maintainer says so), or a Lir node of
-   Louhi's own on a Pi. Recommendation: a Lir node of Louhi's own, removed
-   afterwards.
-2. **Hosted CI and Lugh.** Lugh is private, so hosted CI builds without the
-   plugin (no API, no `louhi-ctl`). A Lugh read token as a repository secret
-   (`LUGH_READ_TOKEN`, as Lir has) would let a job build it.
-   Recommendation: add it.
-3. **Dagda ref.** the maintainer: wait. Dagda 0.2.0 is tagged locally and held. Its
+1. **Dagda ref.** the maintainer: wait. Dagda 0.2.0 is tagged locally and held. Its
    caution: claimed collections stand on leases, which order work on one
    node only today.
-4. **Under-voltage:** node-a and node-d report
+2. **Under-voltage:** node-a and node-d report
    `throttled=0x50000`. node-d went down three times on
    2026-11-16: before 00:34Z, about 01:06Z, and again about 01:21Z (Lir's
    report). It needs a power-cycle from the maintainer. Louhi builds nothing there
    until the maintainer says it is sound.
-5. **xfs for Docker on a Pi.** Every Pi runs overlay2 on ext4, which cannot
-   bound storage, so no Pi launches a task unless `louhi-node` runs with
-   `--allow-unbounded-storage`. To test a kept bound, one Pi needs
-   `/var/lib/docker` on xfs mounted `pquota`. Recommendation: a loop-mounted
-   xfs image file (16 GB) at `/var/lib/docker` on node-c, which has
-   NVMe. Docker stops while its data moves, so whatever runs in Docker there
-   (redis, per the table below) stops with it. Undone by unmounting and restoring the old
-   directory.
 
 ## The build Pis
 
-| Host | Docker | User namespaces | Memory controller | Notes |
-|---|---|---|---|---|
-| node-b | yes | **no** (to do) | on | lir-node, scheduler |
-| node-c | yes | yes | on | lir-node, scheduler, redis |
-| node-d | yes | yes | on | lir-node |
-| node-a | **no** (to do) | **no** | **off** (to do) | lir-node, the acting scheduler; clang 19, no ninja |
+| Host | Docker | User namespaces | Memory controller | Storage bounds | Notes |
+|---|---|---|---|---|---|
+| node-b | yes | **no** (to do) | on | no (ext4) | lir-node, scheduler |
+| node-c | yes | yes | on | **yes** | lir-node, scheduler, redis (not in Docker) |
+| node-d | yes | yes | on | no (ext4) | lir-node; down, needs a power-cycle |
+| node-a | **no** (to do) | **no** | **off** (to do) | no | lir-node, the acting scheduler; clang 19, no ninja |
+
+node-c's Docker data is on `/var/lib/docker-xfs.img` (16 GB),
+loop-mounted at `/var/lib/docker` with `pquota` from `/etc/fstab` (the maintainer's
+go, 2026-11-16). The undo is in `/root/louhi-work/UNDO-xfs.txt`, beside the
+saved `fstab.before-xfs`; the old data is in `/var/lib/docker.before-xfs`.
+Only node-c runs Louhi's storage tests on their kept branch; every other
+Pi needs `--allow-unbounded-storage` to launch a task.
 
 Owed, at the maintainer's go already given; previous settings go to `/root/louhi-work/`
 on each Pi first (`cmdline.txt.before`, `daemon.json.before`,
@@ -159,6 +155,12 @@ All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is 
   by xfs project quotas through the runtime, and a node that cannot bound
   it refuses tasks unless the operator allows it. Scratch has two kinds,
   memory (tmpfs, counted in the task's memory) and disk (quota-bounded).
+- **2026-11-16, the maintainer:** Docker's data on node-c goes onto a
+  loop-mounted xfs file with project quotas, so a storage bound can be
+  kept for real; the first live publish to Lir is on the standing cluster
+  (Lir's scopes there opened to `louhi/#`, by the Lir session); hosted CI
+  stays without the Lugh plugin; next, tests of their own for `louhi-ctl`
+  and `ServiceToken`.
 - **The build Pis** are also Louhi's test bed: Docker, user namespaces and
   the memory controller on all four.
 

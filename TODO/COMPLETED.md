@@ -2,6 +2,27 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Storage bounds kept for real; first live publish to Lir; louhi-node's stop (2026-11-16)
+
+- node-c's Docker data moved onto a loop-mounted xfs file with
+  `pquota` (the maintainer's go; the undo in `/root/louhi-work/UNDO-xfs.txt`). The
+  driver reports `limits_storage` there. The storage test takes its kept
+  branch, the agent's real task runs bounded, and a new test shows a disk
+  volume's size kept: a write past it fails. Checked by hand too: 4 MiB fit
+  in an 8 MiB volume, and the next write stopped at 8 MiB.
+- First live publish to Lir, on the standing cluster with `louhi/#` open
+  (the maintainer's choice). A `louhi-node` on node-c joined at 01:34Z and published
+  its retained status on `louhi/nodes/<id>`, read back through the board.
+  Its clean stop cleared it (Lir saw it cleared at 01:35:29Z).
+- Found: every `louhi-node` stop hung. Main ended the io threads before
+  `dannan::Node` was destroyed, and Node's client's second `stop()` waits on
+  its own strand. Seen with gdb, then reproduced on a solo node. The node
+  is now destroyed while its io threads still run, as `dannan-node`'s is;
+  a solo node stops in 5 s.
+
+Gate on node-c (never throttled, Docker on xfs with user
+namespaces): **238 passed** (237 before, 1 new), none skipped.
+
 ## Lugh pinned at 382416d (2026-11-16)
 
 Lugh's HttpsClient on Dannan's connector, and Lugh itself on Dannan

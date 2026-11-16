@@ -264,6 +264,70 @@ Three things a task needs, in the order they are built:
 - **Ephemeral storage.** Each task gets scratch space with a size limit,
   gone when the task stops. Volumes shared between the containers of one
   task are the same thing.
+
+#### Images in detail (step 13, first half)
+
+- **When a tag becomes a digest.** At registration, on the node that serves
+  the API call, before the revision is written. A reference that already
+  carries a digest is kept as written and not looked up. A tag that cannot
+  be resolved (registry unreachable, unknown, refused) fails the
+  registration with the registry's reason; nothing is registered with an
+  empty `image_digest` once this lands. The deadline is the API call's.
+- **What the digest is of.** The manifest the tag names as served: for a
+  multi-platform image the index, not one platform's manifest, so a revision
+  pins the same bytes on arm64 and amd64 nodes and each node's runtime picks
+  its own platform from the index at pull.
+- **How it is asked.** Through the runtime interface, as `pull` already is:
+  a `resolve(reference)` operation on the driver. The Docker driver answers
+  it with the Engine API's `GET /distribution/{name}/json`, which asks the
+  registry for the manifest's descriptor using the daemon's own registry
+  handling (TLS, mirrors, the token exchange), so Louhi writes no registry
+  client. The reply is untrusted input: bounded, the digest required to be
+  `sha256:` and 64 hex digits, anything else refused, a fuzz target
+  (`docker_reply` grows a case). A node that serves the API therefore needs
+  a runtime, which every node has.
+- **Which registries.** The operator lists them (`registries.allow` in the
+  node's configuration, by domain; `docker.io` written out to allow Docker
+  Hub, which is where a reference with no domain points). The API refuses
+  to register a reference to a registry not listed, and the agent refuses to
+  pull one (a node's list can be narrower than the API node's). No list
+  allows none.
+- **Private registries.** Credentials are the operator's, per registry, in
+  `secrets.yaml` beside the configuration (user name and password, or an
+  identity token), sent as the Engine API's `X-Registry-Auth` on resolve and
+  on pull. A project's own registry credentials need a secret store, which
+  is not designed yet, and wait for it.
+- **Pull by digest.** The agent pulls and creates containers by
+  `name@digest` (`agent/specs.cpp`, `image_of`), so a tag moved after
+  registration changes nothing already registered.
+
+#### Ephemeral storage in detail (step 13, first half)
+
+Two kinds of writable space exist today, and only one is bounded:
+
+- **Scratch volumes** are tmpfs, bounded by size. Their pages are charged to
+  the memory cgroup of the container that writes them, so a container
+  filling its scratch is killed for memory long before the volume is full
+  if the volume is larger than the container's memory. The bound holds; the
+  promise of the size does not.
+- **The container's writable layer** (anything written outside a volume
+  when the root is not read-only) is unbounded. Docker bounds it only with
+  overlay2 on xfs mounted with project quotas (`StorageOpt` `size`); the
+  Pis run overlay2 on ext4, where a size is refused at create.
+
+What bounds each (the maintainer, 2026-11-16):
+
+- **The writable layer** is bounded by a task's `ephemeral_storage_mib`,
+  split between its containers as memory is, and enforced by the runtime
+  (`StorageOpt` `size`, so overlay2 on xfs with project quotas). The
+  runtime reports whether it can bound it; a node whose runtime cannot
+  refuses tasks unless the operator allows unbounded storage
+  (`--allow-unbounded-storage`), as with memory and user namespaces.
+- **Scratch comes in two kinds,** the definition choosing per volume:
+  `memory` (tmpfs, the kind built so far; the sum of a task's memory
+  scratch must fit in its memory, since that is where its pages are
+  charged) and `disk` (bounded on disk by the same quota mechanism as the
+  writable layer, refused where the runtime cannot bound it).
 - **Persistent volumes.** A Volume record names storage that outlives a
   task and follows it to another node. What it is made of is open: Dagda
   stores immutable objects and merged heads, not a block device or a POSIX

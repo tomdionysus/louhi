@@ -142,6 +142,15 @@ All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is 
 - **Overlay carrier:** both: WireGuard (with a VPC tag inside) where two
   nodes reach each other directly, Dannan frames otherwise.
 - **Persistent volumes:** what they are made of is decided later (step 14).
+- **Images (2026-11-16):** a tag is resolved to a digest at registration
+  through the runtime (the Docker driver's `GET /distribution`), no registry
+  client of Louhi's own; registries are an operator allow-list (no list
+  allows none) with the operator's credentials per registry in
+  `secrets.yaml`; per-project credentials wait for a secret store.
+- **Ephemeral storage (2026-11-16):** the writable layer is bounded per task
+  by xfs project quotas through the runtime, and a node that cannot bound
+  it refuses tasks unless the operator allows it. Scratch has two kinds,
+  memory (tmpfs, counted in the task's memory) and disk (quota-bounded).
 - **The build Pis** are also Louhi's test bed: Docker, user namespaces and
   the memory controller on all four.
 

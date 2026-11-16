@@ -90,8 +90,9 @@ step per session.
 | node-d | yes | yes | on | no (ext4) | lir-node; down |
 | node-a | **no** (to do) | **no** | **off** (to do) | no | lir-node, the acting scheduler; clang 19, no ninja |
 
-All four boot the 4K-page kernel (`kernel8.img`) since 2026-11-16, so TSan
-runs on each.
+All four run the 4K-page, 48-bit-VA kernel (`6.18.62-v8-va48+`) since
+2026-11-16, so ASan, UBSan and TSan run on each, with g++ and clang 19
+(node-d has no clang). There is no special sanitizer Pi.
 
 node-c's Docker data is in `/var/lib/docker-xfs.img` (16 GB),
 loop-mounted at `/var/lib/docker` with `pquota` from `/etc/fstab` (the maintainer's
@@ -190,8 +191,8 @@ history is in git.
 
 - The four fuzz targets (`record`, `image_reference`, `docker_reply`,
   `api_body`) built with clang and run `-max_total_time=60` each.
-- The `clang`, `asan`, `tsan` and `coverage` steps on a Pi: node-b or
-  node-c (15 GB), never node-d (4 GB, ran out of memory). Check `free -m`
-  first.
+- The `clang`, `asan`, `tsan` and `coverage` steps on a Pi. Any of the four
+  runs sanitizers now. Prefer node-b or node-c (15 GB): node-d has 4 GB
+  and ran out of memory once. Check `free -m` first.
 
 Hosted CI runs all of these but the fuzzers on every push meanwhile.

@@ -40,9 +40,13 @@ step per session.
 
 ## Next, in order
 
-1. **Move the Dannan pin from `0.8.3` to `0.8.5`** (tag on main at
-   `de631cc`, CI green, 0.8.0's ABI kept), as its own commit with one
-   gate. 0.8.4 brought StartTLS with no answer, a stop token on
+1. **Tests of their own for `louhi-ctl` and `ServiceToken`**
+   (`tools/louhi_ctl.cpp`, `louhi/auth/service_token.h`), against fakes. the maintainer
+   chose this as the next step (2026-11-16). Neither has a test today.
+2. **The Dannan pin stays at `0.8.3` until Dannan 0.9.0** (the maintainer,
+   2026-11-16): no move to 0.8.5 meanwhile; the pin moves once, to 0.9.0,
+   as its own commit with one gate. What 0.8.4 and 0.8.5 bring rides along
+   then: 0.8.4 brought StartTLS with no answer, a stop token on
    `NodeEvents::wait_for_change`, and a fix to deferred answers' overload
    accounting. 0.8.5 fixes Louhi's finding: a second `Client::stop()` or
    `Server::stop()` no longer posts to a stopped io, so a Node stopped
@@ -50,10 +54,8 @@ step per session.
    while its io runs. Louhi's order (destroy the Node first) stays right.
    Lugh's develop (`2d75176`) pins Dannan 0.8.5 too, its back-off now
    Dannan's: a Lugh pin past `382416d` needs Dannan 0.8.5 or a later 0.8
-   patch, so move Dannan first. `lugh_client`'s face is unchanged.
-2. **Tests of their own for `louhi-ctl` and `ServiceToken`**
-   (`tools/louhi_ctl.cpp`, `louhi/auth/service_token.h`), against fakes. the maintainer
-   chose this as the next step (2026-11-16). Neither has a test today.
+   patch, so the Lugh pin stays at `382416d` until Dannan moves too.
+   `lugh_client`'s face is unchanged.
 3. **Owed, end to end**, when a Lugh issuer is at hand:
    - `louhi-ctl login` and `ServiceToken` against a real Lugh;
    - task events (not only a node's status) published live to Lir, which
@@ -181,6 +183,8 @@ history is in git.
   by its `ephemeral_storage_mib`, shared equally, through xfs project
   quotas. Scratch volumes come in two kinds: memory (tmpfs, counted in the
   task's memory) and disk (quota-bounded).
+- **Dannan pin (2026-11-16):** stays at `0.8.3` until 0.9.0, then moves
+  once; the Lugh pin waits with it, since a later Lugh needs Dannan 0.8.5.
 - **Workload identity:** deferred.
 - **Overlay carrier:** both: WireGuard (with a VPC tag inside) where two
   nodes reach each other directly, Dannan frames otherwise.

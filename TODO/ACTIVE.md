@@ -9,9 +9,8 @@ Last updated: 2026-11-16 (end of session). `COMPLETED.md` is the record.
 records and codecs, the Docker driver, the agent, the store interface with
 the in-memory store, `louhi-node`, the API with sign-in by the Lugh plugin
 and `louhi-ctl`, events on Lir, and images by digest with storage bounds.
-Last gate: 237 passed on node-d, Docker tests included. Pins:
-Dannan `0.8.3`, Lugh `a34770f` (Lugh's develop is at `382416d`, its
-HttpsClient change; move the pin as its own commit), Lir `4443c16`.
+Last gate: 237 passed on node-c, Docker tests included. Pins:
+Dannan `0.8.3`, Lugh `382416d`, Lir `4443c16`.
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -30,17 +29,16 @@ session: a second `claim-board wait` replaces the first.
 
 ## Next, in order
 
-1. **Move the Lugh pin** to `382416d`, its own commit, one gate.
-2. **Step 13, owed:** a storage bound kept by a real runtime, which needs a
+1. **Step 13, owed:** a storage bound kept by a real runtime, which needs a
    Pi with `/var/lib/docker` on xfs with `pquota` (waits on the maintainer, below);
    a private registry signed in to for real. The image store on Dagda is
    step 13's second half and waits on the Dagda ref.
-3. **Owed, end to end:** `louhi-ctl login` against a real Lugh issuer;
+2. **Owed, end to end:** `louhi-ctl login` against a real Lugh issuer;
    `ServiceToken` (`louhi/auth/service_token.h`) against a real Lugh; a live
    publish to Lir (waits on the maintainer, below). Neither `louhi-ctl` nor
    `ServiceToken` has tests of its own.
-4. **Step 4's second half,** the Dagda store: waits on a Dagda ref.
-5. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers. A
+3. **Step 4's second half,** the Dagda store: waits on a Dagda ref.
+4. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers. A
    service's task set changes through registers, so services wait with
    placement (the maintainer: anything that can use agreement waits for it).
 

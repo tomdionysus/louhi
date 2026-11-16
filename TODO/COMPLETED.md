@@ -2,6 +2,14 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Lugh pinned at 382416d (2026-11-16)
+
+Lugh's HttpsClient on Dannan's connector, and Lugh itself on Dannan
+0.8.3, which Louhi already pins; `HttpsClient`'s constructor is unchanged.
+Gate on node-c (never throttled, Docker): **237 passed**, the same
+count. node-d stopped answering ssh mid-session (posted on the
+board).
+
 ## Step 13, first half: images by digest, ephemeral storage bounds (2026-11-16)
 
 - The design's detail written first ("Images in detail", "Ephemeral

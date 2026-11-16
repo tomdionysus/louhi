@@ -301,6 +301,14 @@ writes them. All QoS 1.
   has two, and neither overwrites the other.
 - A node restarted republishes what it observes; an event may come twice,
   and its `at` and the status's `sequence` tell a consumer which is newer.
+- A limit of Lir's, stated (Lir, 2026-11-15): a subscription made on one
+  Lir node reaches the others at Dannan's heartbeat pace (up to about 5
+  s), and a message not retained, published on another node in that
+  window, is lost to the new subscriber even at QoS 1. The retained topics
+  are unaffected (the current value comes at SUBSCRIBE); a reader of a
+  project's events may miss those of its first few seconds, and recovers
+  from the retained statuses or the store. It closes with Dannan 0.9.0,
+  when Lir holds SUBACK until the other nodes hold the subscription.
 - Lir being away never holds up the agent: publishes are queued by
   `lir::client` up to its bound, then dropped and counted.
 - `louhi-node` signs in to Lir with a Lugh access token of its own, fresh

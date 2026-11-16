@@ -263,8 +263,11 @@ What it does not do yet, in the order it is to be built:
   Dannan or WireGuard.
 - **Images by digest, ephemeral storage limits, then persistent volumes.**
 
-One limit is stated, not hidden: a principal disabled in Lugh keeps access until its token
-expires (five minutes by default), until Lugh publishes principal changes over Lir.
+Two limits are stated, not hidden. A principal disabled in Lugh keeps access until its
+token expires (five minutes by default), until Lugh publishes principal changes over Lir.
+And a reader that has just subscribed to a project's events may miss those of its first few
+seconds, the time Lir takes to spread a subscription across its nodes; the retained
+statuses are unaffected, and Lir closes the gap with Dannan 0.9.0.
 
 ## Licence
 

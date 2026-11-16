@@ -2,6 +2,43 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Tests of their own for louhi-ctl and ServiceToken (2026-11-16)
+
+- `ServiceToken` (`auth/service_token.h`) takes the issuer's `lugh::client::Https`,
+  an executor and a timer function (the agent's `Clock::after` shape), so it is
+  tested against a fake issuer and stepped time; `louhi-node` hands it an
+  `HttpsClient` and the io's timer. A timer still pending holds it weakly.
+- `louhi-ctl` is now `louhi::ctl` (`ctl/ctl.h`), built with the Lugh plugin;
+  `tools/louhi_ctl.cpp` only binds it to the real issuer, API, files, clocks
+  and streams. `api::Requester` is the interface `api::Client` implements.
+- Shared fixtures: `test/fixtures/fake_https.h` (an issuer that holds each
+  request until answered, or answers by a script) and `test/fixtures/timers.h`
+  (moved from the agent's test).
+- Tests: `auth_service_token_test.cpp` (11) and `ctl_test.cpp` (28): every
+  command's call, operands one segment each, usage errors before anything is
+  asked, the credentials codec and file (owner-only, replaced whole,
+  bounded), the token refreshed with a minute or less left and the rotated
+  refresh token kept, a refused refresh changing nothing, the endpoint's
+  precedence, exit codes, the device-flow login, logout.
+
+Found and fixed, each with its test:
+- `ServiceToken::make` accepted private_key_jwt without a key or kid, and
+  client_secret_basic without a secret; the OAuth client would then have
+  thrown inside an io handler once discovery was read. Refused at `make`,
+  as is tls_client_auth (the token's HTTPS presents no certificate).
+- `louhi-ctl run-task --count -1` sent 18446744073709551615 (`stoull` wraps
+  a sign), and `--count abc` exited 1; `--count`, `--revision` and `--limit`
+  take digits only, else exit 2. A malformed `--endpoint` exits 2.
+- `louhi-ctl` wrote its credentials with a writer of its own, against rule
+  3; it uses Dannan's `durable_replace_file`.
+- The promise a command waited on lived on the stack: an answer after the
+  wait gave up would have set a promise already gone. It is shared now.
+- The first run failed one test, and the test was wrong: its failure helper
+  expected the first token after a second had been taken.
+
+Gate on node-c (never throttled, Docker on xfs with user
+namespaces): **277 passed** (238 before, 39 new), none skipped.
+
 ## Storage bounds kept for real; first live publish to Lir; louhi-node's stop (2026-11-16)
 
 - node-c's Docker data moved onto a loop-mounted xfs file with

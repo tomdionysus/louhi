@@ -8,8 +8,10 @@ Last updated: 2026-11-16 (end of session). `COMPLETED.md` is the record.
 Done: steps 0 to 3, 5 and 8, and step 13's first half (records and codecs,
 the Docker driver, the agent, the in-memory store, `louhi-node`, the API
 with sign-in by the Lugh plugin and `louhi-ctl`, events on Lir, images by
-digest, storage bounds). Last gate: **238 passed** on node-c, whose
-Docker is on xfs with project quotas, so storage bounds are kept for real.
+digest, storage bounds), and tests of their own for `louhi-ctl` (now
+`louhi::ctl`, `ctl/ctl.h`) and `ServiceToken`. Last gate: **277 passed** on
+node-c, whose Docker is on xfs with project quotas, so storage
+bounds are kept for real.
 Pins: Dannan `0.8.3`, Lugh `382416d`, Lir `4443c16`.
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
@@ -40,15 +42,17 @@ step per session.
 
 ## Next, in order
 
-1. **Tests of their own for `louhi-ctl` and `ServiceToken`**
-   (`tools/louhi_ctl.cpp`, `louhi/auth/service_token.h`), against fakes. the maintainer
-   chose this as the next step (2026-11-16). Neither has a test today.
-2. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
+1. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
    10 that need no agreement: Subnet, RouteTable and SecurityGroup records
    and codecs; a security group rendered to nftables rules as a pure
    function, behind an interface, tested against fakes; a task's network
    namespace on one node. Nothing that allocates addresses or places across
    nodes; anything near that line goes to the maintainer first.
+2. **`louhi-ctl login --scope openid` fails** (found 2026-11-16, not yet
+   fixed): the issuer then returns an ID token, which Lugh's client verifies
+   against a `Verifier` holding no keys (`ctl/ctl.cpp`, `login`). Either load
+   the issuer's JWKS first or refuse `openid` as a usage error; louhi-ctl
+   needs no ID token. Small; a test in `ctl_test.cpp` first.
 3. **The Dannan pin stays at `0.8.3` until Dannan 0.9.0** (the maintainer,
    2026-11-16): no move to 0.8.5 meanwhile; the pin moves once, to 0.9.0,
    as its own commit with one gate. What 0.8.4 and 0.8.5 bring rides along

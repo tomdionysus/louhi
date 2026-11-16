@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <boost/asio/post.hpp>
 #include <boost/json.hpp>
+#include <stdexcept>
 
 namespace louhi::auth {
 
@@ -18,6 +19,7 @@ namespace {
 namespace asio = boost::asio;
 namespace json = boost::json;
 using namespace std::chrono_literals;
+using Method = lugh::client::ClientIdentity::Method;
 
 constexpr std::chrono::milliseconds first_backoff = 5s;
 constexpr std::chrono::milliseconds most_backoff = 5min;
@@ -26,32 +28,39 @@ constexpr std::chrono::milliseconds step_deadline = 30s;
 
 }  // namespace
 
-std::shared_ptr<ServiceToken> ServiceToken::make(asio::io_context& io, ServiceTokenConfig config, const dannan::contract::WallClock& wall,
-                                                 dannan::status::ScopedLogger logger) {
-  if (config.identity.client_id.empty()) throw std::invalid_argument("the service token needs a client id");
-  if (config.identity.method == lugh::client::ClientIdentity::Method::none)
+std::shared_ptr<ServiceToken> ServiceToken::make(lugh::client::Https& https, asio::any_io_executor executor, After after, ServiceTokenConfig config,
+                                                 const dannan::contract::WallClock& wall, dannan::status::ScopedLogger logger) {
+  // Checked here, as the OAuth client would check them once discovery is
+  // read: by then a refusal could only be thrown inside a handler.
+  const auto& identity = config.identity;
+  if (identity.client_id.empty()) throw std::invalid_argument("the service token needs a client id");
+  if (identity.method == Method::private_key_jwt) {
+    if (!identity.key || identity.kid.empty()) throw std::invalid_argument("the service token's private_key_jwt needs a signing key and its kid");
+  } else if (identity.method == Method::client_secret_basic) {
+    if (!identity.secret) throw std::invalid_argument("the service token's client_secret_basic needs a secret");
+  } else {
     throw std::invalid_argument("the service token needs a key (private_key_jwt) or a secret (client_secret_basic)");
-  return std::shared_ptr<ServiceToken>(new ServiceToken(io, std::move(config), wall, std::move(logger)));
+  }
+  if (!after) throw std::invalid_argument("the service token needs a timer");
+  return std::shared_ptr<ServiceToken>(new ServiceToken(https, std::move(executor), std::move(after), std::move(config), wall, std::move(logger)));
 }
 
-ServiceToken::ServiceToken(asio::io_context& io, ServiceTokenConfig config, const dannan::contract::WallClock& wall, dannan::status::ScopedLogger logger)
+ServiceToken::ServiceToken(lugh::client::Https& https, asio::any_io_executor executor, After after, ServiceTokenConfig config,
+                           const dannan::contract::WallClock& wall, dannan::status::ScopedLogger logger)
     : _config(std::move(config)),
       _wall(wall),
       _logger(std::move(logger)),
-      _https(io, _config.ca_path),
+      _https(https),
       _verifier({_config.issuer}, wall),
-      _strand(asio::make_strand(io)),
-      _timer(_strand) {}
+      _strand(asio::make_strand(std::move(executor))),
+      _after(std::move(after)) {}
 
 void ServiceToken::start() {
   asio::post(_strand, [self = shared_from_this()] { self->fetch(); });
 }
 
 void ServiceToken::stop() {
-  asio::post(_strand, [self = shared_from_this()] {
-    self->_stopped = true;
-    self->_timer.cancel();
-  });
+  asio::post(_strand, [self = shared_from_this()] { self->_stopped = true; });
 }
 
 std::optional<std::string> ServiceToken::current() const {
@@ -59,17 +68,17 @@ std::optional<std::string> ServiceToken::current() const {
   return _token;
 }
 
-void ServiceToken::after(std::chrono::milliseconds delay) {
+void ServiceToken::later(std::chrono::milliseconds delay) {
   if (_stopped) return;
-  _timer.expires_after(delay);
-  _timer.async_wait([self = shared_from_this()](const boost::system::error_code& ec) {
-    if (!ec) self->fetch();
+  // A timer still pending keeps nothing alive: a token gone is not fetched.
+  _after(delay, [weak = weak_from_this()] {
+    if (const auto self = weak.lock()) asio::post(self->_strand, [self] { self->fetch(); });
   });
 }
 
 void ServiceToken::retry() {
   _backoff = _backoff.count() == 0 ? first_backoff : std::min(_backoff * 2, most_backoff);
-  after(_backoff);
+  later(_backoff);
 }
 
 void ServiceToken::fetch() {
@@ -113,7 +122,7 @@ void ServiceToken::fetch() {
     }
     self->_backoff = std::chrono::milliseconds(0);
     const auto life = std::chrono::milliseconds(std::chrono::seconds(got.value.expires_in));
-    self->after(std::max(least_refresh, life * 2 / 3));
+    self->later(std::max(least_refresh, life * 2 / 3));
   });
 }
 

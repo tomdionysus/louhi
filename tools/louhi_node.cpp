@@ -364,10 +364,19 @@ int main(int argc, char** argv) {
     louhi::agent::StoreReports reports(store, io.get_executor(), context.logger("louhi.reports"));
     louhi::runtime::docker::DockerDriver driver(io.get_executor(), options.docker_socket,
                                                 louhi::runtime::Registries(options.registries, options.registry_credentials));
+    // A timer on the io context, for the agent and the service token.
+    const auto after = [&io](std::chrono::milliseconds delay, std::function<void()> fn) {
+      auto timer = std::make_shared<asio::steady_timer>(io, delay);
+      timer->async_wait([timer, fn = std::move(fn)](const boost::system::error_code& failed) {
+        if (!failed) fn();
+      });
+    };
 
     // Events on Lir, when asked for: the agent's reports and the node's status
     // are published as well as stored.
 #ifdef LOUHI_WITH_LUGH
+    // The token's own HTTPS to its issuer, outliving the token.
+    std::unique_ptr<lugh::client::HttpsClient> token_https;
     std::shared_ptr<louhi::auth::ServiceToken> service_token;
 #endif
 #ifdef LOUHI_WITH_LIR
@@ -389,7 +398,6 @@ int main(int argc, char** argv) {
 #ifdef LOUHI_WITH_LUGH
         louhi::auth::ServiceTokenConfig token;
         token.issuer = options.lugh_issuers.front();
-        token.ca_path = options.lugh_ca;
         token.identity.client_id = options.lir_client_id;
         if (!options.lir_client_key.empty()) {
           const std::string der = read_file(options.lir_client_key);
@@ -402,7 +410,9 @@ int main(int argc, char** argv) {
           token.identity.secret = std::make_shared<const dannan::identity::Secret>(
               std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(options.lir_client_secret.data()), options.lir_client_secret.size()));
         }
-        service_token = louhi::auth::ServiceToken::make(io, std::move(token), dannan::contract::system_wall_clock(), context.logger("louhi.token"));
+        token_https = std::make_unique<lugh::client::HttpsClient>(io, options.lugh_ca);
+        service_token = louhi::auth::ServiceToken::make(*token_https, io.get_executor(), after, std::move(token), dannan::contract::system_wall_clock(),
+                                                        context.logger("louhi.token"));
         lir_config.password = [service_token] { return service_token->current(); };
 #else
         throw std::runtime_error("this build has no Lugh plugin, so it cannot get a token for Lir");
@@ -422,13 +432,7 @@ int main(int argc, char** argv) {
     policy.allow_unenforced_memory = options.allow_unenforced_memory;
     policy.allow_without_user_namespaces = options.allow_without_user_namespaces;
     policy.allow_unbounded_storage = options.allow_unbounded_storage;
-    louhi::agent::Clock clock{&dannan::contract::steady_time_source(), &dannan::contract::system_wall_clock(),
-                              [&io](std::chrono::milliseconds delay, std::function<void()> fn) {
-                                auto timer = std::make_shared<asio::steady_timer>(io, delay);
-                                timer->async_wait([timer, fn = std::move(fn)](const boost::system::error_code& failed) {
-                                  if (!failed) fn();
-                                });
-                              }};
+    louhi::agent::Clock clock{&dannan::contract::steady_time_source(), &dannan::contract::system_wall_clock(), after};
     auto agent = std::make_shared<louhi::agent::Agent>(driver, desired, agent_reports, self, clock, io.get_executor(), context.logger("louhi.agent"), policy);
 
     node.start();

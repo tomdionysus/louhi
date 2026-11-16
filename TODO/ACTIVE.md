@@ -43,7 +43,13 @@ step per session.
 1. **Tests of their own for `louhi-ctl` and `ServiceToken`**
    (`tools/louhi_ctl.cpp`, `louhi/auth/service_token.h`), against fakes. the maintainer
    chose this as the next step (2026-11-16). Neither has a test today.
-2. **The Dannan pin stays at `0.8.3` until Dannan 0.9.0** (the maintainer,
+2. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
+   10 that need no agreement: Subnet, RouteTable and SecurityGroup records
+   and codecs; a security group rendered to nftables rules as a pure
+   function, behind an interface, tested against fakes; a task's network
+   namespace on one node. Nothing that allocates addresses or places across
+   nodes; anything near that line goes to the maintainer first.
+3. **The Dannan pin stays at `0.8.3` until Dannan 0.9.0** (the maintainer,
    2026-11-16): no move to 0.8.5 meanwhile; the pin moves once, to 0.9.0,
    as its own commit with one gate. What 0.8.4 and 0.8.5 bring rides along
    then: 0.8.4 brought StartTLS with no answer, a stop token on
@@ -56,7 +62,7 @@ step per session.
    Dannan's: a Lugh pin past `382416d` needs Dannan 0.8.5 or a later 0.8
    patch, so the Lugh pin stays at `382416d` until Dannan moves too.
    `lugh_client`'s face is unchanged.
-3. **Owed, end to end**, when a Lugh issuer is at hand:
+4. **Owed, end to end**, when a Lugh issuer is at hand:
    - `louhi-ctl login` and `ServiceToken` against a real Lugh;
    - task events (not only a node's status) published live to Lir, which
      needs the API, and so an issuer;
@@ -70,9 +76,9 @@ step per session.
    cleanly, and space joins out: a departed member counts until Dannan's
    horizon, and with node-d down the cluster keeps a majority only while
    all three Lir nodes are up.
-4. **The image store on Dagda** (step 13's second half) and **the Dagda
+5. **The image store on Dagda** (step 13's second half) and **the Dagda
    store** (step 4's second half): both wait on the Dagda ref.
-5. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers. A
+6. **Steps 6 and 7, and the rest of step 9**, wait on Dannan 0.9.0's agreement registers. A
    service's task set changes through registers, so services wait with
    placement (the maintainer: anything that can use agreement waits for it).
 

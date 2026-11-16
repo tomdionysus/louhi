@@ -40,10 +40,14 @@ step per session.
 
 ## Next, in order
 
-1. **Tests of their own for `louhi-ctl` and `ServiceToken`**
+1. **Move the Dannan pin to `0.8.4`** (tag on main at `52fd53c`, released
+   2026-11-16; 0.8.0's ABI kept). It brings StartTLS with no answer, a stop
+   token on `NodeEvents::wait_for_change`, and a fix to deferred answers'
+   overload accounting. Its own commit, one gate.
+2. **Tests of their own for `louhi-ctl` and `ServiceToken`**
    (`tools/louhi_ctl.cpp`, `louhi/auth/service_token.h`), against fakes. the maintainer
    chose this as the next step (2026-11-16). Neither has a test today.
-2. **Owed, end to end**, when a Lugh issuer is at hand:
+3. **Owed, end to end**, when a Lugh issuer is at hand:
    - `louhi-ctl login` and `ServiceToken` against a real Lugh;
    - task events (not only a node's status) published live to Lir, which
      needs the API, and so an issuer;
@@ -57,9 +61,9 @@ step per session.
    cleanly, and space joins out: a departed member counts until Dannan's
    horizon, and with node-d down the cluster keeps a majority only while
    all three Lir nodes are up.
-3. **The image store on Dagda** (step 13's second half) and **the Dagda
+4. **The image store on Dagda** (step 13's second half) and **the Dagda
    store** (step 4's second half): both wait on the Dagda ref.
-4. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers. A
+5. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers. A
    service's task set changes through registers, so services wait with
    placement (the maintainer: anything that can use agreement waits for it).
 

@@ -31,13 +31,15 @@ struct Facts {
   bool allow_unenforced_memory = false;
   // The operator allows tasks on a runtime without user namespaces.
   bool allow_without_user_namespaces = false;
+  // The operator allows tasks on a runtime that cannot bound storage.
+  bool allow_unbounded_storage = false;
   // Whether the store holds the whole desired state (store/store.h, ready).
   bool store_whole = true;
 };
 
-// The node is ready when its runtime answers, can enforce memory limits and
-// has user namespaces, or the operator allows it to lack either. Every degradation is a condition, even
-// one the operator allows. Allocation counts the tasks placed here and wanted
+// The node is ready when its runtime answers, can enforce memory limits, can
+// bound storage and has user namespaces, or the operator allows it to lack
+// any of them. Every degradation is a condition, even one the operator allows. Allocation counts the tasks placed here and wanted
 // running, saturating. Text from the runtime is cut to the record's bounds,
 // so the result always validates.
 model::NodeStatus node_status(const Facts& facts, const std::vector<agent::Assignment>& placed, uint64_t sequence, uint64_t observed_unix_ms);

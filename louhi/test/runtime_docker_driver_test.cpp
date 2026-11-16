@@ -50,7 +50,7 @@ class DockerDriverTest : public ::testing::Test {
   void SetUp() override {
     if (socket_path() == nullptr) GTEST_SKIP() << "LOUHI_DOCKER_SOCKET is not set";
     _thread = std::thread([this] { _io.run(); });
-    driver = std::make_unique<docker::DockerDriver>(_io.get_executor(), socket_path());
+    driver = std::make_unique<docker::DockerDriver>(_io.get_executor(), socket_path(), Registries({"docker.io"}, {}));
     task = model::TaskId::random();
   }
   void TearDown() override {
@@ -110,7 +110,7 @@ class DockerDriverTest : public ::testing::Test {
   }
 
   void make_volume() {
-    VolumeSpec v{volume_name(task, "scratch"), 16ull * 1024 * 1024, {{std::string(label_task), model::to_string(task)}}};
+    VolumeSpec v{volume_name(task, "scratch"), VolumeKind::memory, 16ull * 1024 * 1024, {{std::string(label_task), model::to_string(task)}}};
     auto made = wait<Done>([&](auto done) { driver->create_volume(v, Deadline(30000), executor(), done); });
     ASSERT_TRUE(made.ok()) << made.error().message;
   }
@@ -150,6 +150,62 @@ TEST_F(DockerDriverTest, PullsAndResolvesADigest) {
   auto got = wait<ImageInfo>([&](auto done) { driver->pull(image, Deadline(240000), executor(), done); });
   ASSERT_TRUE(got.ok()) << got.error().message;
   EXPECT_TRUE(model::is_digest(got.value().digest)) << got.value().digest;
+}
+
+// Design, "Images in detail": the registry's digest for a tag, asked through
+// the daemon; the same one the pull records.
+TEST_F(DockerDriverTest, ResolvesATagToTheDigestItPulls) {
+  auto resolved = wait<std::string>([&](auto done) { driver->resolve(image, Deadline(120000), executor(), done); });
+  ASSERT_TRUE(resolved.ok()) << resolved.error().message;
+  EXPECT_TRUE(model::is_digest(resolved.value())) << resolved.value();
+  auto pulled = wait<ImageInfo>([&](auto done) { driver->pull(image, Deadline(240000), executor(), done); });
+  ASSERT_TRUE(pulled.ok()) << pulled.error().message;
+  EXPECT_EQ(pulled.value().digest, resolved.value());
+
+  const std::string pinned = "busybox@" + resolved.value();
+  auto again = wait<std::string>([&](auto done) { driver->resolve(pinned, Deadline(30000), executor(), done); });
+  ASSERT_TRUE(again.ok());
+  EXPECT_EQ(again.value(), resolved.value());
+}
+
+TEST_F(DockerDriverTest, ARegistryNotAllowedIsRefusedBeforeAnythingIsAsked) {
+  auto resolved = wait<std::string>([&](auto done) { driver->resolve("ghcr.io/louhi/none:1", Deadline(30000), executor(), done); });
+  ASSERT_FALSE(resolved.ok());
+  EXPECT_EQ(resolved.error().kind, Error::Kind::refused);
+  EXPECT_NE(resolved.error().message.find("ghcr.io"), std::string::npos) << resolved.error().message;
+  auto pulled = wait<ImageInfo>([&](auto done) { driver->pull("ghcr.io/louhi/none:1", Deadline(30000), executor(), done); });
+  ASSERT_FALSE(pulled.ok());
+  EXPECT_EQ(pulled.error().kind, Error::Kind::refused);
+}
+
+TEST_F(DockerDriverTest, ResolvingNothingFailsWithoutAMalformedReply) {
+  auto resolved = wait<std::string>([&](auto done) { driver->resolve("louhi-no-such-image-anywhere:0", Deadline(120000), executor(), done); });
+  ASSERT_FALSE(resolved.ok());
+  EXPECT_NE(resolved.error().kind, Error::Kind::malformed) << resolved.error().message;
+}
+
+// A storage bound is kept where the runtime says it can be, and fails the
+// create, saying why, where it cannot: never dropped silently. Docker 26.1
+// answers the refusal with a 500, so its kind is the daemon's, not ours to
+// assert.
+TEST_F(DockerDriverTest, AStorageBoundIsKeptOrRefusedNeverDropped) {
+  auto described = wait<RuntimeInfo>([&](auto done) { driver->describe(Deadline(30000), executor(), done); });
+  ASSERT_TRUE(described.ok());
+  make_volume();
+  ContainerSpec s = spec("app", {"true"});
+  s.storage_bytes = 64ull << 20;
+  auto pulled = wait<ImageInfo>([&](auto done) { driver->pull(image, Deadline(240000), executor(), done); });
+  ASSERT_TRUE(pulled.ok()) << pulled.error().message;
+  auto created = wait<std::string>([&](auto done) { driver->create(s, Deadline(30000), executor(), done); });
+  if (described.value().limits_storage) {
+    ASSERT_TRUE(created.ok()) << created.error().message;
+    EXPECT_EQ(raw_inspect(created.value()).at("HostConfig").at("StorageOpt").at("size"), "67108864");
+  } else {
+    ASSERT_FALSE(created.ok()) << "this daemon cannot bound storage, yet took a bound";
+    EXPECT_NE(created.error().kind, Error::Kind::malformed) << created.error().message;
+    EXPECT_NE(created.error().message.find("storage-opt"), std::string::npos) << "the daemon's reason reaches the caller: " << created.error().message;
+    std::cout << "storage bound refused, as expected here: " << created.error().message << "\n";
+  }
 }
 
 TEST_F(DockerDriverTest, APullOfNothingIsRefused) {

@@ -160,6 +160,37 @@ TEST(TaskDefinitions, VolumesAreNamedOnceAndSized) {
   d = fixture::task_definition();
   d.volumes[0].size_mib = 0;
   EXPECT_THROW(d.validate(), std::invalid_argument);
+  d = fixture::task_definition();
+  d.volumes[0].kind = static_cast<VolumeKind>(3);
+  EXPECT_THROW(d.validate(), std::invalid_argument);
+}
+
+// Design, "Ephemeral storage in detail": a memory volume's pages are charged
+// to the task's memory, so its memory volumes together fit in it; a disk
+// volume is bounded on disk, not in memory.
+TEST(TaskDefinitions, MemoryVolumesFitInTheTasksMemory) {
+  auto d = fixture::task_definition();
+  d.volumes.push_back({"more", VolumeKind::memory, d.memory_mib - d.volumes[0].size_mib});
+  EXPECT_NO_THROW(d.validate()) << "exactly the task's memory";
+  d.volumes.back().size_mib += 1;
+  EXPECT_THROW(d.validate(), std::invalid_argument);
+  d.volumes.back().kind = VolumeKind::disk;
+  d.volumes.back().size_mib = 100'000;
+  EXPECT_NO_THROW(d.validate()) << "a disk volume is not counted in memory";
+}
+
+TEST(TaskDefinitions, EphemeralStorageIsBounded) {
+  auto d = fixture::task_definition();
+  d.ephemeral_storage_mib = min_ephemeral_storage_mib;
+  EXPECT_NO_THROW(d.validate());
+  d.ephemeral_storage_mib = min_ephemeral_storage_mib - 1;
+  EXPECT_THROW(d.validate(), std::invalid_argument);
+  d.ephemeral_storage_mib = 0;
+  EXPECT_THROW(d.validate(), std::invalid_argument) << "there is no unbounded";
+  d.ephemeral_storage_mib = max_ephemeral_storage_mib;
+  EXPECT_NO_THROW(d.validate());
+  d.ephemeral_storage_mib = max_ephemeral_storage_mib + 1;
+  EXPECT_THROW(d.validate(), std::invalid_argument);
 }
 
 TEST(TaskDefinitions, HealthChecksAreBounded) {

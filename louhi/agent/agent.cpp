@@ -161,7 +161,11 @@ void Agent::with_runtime(std::function<void()> then) {
       const auto& r = *self->_runtime;
       self->_logger.info("runtime " + r.name + " " + r.version + ", cgroup v" + std::to_string(r.cgroup_version) + ", limits: memory " +
                          (r.limits_memory ? "yes" : "no") + ", cpu " + (r.limits_cpu ? "yes" : "no") + ", pids " + (r.limits_pids ? "yes" : "no") +
-                         ", user namespaces " + (r.user_namespaces ? "yes" : "no"));
+                         ", storage " + (r.limits_storage ? "yes" : "no") + ", user namespaces " + (r.user_namespaces ? "yes" : "no"));
+      if (!r.limits_storage) {
+        self->_logger.warn(self->_policy.allow_unbounded_storage ? "this node cannot bound storage; launching tasks anyway, as the operator allows"
+                                                                 : "this node cannot bound storage; no task will be launched here");
+      }
       if (!r.limits_memory) {
         self->_logger.warn(self->_policy.allow_unenforced_memory ? "this node cannot enforce memory limits; launching tasks anyway, as the operator allows"
                                                                  : "this node cannot enforce memory limits; no task will be launched here");
@@ -336,6 +340,9 @@ Agent::Step Agent::handle(const Assignment& a, std::vector<ContainerInfo> observ
     if (!_runtime->user_namespaces && !_policy.allow_without_user_namespaces) {
       return report_step(a, model::TaskState::pending, "not launched: this node's runtime has no user namespaces", {});
     }
+    if (!_runtime->limits_storage && !_policy.allow_unbounded_storage) {
+      return report_step(a, model::TaskState::pending, "not launched: this node's runtime cannot bound storage", {});
+    }
     if (p.retry_at && now < *p.retry_at) {
       wake_at(*p.retry_at);
       return report_step(a, model::TaskState::pending, p.last_error.empty() ? "waiting to restart" : "waiting to retry: " + p.last_error, {});
@@ -371,8 +378,12 @@ Agent::Step Agent::launch(const Assignment& a) {
       std::vector<std::string> ids;
     };
     auto plan = std::make_shared<Launch>();
-    plan->containers = container_specs(a, self->_policy.spec);
-    plan->volumes = volume_specs(a);
+    // Storage is bounded wherever the runtime can; launching here at all where
+    // it cannot is the operator's allowance.
+    SpecPolicy here = self->_policy.spec;
+    here.bound_storage = self->_runtime && self->_runtime->limits_storage;
+    plan->containers = container_specs(a, here);
+    plan->volumes = volume_specs(a, here);
     for (const auto& c : plan->containers) {
       if (std::find(plan->images.begin(), plan->images.end(), c.image) == plan->images.end()) plan->images.push_back(c.image);
     }

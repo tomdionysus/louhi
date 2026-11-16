@@ -144,8 +144,8 @@ TEST(DockerApi, ALimitIsNeverLeftUnset) {
   EXPECT_THROW(create_container_body(s), std::invalid_argument);
 }
 
-TEST(DockerApi, ScratchVolumeIsBoundedTmpfs) {
-  VolumeSpec v{"louhi-vol", 256ull * 1024 * 1024, {{std::string(label_task), std::string(32, '1')}}};
+TEST(DockerApi, AMemoryVolumeIsBoundedTmpfs) {
+  VolumeSpec v{"louhi-vol", VolumeKind::memory, 256ull * 1024 * 1024, {{std::string(label_task), std::string(32, '1')}}};
   const json::object body = json::parse(create_volume_body(v)).as_object();
   EXPECT_EQ(body.at("Name"), "louhi-vol");
   EXPECT_EQ(body.at("Driver"), "local");
@@ -154,6 +154,66 @@ TEST(DockerApi, ScratchVolumeIsBoundedTmpfs) {
   EXPECT_EQ(body.at("Labels").at(std::string(label_task)), json::value(std::string(32, '1')));
   v.size_bytes = 0;
   EXPECT_THROW(create_volume_body(v), std::invalid_argument);
+}
+
+// The local driver bounds a directory by an xfs project quota with its "size"
+// option; without one (the operator allowed an unbounding runtime), none.
+TEST(DockerApi, ADiskVolumeIsTheLocalDriversBoundedDirectory) {
+  VolumeSpec v{"louhi-vol", VolumeKind::disk, 4ull << 30, {}};
+  json::object body = json::parse(create_volume_body(v)).as_object();
+  EXPECT_EQ(body.at("Driver"), "local");
+  EXPECT_EQ(body.at("DriverOpts"), (json::object{{"size", "4294967296"}})) << "no tmpfs, no device, no host path";
+  v.size_bytes = 0;
+  body = json::parse(create_volume_body(v)).as_object();
+  EXPECT_FALSE(body.contains("DriverOpts"));
+}
+
+TEST(DockerApi, TheWritableLayerIsBoundedWhenAsked) {
+  auto s = spec();
+  EXPECT_FALSE(body_of(s).at("HostConfig").as_object().contains("StorageOpt")) << "no bound asked for";
+  s.storage_bytes = 1ull << 30;
+  EXPECT_EQ(body_of(s).at("HostConfig").at("StorageOpt"), (json::object{{"size", "1073741824"}}));
+}
+
+// The daemon decodes X-Registry-Auth as base64url with padding.
+TEST(DockerApi, RegistryAuthIsTheCredentialInBase64Url) {
+  const auto decode = [](const std::string& text) {
+    static const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    std::string out;
+    uint32_t group = 0;
+    int bits = 0;
+    for (const char c : text) {
+      if (c == '=') break;
+      const auto at = alphabet.find(c);
+      EXPECT_NE(at, std::string::npos) << "only the URL alphabet";
+      group = (group << 6) | static_cast<uint32_t>(at);
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        out.push_back(static_cast<char>((group >> bits) & 0xff));
+      }
+    }
+    return out;
+  };
+  const std::string password = registry_auth({"robot", "p+s/w?rd>>", ""}, "registry.example.net:5000");
+  EXPECT_EQ(password.size() % 4, 0u) << "padded";
+  EXPECT_EQ(json::parse(decode(password)),
+            (json::value(json::object{{"username", "robot"}, {"password", "p+s/w?rd>>"}, {"serveraddress", "registry.example.net:5000"}})));
+  const std::string token = registry_auth({"", "", "tok"}, "ghcr.io");
+  EXPECT_EQ(json::parse(decode(token)), (json::value(json::object{{"identitytoken", "tok"}, {"serveraddress", "ghcr.io"}})));
+}
+
+// Docker 26.1's GET /distribution/{name}/json, trimmed.
+TEST(DockerApi, ParsesTheDistributionDigest) {
+  const std::string digest = "sha256:" + std::string(64, 'f');
+  const std::string reply = R"({"Descriptor": {"mediaType": "application/vnd.oci.image.index.v1+json", "digest": ")" + digest +
+                            R"(", "size": 9218}, "Platforms": [{"architecture": "arm64", "os": "linux"}]})";
+  EXPECT_EQ(parse_distribution(reply), digest);
+  for (const std::string& bad : std::initializer_list<std::string>{"", "[]", "{}", R"({"Descriptor": null})", R"({"Descriptor": {"digest": 5}})",
+                                                                   R"({"Descriptor": {"digest": "sha512:abc"}})", R"({"Descriptor": {"digest": "sha256:ABC"}})",
+                                                                   R"({"Descriptor": {"digest": "sha256:)" + std::string(63, 'f') + R"("}})"}) {
+    EXPECT_THROW(parse_distribution(bad), MalformedReply) << bad;
+  }
 }
 
 TEST(DockerApi, FiltersSelectLouhisOwn) {
@@ -243,6 +303,22 @@ TEST(DockerApi, ParsesTheRuntime) {
   const std::string userns = R"({"SecurityOptions": ["name=seccomp,profile=builtin", "name=userns"]})";
   EXPECT_TRUE(parse_runtime(version, userns).user_namespaces);
   EXPECT_THROW(parse_runtime(R"({"Version": "1"})", info), MalformedReply);
+}
+
+// Docker bounds the writable layer only with overlay2 on xfs.
+TEST(DockerApi, StorageIsBoundedOnlyByOverlayOnXfs) {
+  const std::string version = R"({"Version": "26.1.5", "ApiVersion": "1.45"})";
+  const auto on = [&](const std::string& driver, const std::string& backing) {
+    return parse_runtime(version,
+                         R"({"Driver": ")" + driver + R"(", "DriverStatus": [["Backing Filesystem", ")" + backing + R"("], ["Supports d_type", "true"]]})")
+        .limits_storage;
+  };
+  EXPECT_TRUE(on("overlay2", "xfs"));
+  EXPECT_FALSE(on("overlay2", "extfs")) << "as the Pis answer";
+  EXPECT_FALSE(on("vfs", "xfs"));
+  EXPECT_FALSE(parse_runtime(version, "{}").limits_storage);
+  EXPECT_THROW(parse_runtime(version, R"({"Driver": "overlay2", "DriverStatus": [["Backing Filesystem"]]})"), MalformedReply);
+  EXPECT_THROW(parse_runtime(version, R"({"Driver": "overlay2", "DriverStatus": "xfs"})"), MalformedReply);
 }
 
 TEST(DockerApi, FindsTheDigestForTheName) {

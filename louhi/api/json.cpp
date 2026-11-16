@@ -307,6 +307,7 @@ model::TaskDefinition task_definition_body(const json::object& body, std::string
   out.family = m.string("family", model::max_name, true);
   out.cpu_millis = m.number_or<uint32_t>("cpu_millis", 0, model::max_task_cpu_millis, 0);
   out.memory_mib = m.number_or<uint32_t>("memory_mib", 0, model::max_task_memory_mib, 0);
+  out.ephemeral_storage_mib = m.number_or<uint32_t>("ephemeral_storage_mib", 0, model::max_ephemeral_storage_mib, default_ephemeral_storage_mib);
   if (const json::array* containers = m.array("containers", model::max_containers))
     for (size_t i = 0; i < containers->size(); ++i) out.containers.push_back(container_body(as_object((*containers)[i], "containers"), i));
   if (const json::array* volumes = m.array("volumes", model::max_volumes)) {
@@ -315,7 +316,13 @@ model::TaskDefinition task_definition_body(const json::object& body, std::string
       model::VolumeDefinition volume;
       volume.name = v.string("name", model::max_name, true);
       const std::string kind = v.string("kind", 16);
-      if (!kind.empty() && kind != "scratch") invalid(v.name("kind") + " is not scratch");
+      if (kind == "disk") {
+        volume.kind = model::VolumeKind::disk;
+      } else if (kind.empty() || kind == "memory") {
+        volume.kind = model::VolumeKind::memory;
+      } else {
+        invalid(v.name("kind") + " is not memory or disk");
+      }
       volume.size_mib = v.number_or<uint32_t>("size_mib", 0, model::max_scratch_mib, 0);
       v.done();
       out.volumes.push_back(std::move(volume));
@@ -410,10 +417,13 @@ json::object to_json(const model::TaskDefinition& record) {
     containers.push_back(std::move(container));
   }
   json::array volumes;
-  for (const auto& v : record.volumes) volumes.push_back(json::object{{"name", v.name}, {"kind", "scratch"}, {"size_mib", v.size_mib}});
-  return {{"project", record.project},       {"family", record.family},         {"revision", record.revision},
-          {"cpu_millis", record.cpu_millis}, {"memory_mib", record.memory_mib}, {"containers", std::move(containers)},
-          {"volumes", std::move(volumes)},   {"run_once", record.run_once},     {"registered_unix_ms", record.registered_unix_ms}};
+  for (const auto& v : record.volumes)
+    volumes.push_back(json::object{{"name", v.name}, {"kind", v.kind == model::VolumeKind::disk ? "disk" : "memory"}, {"size_mib", v.size_mib}});
+  return {{"project", record.project},           {"family", record.family},
+          {"revision", record.revision},         {"cpu_millis", record.cpu_millis},
+          {"memory_mib", record.memory_mib},     {"ephemeral_storage_mib", record.ephemeral_storage_mib},
+          {"containers", std::move(containers)}, {"volumes", std::move(volumes)},
+          {"run_once", record.run_once},         {"registered_unix_ms", record.registered_unix_ms}};
 }
 
 json::object to_json(const model::Task& record) {

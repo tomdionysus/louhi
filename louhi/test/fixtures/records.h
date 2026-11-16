@@ -47,7 +47,8 @@ inline model::TaskDefinition task_definition() {
   d.revision = 3;
   d.cpu_millis = 1000;
   d.memory_mib = 512;
-  d.volumes = {{"scratch", model::VolumeKind::scratch, 256}};
+  d.ephemeral_storage_mib = 2048;
+  d.volumes = {{"scratch", model::VolumeKind::memory, 256}};
 
   model::ContainerDefinition app;
   app.name = "app";

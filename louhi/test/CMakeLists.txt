@@ -23,6 +23,7 @@ add_executable(louhi_tests
   runtime_docker_api_test.cpp
   runtime_docker_driver_test.cpp
   runtime_local_http_test.cpp
+  runtime_registries_test.cpp
   store_test.cpp
   version_test.cpp
 )

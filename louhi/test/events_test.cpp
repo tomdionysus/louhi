@@ -24,6 +24,7 @@
 #include "dannan/test/fixtures/stepped_time.h"
 #include "louhi/api/api.h"
 #include "louhi/store/memory_store.h"
+#include "louhi/test/fixtures/fake_driver.h"
 #include "louhi/test/fixtures/records.h"
 
 using namespace louhi;
@@ -150,8 +151,11 @@ namespace {
 struct ApiEventsTest : EventsTest {
   boost::asio::io_context io;
   store::MemoryStore store;
-  api::Api api{store, wall, self, io.get_executor(), dannan::status::ScopedLogger(dannan::status::null_sink(), "test"), store::Deadline(1000), &events};
+  test::FakeDriver images;
+  api::Api api{store, wall, self, images, io.get_executor(), dannan::status::ScopedLogger(dannan::status::null_sink(), "test"), store::Deadline(1000), &events};
   api::Grant admin{"root", std::vector<std::string>{"louhi:admin"}, 0};
+
+  ApiEventsTest() { images.digests = {{"alpine", "sha256:" + std::string(64, 'b')}}; }
 
   api::Response call(std::string method, std::string path, std::string body = "") {
     std::optional<api::Response> got;

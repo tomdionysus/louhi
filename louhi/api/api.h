@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -22,6 +23,8 @@
 #include "dannan/status/log.h"
 #include "louhi/api/auth.h"
 #include "louhi/model/ids.h"
+#include "louhi/model/records.h"
+#include "louhi/runtime/driver.h"
 #include "louhi/store/store.h"
 
 // The API's operations (design, "API and sign-on", the endpoint table), apart
@@ -71,12 +74,18 @@ class Api {
   // How long a RunTask client token is remembered.
   static constexpr std::chrono::hours client_token_life{1};
 
-  // The store and the clock outlive this. `self` is this node: tasks are
-  // placed on it until placement across nodes exists (step 6). `events`,
-  // when given, outlives this and is told of each task run and each stop
-  // asked for, once its write has landed.
-  Api(store::Store& store, const dannan::contract::WallClock& wall, model::NodeId self, store::Executor executor, dannan::status::ScopedLogger logger,
-      store::Deadline write_deadline = store::Deadline(10'000), events::Events* events = nullptr);
+  // How long registering a definition waits on the registries to resolve its
+  // images.
+  static constexpr runtime::Deadline resolve_deadline{30'000};
+
+  // The store, the clock and the runtime outlive this. `self` is this node:
+  // tasks are placed on it until placement across nodes exists (step 6).
+  // `images` resolves each container's image to a digest when a definition
+  // is registered (design, "Images in detail"), and refuses a registry the
+  // operator does not allow. `events`, when given, outlives this and is told
+  // of each task run and each stop asked for, once its write has landed.
+  Api(store::Store& store, const dannan::contract::WallClock& wall, model::NodeId self, runtime::Driver& images, store::Executor executor,
+      dannan::status::ScopedLogger logger, store::Deadline write_deadline = store::Deadline(10'000), events::Events* events = nullptr);
 
   void handle(const Grant& grant, const Request& request, std::function<void(Response)> done);
 
@@ -94,6 +103,9 @@ class Api {
   void put_quota(const Grant& grant, const Path& path, const Request& request, Done done);
   void get_quota(const Grant& grant, const Path& path, Done done);
   void register_task_definition(const Grant& grant, const Path& path, const Request& request, Done done);
+  // Resolves containers[next..] of `definition` in turn, then admits it.
+  void resolve_images(std::shared_ptr<model::TaskDefinition> definition, size_t next, Done done);
+  void admit_task_definition(model::TaskDefinition definition, Done done);
   void list_families(const Grant& grant, const Path& path, const Request& request, Done done);
   void list_revisions(const Grant& grant, const Path& path, const Request& request, Done done);
   void describe_task_definition(const Grant& grant, const Path& path, Done done);
@@ -112,6 +124,7 @@ class Api {
   store::Store& _store;
   const dannan::contract::WallClock& _wall;
   const model::NodeId _self;
+  runtime::Driver& _images;
   store::Executor _executor;
   dannan::status::ScopedLogger _logger;
   const store::Deadline _write_deadline;

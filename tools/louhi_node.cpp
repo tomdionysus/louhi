@@ -27,7 +27,8 @@
 //              [--domain NAME] [--heartbeat-ms N] [--status-ms N]
 //              [--seconds N] [--log-level LEVEL] [--log-format text|json]
 //              [--docker-socket PATH] [--allow-unenforced-memory]
-//              [--allow-without-user-namespaces]
+//              [--allow-without-user-namespaces] [--allow-unbounded-storage]
+//              [--registry DOMAIN]... [--registry-credential DOMAIN=USER:PASSWORD]...
 //              [--api-http HOST:PORT] [--api-https HOST:PORT --api-tls-chain FILE --api-tls-key FILE]
 //              [--lugh-issuer URL]... [--lugh-ca FILE]
 //              [--lir [--lir-tls [--lir-tls-trust FILE]]
@@ -43,6 +44,10 @@
 // issuer and at least one of --api-http and --api-https are given; sign-in
 // is by the Lugh plugin only, so without an issuer there is no API. A build
 // without the plugin (LOUHI_BUILD_LUGH off) serves none.
+//
+// Images come only from the registries listed (--registry, by domain;
+// docker.io for Docker Hub): none listed allows none. A tag is resolved to a
+// digest when a definition is registered (design, "Images in detail").
 //
 // The store is the in-memory one until the Dagda store exists (ACTIVE.md):
 // it holds only what was declared since this node started, so the node
@@ -62,6 +67,7 @@
 #include <future>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -82,6 +88,7 @@
 #include "louhi/model/keys.h"
 #include "louhi/node/status.h"
 #include "louhi/runtime/docker/docker_driver.h"
+#include "louhi/runtime/registries.h"
 #include "louhi/store/memory_store.h"
 #include "louhi/version.h"
 #ifdef LOUHI_WITH_LUGH
@@ -123,6 +130,9 @@ struct Options {
   std::string docker_socket = "/var/run/docker.sock";
   bool allow_unenforced_memory = false;
   bool allow_without_user_namespaces = false;
+  bool allow_unbounded_storage = false;
+  std::vector<std::string> registries;
+  std::map<std::string, louhi::runtime::RegistryCredential> registry_credentials;
   std::optional<dannan::net::Endpoint> api_http;
   std::optional<dannan::net::Endpoint> api_https;
   std::string api_tls_chain;
@@ -174,6 +184,11 @@ dannan::config::Reader reader() {
   add("runtime.allow_unenforced_memory", Kind::toggle, "--allow-unenforced-memory", "launch tasks even where the runtime cannot enforce memory limits");
   add("runtime.allow_without_user_namespaces", Kind::toggle, "--allow-without-user-namespaces",
       "launch tasks even where the runtime has no user namespaces (root in a container is root on the node)");
+  add("runtime.allow_unbounded_storage", Kind::toggle, "--allow-unbounded-storage",
+      "launch tasks even where the runtime cannot bound their storage (Docker needs overlay2 on xfs with project quotas)");
+  add("registries.allow", Kind::list, "--registry", "a registry images may come from, by domain (docker.io for Docker Hub); none allows none");
+  add("registries.credentials", Kind::list, "--registry-credential",
+      "DOMAIN=USER:PASSWORD, or DOMAIN=:IDENTITY_TOKEN, for an allowed registry; keep them in secrets.yaml");
   add("api.http", Kind::value, "--api-http", "HOST:PORT for the API over plain HTTP");
   add("api.https", Kind::value, "--api-https", "HOST:PORT for the API over HTTPS");
   add("api.tls_chain", Kind::value, "--api-tls-chain", "the HTTPS certificate chain, PEM, leaf first");
@@ -217,6 +232,25 @@ Options parse(int argc, char** argv) {
   out.docker_socket = settings.path_of("runtime.docker_socket").value_or(out.docker_socket);
   out.allow_unenforced_memory = settings.toggle("runtime.allow_unenforced_memory").value_or(false);
   out.allow_without_user_namespaces = settings.toggle("runtime.allow_without_user_namespaces").value_or(false);
+  out.allow_unbounded_storage = settings.toggle("runtime.allow_unbounded_storage").value_or(false);
+  out.registries = settings.list("registries.allow");
+  for (const auto& entry : settings.list("registries.credentials")) {
+    // A user name never holds ':' (RFC 7617), so the first ':' ends it; an
+    // empty one means the rest is an identity token. The entry is a secret,
+    // so a refusal never quotes it.
+    const auto equals = entry.find('=');
+    const auto colon = equals == std::string::npos ? std::string::npos : entry.find(':', equals + 1);
+    if (colon == std::string::npos) throw std::runtime_error("a registry credential is not DOMAIN=USER:PASSWORD or DOMAIN=:IDENTITY_TOKEN");
+    louhi::runtime::RegistryCredential credential;
+    const std::string user = entry.substr(equals + 1, colon - equals - 1);
+    if (user.empty()) {
+      credential.identity_token = entry.substr(colon + 1);
+    } else {
+      credential.username = user;
+      credential.password = entry.substr(colon + 1);
+    }
+    if (!out.registry_credentials.emplace(entry.substr(0, equals), std::move(credential)).second) throw std::runtime_error("a registry has two credentials");
+  }
   if (const auto http = settings.text("api.http")) out.api_http = endpoint(*http);
   if (const auto https = settings.text("api.https")) out.api_https = endpoint(*https);
   out.api_tls_chain = settings.path_of("api.tls_chain").value_or("");
@@ -263,6 +297,7 @@ louhi::node::Facts observe(louhi::runtime::Driver& driver, asio::io_context& io,
   facts.self = self;
   facts.allow_unenforced_memory = options.allow_unenforced_memory;
   facts.allow_without_user_namespaces = options.allow_without_user_namespaces;
+  facts.allow_unbounded_storage = options.allow_unbounded_storage;
   facts.store_whole = store_whole;
   if (future.wait_for(deadline + 5s) != std::future_status::ready) {
     facts.runtime_error = "no answer within the deadline";
@@ -322,7 +357,8 @@ int main(int argc, char** argv) {
     louhi::store::MemoryStore store(louhi::store::MemoryStore::Whole::never);
     louhi::agent::StoreDesired desired(store, self, context.logger("louhi.desired"));
     louhi::agent::StoreReports reports(store, io.get_executor(), context.logger("louhi.reports"));
-    louhi::runtime::docker::DockerDriver driver(io.get_executor(), options.docker_socket);
+    louhi::runtime::docker::DockerDriver driver(io.get_executor(), options.docker_socket,
+                                                louhi::runtime::Registries(options.registries, options.registry_credentials));
 
     // Events on Lir, when asked for: the agent's reports and the node's status
     // are published as well as stored.
@@ -380,6 +416,7 @@ int main(int argc, char** argv) {
     louhi::agent::Policy policy;
     policy.allow_unenforced_memory = options.allow_unenforced_memory;
     policy.allow_without_user_namespaces = options.allow_without_user_namespaces;
+    policy.allow_unbounded_storage = options.allow_unbounded_storage;
     louhi::agent::Clock clock{&dannan::contract::steady_time_source(), &dannan::contract::system_wall_clock(),
                               [&io](std::chrono::milliseconds delay, std::function<void()> fn) {
                                 auto timer = std::make_shared<asio::steady_timer>(io, delay);
@@ -407,8 +444,8 @@ int main(int argc, char** argv) {
     auto logger = context.logger("louhi.node");
 
     // The API, when an issuer and a listener are given.
-    louhi::api::Api api(store, dannan::contract::system_wall_clock(), self, io.get_executor(), context.logger("louhi.api"), louhi::store::Deadline(10'000),
-                        events.get());
+    louhi::api::Api api(store, dannan::contract::system_wall_clock(), self, driver, io.get_executor(), context.logger("louhi.api"),
+                        louhi::store::Deadline(10'000), events.get());
 #ifdef LOUHI_WITH_LUGH
     std::unique_ptr<louhi::auth::LughPlugin> lugh;
     std::unique_ptr<louhi::api::Authenticator> authenticator;

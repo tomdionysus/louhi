@@ -12,6 +12,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "louhi/runtime/driver.h"
 
@@ -44,6 +46,11 @@ class LocalHttp {
   // for a reply that is not HTTP or is over its bound. Any status completes
   // the request: the caller judges it.
   void request(boost::beast::http::verb verb, std::string target, std::string body, Deadline deadline, Executor executor, Completion<Reply> done);
+  // The same with headers of the caller's (a registry credential), sent as
+  // given and never logged.
+  using Headers = std::vector<std::pair<std::string, std::string>>;
+  void request(boost::beast::http::verb verb, std::string target, std::string body, Headers headers, Deadline deadline, Executor executor,
+               Completion<Reply> done);
 
   // A request whose reply body is a stream of lines (a pull's progress, the
   // event stream). On a 200, each line, without its newline, is posted to
@@ -59,6 +66,8 @@ class LocalHttp {
     virtual void cancel() = 0;
   };
   std::shared_ptr<Stream> stream(boost::beast::http::verb verb, std::string target, std::string body, Deadline deadline, Executor executor,
+                                 std::function<void(std::string)> line, Completion<Reply> done);
+  std::shared_ptr<Stream> stream(boost::beast::http::verb verb, std::string target, std::string body, Headers headers, Deadline deadline, Executor executor,
                                  std::function<void(std::string)> line, Completion<Reply> done);
 
  private:

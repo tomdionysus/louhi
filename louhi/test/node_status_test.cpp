@@ -34,7 +34,7 @@ runtime::RuntimeInfo capable() {
   r.api_version = "1.41";
   r.user_namespaces = true;
   r.cgroup_version = 2;
-  r.limits_memory = r.limits_swap = r.limits_cpu = r.limits_pids = true;
+  r.limits_memory = r.limits_swap = r.limits_cpu = r.limits_pids = r.limits_storage = true;
   r.cpus = 4;
   r.memory_bytes = 8ull << 30;
   return r;
@@ -152,6 +152,21 @@ TEST(NodeStatus, NoUserNamespacesIsNotReadyUnlessTheOperatorAllows) {
   s = node::node_status(facts, {}, 1, 1);
   EXPECT_TRUE(s.ready);
   EXPECT_TRUE(has_condition(s, "user namespaces")) << "allowed, but still reported";
+}
+
+TEST(NodeStatus, UnboundedStorageIsNotReadyUnlessTheOperatorAllows) {
+  node::Facts facts;
+  facts.self = test::node_id(1);
+  facts.runtime = capable();
+  facts.runtime->limits_storage = false;
+  auto s = node::node_status(facts, {}, 1, 1);
+  EXPECT_FALSE(s.ready);
+  EXPECT_TRUE(has_condition(s, "cannot bound storage"));
+
+  facts.allow_unbounded_storage = true;
+  s = node::node_status(facts, {}, 1, 1);
+  EXPECT_TRUE(s.ready);
+  EXPECT_TRUE(has_condition(s, "cannot bound storage")) << "allowed, but still reported";
 }
 
 TEST(NodeStatus, AStoreThatIsNotWholeIsReported) {

@@ -45,10 +45,15 @@ std::string image_of(const model::ContainerDefinition& container) {
   return model::to_string(reference);
 }
 
-std::vector<runtime::VolumeSpec> volume_specs(const Assignment& a) {
+std::vector<runtime::VolumeSpec> volume_specs(const Assignment& a, const SpecPolicy& policy) {
   std::vector<runtime::VolumeSpec> out;
   for (const auto& volume : a.definition.volumes) {
-    out.push_back({runtime::volume_name(a.task.id, volume.name), static_cast<uint64_t>(volume.size_mib) * mib, labels_of(a)});
+    runtime::VolumeSpec spec;
+    spec.name = runtime::volume_name(a.task.id, volume.name);
+    spec.kind = volume.kind == model::VolumeKind::disk ? runtime::VolumeKind::disk : runtime::VolumeKind::memory;
+    if (spec.kind == runtime::VolumeKind::memory || policy.bound_storage) spec.size_bytes = static_cast<uint64_t>(volume.size_mib) * mib;
+    spec.labels = labels_of(a);
+    out.push_back(std::move(spec));
   }
   return out;
 }
@@ -85,6 +90,7 @@ std::vector<runtime::ContainerSpec> container_specs(const Assignment& a, const S
     s.cpu_millis = c.cpu_millis != 0 ? c.cpu_millis : cpu_share;
     s.memory_bytes = static_cast<uint64_t>(c.memory_mib != 0 ? c.memory_mib : memory_share) * mib;
     s.pids_limit = policy.pids_per_container;
+    if (policy.bound_storage) s.storage_bytes = static_cast<uint64_t>(a.definition.ephemeral_storage_mib) * mib / a.definition.containers.size();
     s.read_only_root = c.read_only_root;
     s.labels = labels_of(a);
     s.labels.emplace(std::string(runtime::label_container), c.name);

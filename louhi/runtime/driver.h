@@ -102,6 +102,14 @@ struct RuntimeInfo {
   bool limits_swap = false;
   bool limits_cpu = false;
   bool limits_pids = false;
+  // Whether it can bound what a container writes outside its volumes, and a
+  // disk volume's size (design, "Ephemeral storage in detail"). Docker can
+  // only with overlay2 on xfs; the xfs must also be mounted with project
+  // quotas, which the daemon does not report, so on a node where this is true
+  // without them a create with a bound fails, saying why (Docker answers 500,
+  // so the error is unavailable and the agent's launch backs off and retries,
+  // its reason in the task's status).
+  bool limits_storage = false;
   uint32_t cpus = 0;
   uint64_t memory_bytes = 0;
 };
@@ -139,14 +147,22 @@ struct ContainerSpec {
   uint32_t cpu_millis = 0;
   uint64_t memory_bytes = 0;
   uint32_t pids_limit = 0;
+  // What it may write outside its volumes; zero only where the operator allows
+  // a runtime that cannot bound it.
+  uint64_t storage_bytes = 0;
   bool read_only_root = false;
   Labels labels;
   bool operator==(const ContainerSpec&) const = default;
 };
 
+enum class VolumeKind { memory, disk };
+
 struct VolumeSpec {
   std::string name;
-  // Scratch: memory-backed, bounded, gone with the volume.
+  // Scratch, gone with the volume: in memory, or on the node's disk.
+  VolumeKind kind = VolumeKind::memory;
+  // Always set for memory; zero for disk only where the operator allows a
+  // runtime that cannot bound it.
   uint64_t size_bytes = 0;
   Labels labels;
   bool operator==(const VolumeSpec&) const = default;
@@ -202,7 +218,15 @@ class Driver {
 
   virtual void describe(Deadline deadline, Executor executor, Completion<RuntimeInfo> done) = 0;
 
+  // The digest ("sha256:" and 64 hex digits) of the manifest a reference names
+  // now, asked of its registry; for a multi-platform image, the index's. A
+  // reference that carries a digest completes with it, unasked. Refused for a
+  // registry the operator does not allow, not_found for an image the registry
+  // does not have (registries.h).
+  virtual void resolve(const std::string& image, Deadline deadline, Executor executor, Completion<std::string> done) = 0;
+
   // Fetches an image if it is not here. Completes with what it resolved to.
+  // Refused for a registry the operator does not allow.
   virtual void pull(const std::string& image, Deadline deadline, Executor executor, Completion<ImageInfo> done) = 0;
 
   virtual void create_volume(const VolumeSpec& spec, Deadline deadline, Executor executor, Completion<Done> done) = 0;

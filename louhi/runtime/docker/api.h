@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "louhi/runtime/driver.h"
+#include "louhi/runtime/registries.h"
 
 // The Docker Engine API, as pure functions: the bodies Louhi sends, and
 // parsers for what the daemon sends back. No I/O, so every rule here is tested
@@ -54,9 +55,17 @@ class MalformedReply : public std::runtime_error {
 const std::vector<std::string>& kept_capabilities();
 
 // Bodies. Throw std::invalid_argument for a spec with an empty name or image,
-// or a limit of zero.
+// or a limit of zero. A container's writable layer is bounded by StorageOpt
+// "size" when it has a storage bound. A memory volume is tmpfs of its size; a
+// disk volume is the local driver's directory, bounded by its "size" option
+// (an xfs project quota) when it has one.
 std::string create_container_body(const ContainerSpec& spec);
 std::string create_volume_body(const VolumeSpec& spec);
+
+// The X-Registry-Auth header's value for signing in to `domain`: the
+// credential as JSON, in base64url with padding, as the daemon decodes it.
+// Holds a secret: never logged.
+std::string registry_auth(const RegistryCredential& credential, const std::string& domain);
 
 // Query strings.
 std::string url_encode(std::string_view text);
@@ -75,6 +84,9 @@ RuntimeInfo parse_runtime(std::string_view version_body, std::string_view info_b
 // the reference's own digest when it has one, else the RepoDigests entry for
 // the same name; empty when the daemon records none for that name.
 std::string parse_image_digest(std::string_view inspect_body, std::string_view reference);
+// The digest of the manifest a reference names, from /distribution/<ref>/json:
+// its Descriptor's, which must be sha256 and 64 lowercase hex digits.
+std::string parse_distribution(std::string_view body);
 // One line of a pull's progress stream: the error it reports, if any.
 std::optional<std::string> parse_pull_line(std::string_view line);
 // One line of the event stream: an event about one of Louhi's containers, or

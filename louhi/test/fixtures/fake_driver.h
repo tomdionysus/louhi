@@ -31,7 +31,11 @@ class FakeDriver final : public runtime::Driver {
   };
 
   // What describe() answers.
-  runtime::RuntimeInfo info{"docker", "26.1.5", "1.45", true, 2, true, true, true, true, 4, 8ull << 30};
+  runtime::RuntimeInfo info{"docker", "26.1.5", "1.45", true, 2, true, true, true, true, true, 4, 8ull << 30};
+
+  // What resolve() answers for a reference without a digest; one not here is
+  // not found.
+  std::map<std::string, std::string> digests;
 
   // --- What a test does to it.
 
@@ -101,6 +105,12 @@ class FakeDriver final : public runtime::Driver {
     for (const auto& [name, v] : _volumes) out.insert(name);
     return out;
   }
+  std::optional<runtime::VolumeSpec> volume(const std::string& name) {
+    std::lock_guard<std::mutex> lock(_mutex);
+    const auto found = _volumes.find(name);
+    if (found == _volumes.end()) return std::nullopt;
+    return found->second;
+  }
   std::vector<std::string> calls() {
     std::lock_guard<std::mutex> lock(_mutex);
     return _calls;
@@ -119,6 +129,25 @@ class FakeDriver final : public runtime::Driver {
   void describe(runtime::Deadline, runtime::Executor executor, runtime::Completion<runtime::RuntimeInfo> done) override {
     auto failed = take("describe", "");
     complete(executor, std::move(done), failed ? runtime::Result<runtime::RuntimeInfo>(*failed) : runtime::Result<runtime::RuntimeInfo>(info));
+  }
+  void resolve(const std::string& image, runtime::Deadline, runtime::Executor executor, runtime::Completion<std::string> done) override {
+    auto failed = take("resolve", image);
+    std::string digest;
+    if (!failed) {
+      const auto at = image.find('@');
+      if (at != std::string::npos) {
+        digest = image.substr(at + 1);
+      } else {
+        std::lock_guard<std::mutex> lock(_mutex);
+        const auto found = digests.find(image);
+        if (found == digests.end()) {
+          failed = runtime::Error{runtime::Error::Kind::not_found, "resolving " + image + ": manifest unknown"};
+        } else {
+          digest = found->second;
+        }
+      }
+    }
+    complete(executor, std::move(done), failed ? runtime::Result<std::string>(*failed) : runtime::Result<std::string>(digest));
   }
   void pull(const std::string& image, runtime::Deadline, runtime::Executor executor, runtime::Completion<runtime::ImageInfo> done) override {
     auto failed = take("pull", image);

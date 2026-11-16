@@ -30,11 +30,12 @@ namespace {
 
 constexpr uint32_t max_header_bytes = 64 * 1024;
 
-http::request<http::string_body> make_request(http::verb verb, std::string target, std::string body) {
+http::request<http::string_body> make_request(http::verb verb, std::string target, std::string body, const LocalHttp::Headers& headers) {
   http::request<http::string_body> request{verb, std::move(target), 11};
   // The daemon ignores the host; HTTP/1.1 requires one.
   request.set(http::field::host, "docker");
   request.set(http::field::connection, "close");
+  for (const auto& [name, value] : headers) request.set(name, value);
   if (!body.empty()) {
     request.set(http::field::content_type, "application/json");
     request.body() = std::move(body);
@@ -219,15 +220,24 @@ struct Lines : Exchange, LocalHttp::Stream, std::enable_shared_from_this<Lines> 
 LocalHttp::LocalHttp(asio::any_io_executor io, std::string path) : _io(std::move(io)), _path(std::move(path)) {}
 
 void LocalHttp::request(http::verb verb, std::string target, std::string body, Deadline deadline, Executor executor, Completion<Reply> done) {
+  request(verb, std::move(target), std::move(body), {}, deadline, std::move(executor), std::move(done));
+}
+
+void LocalHttp::request(http::verb verb, std::string target, std::string body, Headers headers, Deadline deadline, Executor executor, Completion<Reply> done) {
   auto exchange = std::make_shared<Whole>(_io, deadline, std::move(executor), std::move(done));
-  exchange->request = make_request(verb, std::move(target), std::move(body));
+  exchange->request = make_request(verb, std::move(target), std::move(body), headers);
   exchange->start(_path);
 }
 
 std::shared_ptr<LocalHttp::Stream> LocalHttp::stream(http::verb verb, std::string target, std::string body, Deadline deadline, Executor executor,
                                                      std::function<void(std::string)> line, Completion<Reply> done) {
+  return stream(verb, std::move(target), std::move(body), {}, deadline, std::move(executor), std::move(line), std::move(done));
+}
+
+std::shared_ptr<LocalHttp::Stream> LocalHttp::stream(http::verb verb, std::string target, std::string body, Headers headers, Deadline deadline,
+                                                     Executor executor, std::function<void(std::string)> line, Completion<Reply> done) {
   auto exchange = std::make_shared<Lines>(_io, deadline, std::move(executor), std::move(line), std::move(done));
-  exchange->request = make_request(verb, std::move(target), std::move(body));
+  exchange->request = make_request(verb, std::move(target), std::move(body), headers);
   exchange->start(_path);
   return exchange;
 }

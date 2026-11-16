@@ -5,12 +5,13 @@ Last updated: 2026-11-16 (end of session). `COMPLETED.md` is the record.
 ## Resume here
 
 **State.** `develop` at `tomdionysus/louhi`, public and pushed (the maintainer,
-2026-11-15). Steps 0 to 3, 5 and 8 are done: records and codecs, the
-Docker driver, the agent, the store interface with the in-memory store,
-`louhi-node`, the API with sign-in by the Lugh plugin and `louhi-ctl`, and
-events on Lir. Last gate: 207 passed on node-c, Docker tests
-included. Pins: Dannan `0.8.3`, Lugh `a34770f`, Lir `4443c16`. Hosted CI
-green on every job (built without Lugh, which is private).
+2026-11-15). Steps 0 to 3, 5 and 8 are done, and step 13's first half:
+records and codecs, the Docker driver, the agent, the store interface with
+the in-memory store, `louhi-node`, the API with sign-in by the Lugh plugin
+and `louhi-ctl`, events on Lir, and images by digest with storage bounds.
+Last gate: 237 passed on node-d, Docker tests included. Pins:
+Dannan `0.8.3`, Lugh `a34770f` (Lugh's develop is at `382416d`, its
+HttpsClient change; move the pin as its own commit), Lir `4443c16`.
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -29,19 +30,17 @@ session: a second `claim-board wait` replaces the first.
 
 ## Next, in order
 
-1. **Step 13's first half,** which waits on nobody. A tag resolved to a
-   digest when a revision is registered, from the registry's manifest (an
-   untrusted reply: bounded, refusing what it does not understand, fuzzed),
-   so every task of a revision runs the same bytes; `image_digest` is
-   already in the record and the API leaves it to the system. Ephemeral
-   storage limits enforced. Write the design's detail first (which
-   registries, how a private one signs in) and ask the maintainer what it leaves open.
-2. **Owed, end to end:** `louhi-ctl login` against a real Lugh issuer;
+1. **Move the Lugh pin** to `382416d`, its own commit, one gate.
+2. **Step 13, owed:** a storage bound kept by a real runtime, which needs a
+   Pi with `/var/lib/docker` on xfs with `pquota` (waits on the maintainer, below);
+   a private registry signed in to for real. The image store on Dagda is
+   step 13's second half and waits on the Dagda ref.
+3. **Owed, end to end:** `louhi-ctl login` against a real Lugh issuer;
    `ServiceToken` (`louhi/auth/service_token.h`) against a real Lugh; a live
    publish to Lir (waits on the maintainer, below). Neither `louhi-ctl` nor
    `ServiceToken` has tests of its own.
-3. **Step 4's second half,** the Dagda store: waits on a Dagda ref.
-4. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers. A
+4. **Step 4's second half,** the Dagda store: waits on a Dagda ref.
+5. **Steps 6, 7 and 9** wait on Dannan 0.9.0's agreement registers. A
    service's task set changes through registers, so services wait with
    placement (the maintainer: anything that can use agreement waits for it).
 
@@ -62,6 +61,14 @@ session: a second `claim-board wait` replaces the first.
    node only today.
 4. **Under-voltage:** node-a and node-d report
    `throttled=0x50000`. Reported only.
+5. **xfs for Docker on a Pi.** Every Pi runs overlay2 on ext4, which cannot
+   bound storage, so no Pi launches a task unless `louhi-node` runs with
+   `--allow-unbounded-storage`. To test a kept bound, one Pi needs
+   `/var/lib/docker` on xfs mounted `pquota`. Recommendation: a loop-mounted
+   xfs image file (16 GB) at `/var/lib/docker` on node-c, which has
+   NVMe. Docker stops while its data moves, so whatever runs in Docker there
+   (redis, per the table below) stops with it. Undone by unmounting and restoring the old
+   directory.
 
 ## The build Pis
 
@@ -70,7 +77,7 @@ session: a second `claim-board wait` replaces the first.
 | node-b | yes | **no** (to do) | on | lir-node, scheduler |
 | node-c | yes | yes | on | lir-node, scheduler, redis |
 | node-d | yes | yes | on | lir-node |
-| node-a | **no** (to do) | **no** | **off** (to do) | lir-node, the acting scheduler; the TSan Pi (39-bit VA kernel, clang 19, no ninja) |
+| node-a | **no** (to do) | **no** | **off** (to do) | lir-node, the acting scheduler; clang 19, no ninja |
 
 Owed, at the maintainer's go already given; previous settings go to `/root/louhi-work/`
 on each Pi first (`cmdline.txt.before`, `daemon.json.before`,
@@ -79,7 +86,7 @@ on each Pi first (`cmdline.txt.before`, `daemon.json.before`,
 - **node-a:** install `docker.io` and `docker-cli` (save the nft
   ruleset first), `userns-remap: default` in `/etc/docker/daemon.json`,
   `cgroup_enable=memory` in `/boot/firmware/cmdline.txt` (change nothing
-  else: its kernel is what makes it the TSan Pi), one reboot. Lir cleared
+  else), one reboot. Lir cleared
   it on 2026-11-15 and asked to be told before and after. It needs the
   whole machine: post a note, claim cores "all" for about 20 minutes, queue
   for it if held (Dagda had a seven-hour measurement queued there). Checks
@@ -159,9 +166,9 @@ All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is 
 - The four fuzz targets (`record`, `image_reference`, `docker_reply`,
   `api_body`) built with clang and run `-max_total_time=60` each.
 - The `clang`, `asan` and `coverage` steps on a Pi.
-- TSan: g++'s fails on the 47-bit kernels of node-b, node-c and node-d, so
-  it runs on node-a with `CC=clang-19 CXX=clang++-19` and Makefiles
-  (`tools/ci.sh` names Ninja today and needs a generator setting first), or
-  is hosted CI's `tsan` job.
+- TSan: every Pi boots the 4K-page kernel since 2026-11-16 (Lir session,
+  at the maintainer's request), so g++'s TSan runs on all four. Sanitizer builds go on
+  node-b or node-c (15 GB), never node-d (4 GB, ran out of memory);
+  `free -m` first.
 
 Hosted CI runs all of these but the fuzzers on every push meanwhile.

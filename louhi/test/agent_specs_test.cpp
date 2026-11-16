@@ -9,7 +9,8 @@
 // every container and volume to its task; an image runs pinned to its digest
 // when the revision has one; a container's declared CPU and memory are its
 // own, the undeclaring ones share what is left and never get nothing; scratch
-// volumes have their declared size; mounts name the task's own volumes.
+// volumes have their declared size and kind; ephemeral storage is shared
+// equally; mounts name the task's own volumes.
 
 #include <gtest/gtest.h>
 
@@ -81,12 +82,37 @@ TEST(Specs, DeclaredLimitsAreOwnAndTheRestIsShared) {
 }
 
 TEST(Specs, VolumesAreTheTasksOwnAndSized) {
-  const Assignment a = assignment();
-  const auto volumes = volume_specs(a);
-  ASSERT_EQ(volumes.size(), 1u);
+  Assignment a = assignment();
+  a.definition.volumes.push_back({"cache", model::VolumeKind::disk, 4096});
+  const auto volumes = volume_specs(a, {});
+  ASSERT_EQ(volumes.size(), 2u);
   EXPECT_EQ(volumes[0].name, runtime::volume_name(a.task.id, "scratch"));
+  EXPECT_EQ(volumes[0].kind, runtime::VolumeKind::memory);
   EXPECT_EQ(volumes[0].size_bytes, 256ull << 20);
   EXPECT_EQ(runtime::task_of(volumes[0].labels), a.task.id);
+  EXPECT_EQ(volumes[1].kind, runtime::VolumeKind::disk);
+  EXPECT_EQ(volumes[1].size_bytes, 4096ull << 20);
+}
+
+// Design, "Ephemeral storage in detail": the task's ephemeral storage is
+// shared equally by its containers, and bounded wherever the runtime can.
+TEST(Specs, EphemeralStorageIsSharedEquallyAndBounded) {
+  const Assignment a = assignment();
+  const auto specs = container_specs(a, {});
+  ASSERT_EQ(specs.size(), 2u);
+  EXPECT_EQ(specs[0].storage_bytes, 1024ull << 20) << "2048 MiB between two";
+  EXPECT_EQ(specs[1].storage_bytes, 1024ull << 20);
+}
+
+TEST(Specs, WhereTheRuntimeCannotBoundStorageNothingAsksItTo) {
+  Assignment a = assignment();
+  a.definition.volumes.push_back({"cache", model::VolumeKind::disk, 4096});
+  SpecPolicy unbounded;
+  unbounded.bound_storage = false;
+  for (const auto& spec : container_specs(a, unbounded)) EXPECT_EQ(spec.storage_bytes, 0u);
+  const auto volumes = volume_specs(a, unbounded);
+  EXPECT_EQ(volumes[0].size_bytes, 256ull << 20) << "a memory volume is bounded in memory all the same";
+  EXPECT_EQ(volumes[1].size_bytes, 0u);
 }
 
 TEST(Specs, TwoTasksNeverShareANameOnANode) {
@@ -94,5 +120,5 @@ TEST(Specs, TwoTasksNeverShareANameOnANode) {
   Assignment two = assignment();
   two.task.id = test::task_id(0x99);
   EXPECT_NE(container_specs(one, {})[0].name, container_specs(two, {})[0].name);
-  EXPECT_NE(volume_specs(one)[0].name, volume_specs(two)[0].name);
+  EXPECT_NE(volume_specs(one, {})[0].name, volume_specs(two, {})[0].name);
 }

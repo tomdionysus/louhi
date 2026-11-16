@@ -97,15 +97,23 @@ void TaskDefinition::validate() const {
   require(memory_mib >= min_task_memory_mib && memory_mib <= max_task_memory_mib,
           "task definition memory is not " + std::to_string(min_task_memory_mib) + " to " + std::to_string(max_task_memory_mib) + " MiB");
 
+  require(
+      ephemeral_storage_mib >= min_ephemeral_storage_mib && ephemeral_storage_mib <= max_ephemeral_storage_mib,
+      "task definition ephemeral storage is not " + std::to_string(min_ephemeral_storage_mib) + " to " + std::to_string(max_ephemeral_storage_mib) + " MiB");
+
   require(volumes.size() <= max_volumes, "task definition has more than " + std::to_string(max_volumes) + " volumes");
   std::set<std::string> volume_names;
+  uint64_t in_memory = 0;
   for (const auto& volume : volumes) {
     require_name("volume name", volume.name);
-    require(volume.kind == VolumeKind::scratch, "volume " + volume.name + " kind is not scratch");
+    require(volume.kind == VolumeKind::memory || volume.kind == VolumeKind::disk, "volume " + volume.name + " kind is not memory or disk");
     require(volume.size_mib >= 1 && volume.size_mib <= max_scratch_mib,
             "volume " + volume.name + " size is not 1 to " + std::to_string(max_scratch_mib) + " MiB");
     require(volume_names.insert(volume.name).second, "task definition declares a volume twice");
+    if (volume.kind == VolumeKind::memory) in_memory += volume.size_mib;
   }
+  // A memory volume's pages are charged to the task's memory.
+  require(in_memory <= memory_mib, "task definition's memory volumes are larger than its memory");
 
   require(!containers.empty(), "task definition has no containers");
   require(containers.size() <= max_containers, "task definition has more than " + std::to_string(max_containers) + " containers");

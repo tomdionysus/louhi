@@ -89,6 +89,30 @@ TEST(Codec, OptionalPartsRoundTripEmpty) {
   expect_round_trip(s, decode_task_status);
 }
 
+TEST(Codec, VolumeKindsAndEphemeralStorageRoundTrip) {
+  auto d = fixture::task_definition();
+  d.ephemeral_storage_mib = 123'456;
+  d.volumes.push_back({"cache", VolumeKind::disk, 50'000});
+  expect_round_trip(d, decode_task_definition);
+  EXPECT_EQ(decode_task_definition(encode(d)).volumes[1].kind, VolumeKind::disk);
+}
+
+TEST(Codec, AVolumeKindTheFormatDoesNotDefineIsRefused) {
+  auto d = fixture::task_definition();
+  d.containers.resize(1);
+  d.containers[0].mounts.clear();
+  d.volumes = {{"v", VolumeKind::disk, 1}};
+  Bytes bytes = encode(d);
+  // A definition ends: volume name, kind (u8), size (u32), run_once (u8),
+  // registered (u64).
+  const size_t kind = bytes.size() - 8 - 1 - 4 - 1;
+  ASSERT_EQ(bytes[kind], static_cast<uint8_t>(VolumeKind::disk));
+  for (const uint8_t bad : std::initializer_list<uint8_t>{0, 3, 255}) {
+    bytes[kind] = bad;
+    EXPECT_THROW(decode_task_definition(bytes), DecodeError) << int(bad);
+  }
+}
+
 TEST(Codec, NegativeExitCodesSurvive) {
   auto s = fixture::task_status();
   s.containers[1].exit_code = -2147483647 - 1;

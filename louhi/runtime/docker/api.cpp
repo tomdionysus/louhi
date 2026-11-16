@@ -211,6 +211,7 @@ std::string create_container_body(const ContainerSpec& spec) {
   host["Memory"] = static_cast<int64_t>(spec.memory_bytes);
   host["MemorySwap"] = static_cast<int64_t>(spec.memory_bytes);
   host["PidsLimit"] = static_cast<int64_t>(spec.pids_limit);
+  if (spec.storage_bytes != 0) host["StorageOpt"] = json::object{{"size", std::to_string(spec.storage_bytes)}};
   host["Init"] = true;
   host["IpcMode"] = "private";
   host["RestartPolicy"] = json::object{{"Name", "no"}};
@@ -226,13 +227,44 @@ std::string create_container_body(const ContainerSpec& spec) {
 
 std::string create_volume_body(const VolumeSpec& spec) {
   if (spec.name.empty()) throw std::invalid_argument("volume spec has no name");
-  if (spec.size_bytes == 0) throw std::invalid_argument("volume spec has no size");
+  if (spec.kind == VolumeKind::memory && spec.size_bytes == 0) throw std::invalid_argument("memory volume spec has no size");
   json::object body;
   body["Name"] = spec.name;
   body["Driver"] = "local";
-  body["DriverOpts"] = json::object{{"type", "tmpfs"}, {"device", "tmpfs"}, {"o", "size=" + std::to_string(spec.size_bytes)}};
+  if (spec.kind == VolumeKind::memory) {
+    body["DriverOpts"] = json::object{{"type", "tmpfs"}, {"device", "tmpfs"}, {"o", "size=" + std::to_string(spec.size_bytes)}};
+  } else if (spec.size_bytes != 0) {
+    body["DriverOpts"] = json::object{{"size", std::to_string(spec.size_bytes)}};
+  }
   body["Labels"] = labels_json(spec.labels);
   return json::serialize(body);
+}
+
+std::string registry_auth(const RegistryCredential& credential, const std::string& domain) {
+  json::object auth;
+  if (!credential.identity_token.empty()) {
+    auth["identitytoken"] = credential.identity_token;
+  } else {
+    auth["username"] = credential.username;
+    auth["password"] = credential.password;
+  }
+  auth["serveraddress"] = domain;
+  const std::string text = json::serialize(auth);
+
+  static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  std::string out;
+  out.reserve((text.size() + 2) / 3 * 4);
+  for (size_t i = 0; i < text.size(); i += 3) {
+    const size_t left = text.size() - i;
+    uint32_t group = static_cast<uint32_t>(static_cast<unsigned char>(text[i])) << 16;
+    if (left > 1) group |= static_cast<uint32_t>(static_cast<unsigned char>(text[i + 1])) << 8;
+    if (left > 2) group |= static_cast<uint32_t>(static_cast<unsigned char>(text[i + 2]));
+    out.push_back(alphabet[(group >> 18) & 0x3f]);
+    out.push_back(alphabet[(group >> 12) & 0x3f]);
+    out.push_back(left > 1 ? alphabet[(group >> 6) & 0x3f] : '=');
+    out.push_back(left > 2 ? alphabet[group & 0x3f] : '=');
+  }
+  return out;
 }
 
 std::string url_encode(std::string_view text) {
@@ -347,6 +379,20 @@ RuntimeInfo parse_runtime(std::string_view version_body, std::string_view info_b
   info.limits_swap = bool_member(s, "SwapLimit");
   info.limits_cpu = bool_member(s, "CpuCfsQuota");
   info.limits_pids = bool_member(s, "PidsLimit");
+  // DriverStatus is a list of [name, value] pairs.
+  if (string_member(s, "Driver", 64) == "overlay2") {
+    if (const json::value* status = member(s, "DriverStatus"); status != nullptr && !status->is_null()) {
+      if (!status->is_array()) malformed("DriverStatus is not an array");
+      if (status->get_array().size() > max_labels) malformed("DriverStatus is too long");
+      for (const auto& pair : status->get_array()) {
+        if (!pair.is_array() || pair.get_array().size() != 2 || !pair.get_array()[0].is_string() || !pair.get_array()[1].is_string())
+          malformed("a DriverStatus entry is not a pair of strings");
+        const std::string name = bounded(pair.get_array()[0].get_string(), "a DriverStatus name", 256);
+        const std::string value = bounded(pair.get_array()[1].get_string(), "a DriverStatus value", 1024);
+        if (name == "Backing Filesystem" && value == "xfs") info.limits_storage = true;
+      }
+    }
+  }
   const int64_t cpus = integer_member(s, "NCPU");
   if (cpus < 0 || cpus > 1'000'000) malformed("NCPU is out of range");
   info.cpus = static_cast<uint32_t>(cpus);
@@ -374,6 +420,16 @@ std::string parse_image_digest(std::string_view inspect_body, std::string_view r
     if (text.compare(0, at, name) == 0 && at == name.size() && model::is_digest(std::string_view(text).substr(at + 1))) return text.substr(at + 1);
   }
   return {};
+}
+
+std::string parse_distribution(std::string_view body) {
+  const json::value value = parse_json(body);
+  const json::object& root = as_object(value, "distribution");
+  const json::object* descriptor = object_member(root, "Descriptor");
+  if (descriptor == nullptr) malformed("Descriptor is missing");
+  const std::string digest = required_string(*descriptor, "digest", 128);
+  if (!model::is_digest(digest)) malformed("the descriptor's digest is not sha256 and 64 lowercase hex digits");
+  return digest;
 }
 
 std::optional<std::string> parse_pull_line(std::string_view line) {

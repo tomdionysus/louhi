@@ -28,6 +28,7 @@
 #include "louhi/api/client.h"
 #include "louhi/api/http.h"
 #include "louhi/store/memory_store.h"
+#include "louhi/test/fixtures/fake_driver.h"
 #include "louhi/test/fixtures/records.h"
 
 using namespace louhi;
@@ -52,7 +53,8 @@ struct HttpTest : ::testing::Test {
   dannan::test::SteppedWall wall;
   OneTokenVerifier verifier;
   api::Authenticator authenticator{verifier, wall};
-  api::Api api{store, wall, test::node_id(1), io.get_executor(), dannan::status::ScopedLogger(dannan::status::null_sink(), "test")};
+  test::FakeDriver images;
+  api::Api api{store, wall, test::node_id(1), images, io.get_executor(), dannan::status::ScopedLogger(dannan::status::null_sink(), "test")};
   std::unique_ptr<api::HttpServer> server;
 
   void start(std::chrono::milliseconds read_timeout = std::chrono::milliseconds(30000)) {

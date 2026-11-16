@@ -40,8 +40,10 @@ enum class Kind : uint8_t {
   node_status = 7,
 };
 
-// The format version every kind is written in by this build.
-inline constexpr uint8_t format_version = 1;
+// The format version every kind is written in by this build. 2: a task
+// definition's ephemeral storage, and disk volumes (step 13). Nothing written
+// in 1 was ever kept, so 1 is simply refused.
+inline constexpr uint8_t format_version = 2;
 
 // The kind a record's bytes say they hold. Throws DecodeError for bytes too
 // short to say, or a kind this build does not know.

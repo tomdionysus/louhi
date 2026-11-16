@@ -31,6 +31,7 @@
 #include "louhi/model/codec.h"
 #include "louhi/model/keys.h"
 #include "louhi/store/memory_store.h"
+#include "louhi/test/fixtures/fake_driver.h"
 #include "louhi/test/fixtures/records.h"
 
 using namespace louhi;
@@ -78,14 +79,19 @@ class HeldStore final : public store::Store {
 
 api::Grant grant_of(std::vector<std::string> scopes, std::string subject = "alice") { return api::Grant(std::move(subject), scopes, 0); }
 
+const std::string alpine_digest = "sha256:" + std::string(64, 'b');
+
 struct ApiTest : ::testing::Test {
   asio::io_context io;
   HeldStore store;
   dannan::test::SteppedWall wall{1'800'000'000'000};
   model::NodeId self = test::node_id(0x5e);
-  api::Api api{store, wall, self, io.get_executor(), quiet()};
+  test::FakeDriver images;
+  api::Api api{store, wall, self, images, io.get_executor(), quiet()};
   api::Grant admin = grant_of({"louhi:admin"}, "root");
   api::Grant web = grant_of({"louhi:web:*"});
+
+  ApiTest() { images.digests = {{"alpine", alpine_digest}, {"alpine:3.20", alpine_digest}}; }
 
   void settle() {
     io.restart();
@@ -184,6 +190,57 @@ TEST_F(ApiTest, RevisionsAreNotGivenTwiceWhileAWriteIsInFlight) {
   store.release();
   settle();
   EXPECT_EQ(revisions, (std::vector<uint32_t>{1, 2}));
+}
+
+// Design, "Images in detail": a tag is resolved to a digest when the revision
+// is registered, so every task of it runs the same bytes; a reference that
+// carries a digest keeps it; a tag moved later changes nothing registered.
+TEST_F(ApiTest, RegisteringPinsEachImageToADigest) {
+  make_project();
+  const std::string pinned = "sha256:" + std::string(64, 'c');
+  auto r = call(
+      web, "POST", "/v1/projects/web/task-definitions",
+      R"({"family":"f","cpu_millis":10,"memory_mib":8,"containers":[{"name":"a","image":"alpine:3.20"},{"name":"b","image":"busybox@)" + pinned + R"("}]})");
+  ASSERT_EQ(r.status, 200u) << json::serialize(r.body);
+  EXPECT_EQ(r.body.at("containers").at(0).at("image_digest"), json::value(alpine_digest));
+  EXPECT_EQ(r.body.at("containers").at(1).at("image_digest"), json::value(pinned));
+
+  images.digests["alpine:3.20"] = "sha256:" + std::string(64, 'd');
+  const auto described = call(web, "GET", "/v1/projects/web/task-definitions/f/1");
+  EXPECT_EQ(described.body.at("containers").at(0).at("image_digest"), json::value(alpine_digest)) << "a moved tag changes nothing registered";
+}
+
+TEST_F(ApiTest, ADigestTheCallerSendsIsNotTaken) {
+  make_project();
+  auto r = call(
+      web, "POST", "/v1/projects/web/task-definitions",
+      R"({"family":"f","cpu_millis":10,"memory_mib":8,"containers":[{"name":"a","image":"alpine","image_digest":"sha256:)" + std::string(64, 'e') + R"("}]})");
+  ASSERT_EQ(r.status, 200u) << json::serialize(r.body);
+  EXPECT_EQ(r.body.at("containers").at(0).at("image_digest"), json::value(alpine_digest)) << "the digest is the system's";
+}
+
+TEST_F(ApiTest, AnImageThatCannotBeResolvedRegistersNothing) {
+  make_project();
+  const std::string body = R"({"family":"f","cpu_millis":10,"memory_mib":8,"containers":[{"name":"a","image":"alpine"},{"name":"b","image":"nothing:1"}]})";
+  auto r = call(web, "POST", "/v1/projects/web/task-definitions", body);
+  EXPECT_EQ(r.status, 400u);
+  EXPECT_EQ(code(r), "image_not_found");
+  EXPECT_EQ(call(web, "GET", "/v1/projects/web/task-definitions/f/1").status, 404u);
+
+  images.fail_next("resolve", runtime::Error{runtime::Error::Kind::refused, "the registry quay.io is not one this node is allowed to use"});
+  r = call(web, "POST", "/v1/projects/web/task-definitions", body);
+  EXPECT_EQ(r.status, 400u);
+  EXPECT_EQ(code(r), "image_refused");
+
+  images.fail_next("resolve", runtime::Error{runtime::Error::Kind::timed_out, "no answer"});
+  r = call(web, "POST", "/v1/projects/web/task-definitions", body);
+  EXPECT_EQ(r.status, 503u);
+  EXPECT_EQ(code(r), "image_unresolved");
+
+  images.digests["nothing:1"] = alpine_digest;
+  r = call(web, "POST", "/v1/projects/web/task-definitions", body);
+  ASSERT_EQ(r.status, 200u) << json::serialize(r.body);
+  EXPECT_EQ(r.body.at("revision"), 1) << "no revision was spent on a refusal";
 }
 
 TEST_F(ApiTest, RegisteringNeedsTheRegisterScopeAndTheProject) {

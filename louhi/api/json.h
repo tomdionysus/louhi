@@ -33,6 +33,8 @@ inline constexpr size_t max_depth = 16;
 // RunTask's count, as ECS's.
 inline constexpr uint32_t max_run_count = 10;
 inline constexpr size_t max_client_token = 64;
+// A definition that names no ephemeral storage gets this much.
+inline constexpr uint32_t default_ephemeral_storage_mib = 1024;
 
 class Invalid : public std::invalid_argument {
  public:
@@ -52,8 +54,9 @@ ProjectBody project_body(const boost::json::object& body, std::string_view proje
 // The limits; the project is the path's.
 model::Quota quota_body(const boost::json::object& body, std::string_view project);
 
-// A definition to register; the revision and the time are the system's,
-// left zero here.
+// A definition to register; the revision, the time and the image digests are
+// the system's, left empty here. A volume's kind is "memory" (the default) or
+// "disk".
 model::TaskDefinition task_definition_body(const boost::json::object& body, std::string_view project);
 
 struct RunTaskBody {

@@ -30,6 +30,7 @@ add_library(louhi SHARED
   runtime/docker/local_http.cpp
   runtime/driver.cpp
   runtime/labels.cpp
+  runtime/registries.cpp
   store/memory_store.cpp
   version.cpp
 )

@@ -46,6 +46,10 @@ inline constexpr uint32_t max_task_cpu_millis = 256'000;
 inline constexpr uint32_t min_task_memory_mib = 4;
 inline constexpr uint32_t max_task_memory_mib = 1'048'576;
 inline constexpr uint32_t max_scratch_mib = 1'048'576;
+// A task's writable space outside its volumes, in MiB, shared equally by its
+// containers.
+inline constexpr uint32_t min_ephemeral_storage_mib = 64;
+inline constexpr uint32_t max_ephemeral_storage_mib = 1'048'576;
 inline constexpr uint32_t max_desired_count = 10'000;
 
 // A project: who owns a set of definitions, services, networks and volumes.
@@ -127,14 +131,19 @@ struct ContainerDefinition {
   bool operator==(const ContainerDefinition&) const = default;
 };
 
+// Scratch space for the task's life, gone when it stops (design, "Ephemeral
+// storage in detail").
 enum class VolumeKind : uint8_t {
-  // Scratch space for the task's life, gone when it stops.
-  scratch = 1,
+  // In memory: its pages are charged to the task's memory, so a task's memory
+  // volumes together fit in its memory.
+  memory = 1,
+  // On the node's disk, bounded by the runtime.
+  disk = 2,
 };
 
 struct VolumeDefinition {
   std::string name;
-  VolumeKind kind = VolumeKind::scratch;
+  VolumeKind kind = VolumeKind::memory;
   uint32_t size_mib = 0;
   bool operator==(const VolumeDefinition&) const = default;
 };
@@ -147,6 +156,8 @@ struct TaskDefinition {
   uint32_t revision = 0;
   uint32_t cpu_millis = 0;
   uint32_t memory_mib = 0;
+  // Bounds what its containers write outside their volumes.
+  uint32_t ephemeral_storage_mib = 0;
   std::vector<ContainerDefinition> containers;
   std::vector<VolumeDefinition> volumes;
   // Must not run twice at once. No arrangement on this stack can promise

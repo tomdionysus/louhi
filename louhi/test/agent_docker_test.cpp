@@ -91,7 +91,7 @@ TEST(AgentOnDocker, RunsAndStopsARealTask) {
   auto work = asio::make_work_guard(io);
   std::thread runner([&] { io.run(); });
 
-  runtime::docker::DockerDriver driver(io.get_executor(), socket);
+  runtime::docker::DockerDriver driver(io.get_executor(), socket, runtime::Registries({"docker.io"}, {}));
   StaticDesired desired;
   Waiting reports;
   const model::NodeId self = model::NodeId::random();
@@ -109,7 +109,8 @@ TEST(AgentOnDocker, RunsAndStopsARealTask) {
   a.definition.revision = 1;
   a.definition.cpu_millis = 250;
   a.definition.memory_mib = 64;
-  a.definition.volumes = {{"scratch", model::VolumeKind::scratch, 8}};
+  a.definition.ephemeral_storage_mib = 64;
+  a.definition.volumes = {{"scratch", model::VolumeKind::memory, 8}};
   model::ContainerDefinition c;
   c.name = "main";
   c.image = "busybox:1.36";
@@ -126,6 +127,9 @@ TEST(AgentOnDocker, RunsAndStopsARealTask) {
   // Not every test Pi's Docker has user namespaces; the refusal is tested
   // against the fake.
   policy.allow_without_user_namespaces = true;
+  // Nor can any bound storage yet (ext4); the refusal is tested against the
+  // fake, and the runtime's refusal of a bound by the driver's test.
+  policy.allow_unbounded_storage = true;
   Clock clock{&dannan::contract::steady_time_source(), &dannan::contract::system_wall_clock(),
               [&io](std::chrono::milliseconds delay, std::function<void()> fn) {
                 auto timer = std::make_shared<asio::steady_timer>(io, delay);

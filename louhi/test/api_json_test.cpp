@@ -61,6 +61,32 @@ TEST(ApiJson, AMinimalDefinitionParsesWithTheDefaults) {
   ASSERT_EQ(d.containers.size(), 1u);
   EXPECT_TRUE(d.containers[0].essential);
   EXPECT_FALSE(d.run_once);
+  EXPECT_EQ(d.ephemeral_storage_mib, api::default_ephemeral_storage_mib);
+}
+
+TEST(ApiJson, VolumesAreMemoryUnlessTheySayDisk) {
+  auto body = minimal_definition();
+  body["volumes"] = json::array{json::object{{"name", "a"}, {"size_mib", 8}}, json::object{{"name", "b"}, {"kind", "memory"}, {"size_mib", 8}},
+                                json::object{{"name", "c"}, {"kind", "disk"}, {"size_mib", 4096}}};
+  const auto d = api::task_definition_body(body, "web");
+  ASSERT_EQ(d.volumes.size(), 3u);
+  EXPECT_EQ(d.volumes[0].kind, model::VolumeKind::memory);
+  EXPECT_EQ(d.volumes[1].kind, model::VolumeKind::memory);
+  EXPECT_EQ(d.volumes[2].kind, model::VolumeKind::disk);
+  EXPECT_EQ(api::to_json(d).at("volumes").at(2).at("kind"), "disk");
+
+  body["volumes"] = json::array{json::object{{"name", "a"}, {"kind", "scratch"}, {"size_mib", 8}}};
+  EXPECT_NE(refusal([&] { api::task_definition_body(body, "web"); }), "");
+  body["volumes"] = json::array{json::object{{"name", "a"}, {"kind", "memory"}, {"size_mib", 129}}};
+  EXPECT_NE(refusal([&] { api::task_definition_body(body, "web"); }), "") << "more memory volume than the task's 128 MiB";
+}
+
+TEST(ApiJson, EphemeralStorageIsBounded) {
+  auto body = minimal_definition();
+  body["ephemeral_storage_mib"] = 20480;
+  EXPECT_EQ(api::task_definition_body(body, "web").ephemeral_storage_mib, 20480u);
+  body["ephemeral_storage_mib"] = 1;
+  EXPECT_NE(refusal([&] { api::task_definition_body(body, "web"); }), "");
 }
 
 TEST(ApiJson, WhatTheApiShowsOfADefinitionRegistersBackAsItIs) {

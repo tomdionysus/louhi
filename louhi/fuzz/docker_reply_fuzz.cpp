@@ -30,6 +30,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   attempt([&] { parse_volumes(text); });
   attempt([&] { parse_runtime(text, text); });
   attempt([&] { parse_image_digest(text, "busybox:1.36"); });
+  attempt([&] { parse_distribution(text); });
   attempt([&] { parse_pull_line(text); });
   attempt([&] { parse_event(text); });
   attempt([&] { parse_time(text); });

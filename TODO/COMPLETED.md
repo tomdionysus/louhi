@@ -2,6 +2,39 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## Step 13, first half: images by digest, ephemeral storage bounds (2026-11-16)
+
+- The design's detail written first ("Images in detail", "Ephemeral
+  storage in detail"); the maintainer's answers: resolve through the runtime, an
+  operator allow-list with per-registry credentials, xfs project quotas
+  with a refusal otherwise, and scratch in two kinds.
+- `runtime/registries.h`: the allow-list by domain (`docker.io` for a
+  reference with no domain; no list allows none) and one credential per
+  allowed registry, a user name with a password or an identity token.
+- `Driver::resolve`; the Docker driver asks `GET /distribution/<ref>/json`
+  with `X-Registry-Auth` (base64url, by hand), refuses an unlisted registry
+  before asking, and pulls with the same header. `parse_distribution` is in
+  the `docker_reply` fuzz target.
+- The API resolves every container's image before a revision is admitted;
+  a digest the caller sends is ignored. Refusals: `image_refused` and
+  `image_not_found` (400), `image_unresolved` (503); no revision is spent.
+- `TaskDefinition::ephemeral_storage_mib` (64 to 1 TiB, 1024 by default in
+  the API), shared equally by its containers as `StorageOpt` `size`.
+  `VolumeKind` is `memory` (tmpfs; the sum must fit in the task's memory)
+  or `disk` (the local driver's `size` option). Record format 2: version 1
+  was never kept.
+- `RuntimeInfo::limits_storage` (overlay2 on xfs); the agent and the node's
+  status refuse a node without it unless `--allow-unbounded-storage`, and
+  then send no bound. `louhi-node --registry`, `--registry-credential`.
+- Found on the Pis: Docker answers a storage bound on ext4 with a 500
+  ("--storage-opt is supported only for overlay over xfs with 'pquota'"),
+  so the driver classes it `unavailable` and the agent's launch backs off
+  with that reason. Only reachable where xfs lacks `pquota`.
+
+Gate on node-d (Pi 5, g++, Release, warnings as errors, Docker with
+user namespaces, ext4): **237 passed** (207 before, 30 new). Not yet run:
+any storage bound kept by a real runtime, since no Pi has xfs.
+
 ## Step 8: events on Lir (2026-11-15)
 
 - The topics written into the design's "Events" first; the maintainer's answer on

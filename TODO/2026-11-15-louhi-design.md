@@ -317,8 +317,9 @@ Two kinds of writable space exist today, and only one is bounded:
 
 What bounds each (the maintainer, 2026-11-16):
 
-- **The writable layer** is bounded by a task's `ephemeral_storage_mib`,
-  split between its containers as memory is, and enforced by the runtime
+- **The writable layer** is bounded by a task's `ephemeral_storage_mib`
+  (1024 when a definition names none), shared equally by its containers,
+  and enforced by the runtime
   (`StorageOpt` `size`, so overlay2 on xfs with project quotas). The
   runtime reports whether it can bound it; a node whose runtime cannot
   refuses tasks unless the operator allows unbounded storage
@@ -327,7 +328,9 @@ What bounds each (the maintainer, 2026-11-16):
   `memory` (tmpfs, the kind built so far; the sum of a task's memory
   scratch must fit in its memory, since that is where its pages are
   charged) and `disk` (bounded on disk by the same quota mechanism as the
-  writable layer, refused where the runtime cannot bound it).
+  writable layer: the local driver's `size` option). Where the operator
+  allows a runtime that cannot bound storage, neither the writable layer
+  nor a disk volume carries a bound, since the runtime would refuse one.
 - **Persistent volumes.** A Volume record names storage that outlives a
   task and follows it to another node. What it is made of is open: Dagda
   stores immutable objects and merged heads, not a block device or a POSIX

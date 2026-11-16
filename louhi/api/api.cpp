@@ -103,9 +103,16 @@ Response error_response(unsigned status, std::string_view code, std::string_view
   return {status, json::object{{"error", json::string(code)}, {"message", json::string(message)}}};
 }
 
-Api::Api(store::Store& store, const dannan::contract::WallClock& wall, model::NodeId self, store::Executor executor, dannan::status::ScopedLogger logger,
-         store::Deadline write_deadline, events::Events* events)
-    : _store(store), _wall(wall), _self(self), _executor(std::move(executor)), _logger(std::move(logger)), _write_deadline(write_deadline), _events(events) {}
+Api::Api(store::Store& store, const dannan::contract::WallClock& wall, model::NodeId self, runtime::Driver& images, store::Executor executor,
+         dannan::status::ScopedLogger logger, store::Deadline write_deadline, events::Events* events)
+    : _store(store),
+      _wall(wall),
+      _self(self),
+      _images(images),
+      _executor(std::move(executor)),
+      _logger(std::move(logger)),
+      _write_deadline(write_deadline),
+      _events(events) {}
 
 void Api::answer(Done& done, Response response) {
   boost::asio::post(_executor, [done = std::move(done), response = std::move(response)]() mutable { done(std::move(response)); });
@@ -262,10 +269,32 @@ uint32_t Api::highest_revision(const std::string& project, const std::string& fa
 
 void Api::register_task_definition(const Grant& grant, const Path& path, const Request& request, Done done) {
   if (!grant.may(path.project, Action::register_definitions)) return answer(done, forbidden(scope_of(path.project, Action::register_definitions)));
-  auto definition = task_definition_body(parse_body(request.body), path.project);
+  auto definition = std::make_shared<model::TaskDefinition>(task_definition_body(parse_body(request.body), path.project));
   model::Project probe;
   probe.name = path.project;
   if (!_store.get(model::key(probe))) return answer(done, not_found("the project"));
+  // A definition has at least one container, so the answer always comes from
+  // a posted completion.
+  resolve_images(std::move(definition), 0, std::move(done));
+}
+
+void Api::resolve_images(std::shared_ptr<model::TaskDefinition> definition, size_t next, Done done) {
+  if (next == definition->containers.size()) return admit_task_definition(std::move(*definition), std::move(done));
+  const std::string image = definition->containers[next].image;
+  _images.resolve(image, resolve_deadline, _executor, [this, definition, next, image, done = std::move(done)](runtime::Result<std::string> got) mutable {
+    if (!got.ok()) {
+      const runtime::Error& error = got.error();
+      _logger.info("resolving " + image + ": " + error.message);
+      if (error.kind == runtime::Error::Kind::refused) return done(error_response(400, "image_refused", error.message));
+      if (error.kind == runtime::Error::Kind::not_found) return done(error_response(400, "image_not_found", error.message));
+      return done(error_response(503, "image_unresolved", error.message));
+    }
+    definition->containers[next].image_digest = got.value();
+    resolve_images(std::move(definition), next + 1, std::move(done));
+  });
+}
+
+void Api::admit_task_definition(model::TaskDefinition definition, Done done) {
   const std::string family_key = model::task_definitions_prefix(definition.project, definition.family);
   {
     dannan::contract::Lock lock(_admission);
@@ -275,16 +304,28 @@ void Api::register_task_definition(const Grant& grant, const Path& path, const R
     definition.registered_unix_ms = _wall.unix_ms();
     _pending_revisions[family_key] = definition.revision;
   }
-  definition.validate();
+  // Runs in a completion, where nothing may throw: a definition that does not
+  // validate with its digests is answered here.
+  store::Bytes bytes;
+  try {
+    bytes = model::encode(definition);
+  } catch (const std::exception& error) {
+    {
+      dannan::contract::Lock lock(_admission);
+      if (const auto it = _pending_revisions.find(family_key); it != _pending_revisions.end() && it->second == definition.revision)
+        _pending_revisions.erase(it);
+    }
+    _logger.error(std::string("registering a definition: ") + error.what());
+    return answer(done, error_response(500, "internal", error.what()));
+  }
   const uint32_t revision = definition.revision;
-  write(model::key(definition), model::encode(definition), {200, to_json(definition)},
-        [this, family_key, revision, done = std::move(done)](Response response) mutable {
-          {
-            dannan::contract::Lock lock(_admission);
-            if (const auto it = _pending_revisions.find(family_key); it != _pending_revisions.end() && it->second == revision) _pending_revisions.erase(it);
-          }
-          done(std::move(response));
-        });
+  write(model::key(definition), std::move(bytes), {200, to_json(definition)}, [this, family_key, revision, done = std::move(done)](Response response) mutable {
+    {
+      dannan::contract::Lock lock(_admission);
+      if (const auto it = _pending_revisions.find(family_key); it != _pending_revisions.end() && it->second == revision) _pending_revisions.erase(it);
+    }
+    done(std::move(response));
+  });
 }
 
 void Api::list_families(const Grant& grant, const Path& path, const Request& request, Done done) {

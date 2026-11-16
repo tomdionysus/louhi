@@ -82,12 +82,42 @@ Result<Done> done_unless(const Result<Reply>& got, const std::string& what, std:
 
 Error unsafe(const std::string& what) { return {Error::Kind::refused, what + " is not a name the runtime takes"}; }
 
+Error not_allowed(const model::ImageReference& reference) {
+  return {Error::Kind::refused, "the registry " + Registries::domain_of(reference) + " is not one this node is allowed to use"};
+}
+
 }  // namespace
 
-DockerDriver::DockerDriver(asio::any_io_executor io, std::string socket_path)
-    : _io(std::move(io)), _http(std::make_shared<LocalHttp>(_io, std::move(socket_path))) {}
+DockerDriver::DockerDriver(asio::any_io_executor io, std::string socket_path, Registries registries)
+    : _io(std::move(io)), _http(std::make_shared<LocalHttp>(_io, std::move(socket_path))), _registries(std::move(registries)) {}
 
 std::string DockerDriver::path(const std::string& rest) const { return "/v" + std::string(api_version) + rest; }
+
+LocalHttp::Headers DockerDriver::auth_for(const model::ImageReference& reference) const {
+  const std::string domain = Registries::domain_of(reference);
+  const RegistryCredential* credential = _registries.credential_for(domain);
+  if (credential == nullptr) return {};
+  return {{"X-Registry-Auth", registry_auth(*credential, domain)}};
+}
+
+void DockerDriver::resolve(const std::string& image, Deadline deadline, Executor executor, Completion<std::string> done) {
+  model::ImageReference reference;
+  try {
+    reference = model::parse_image_reference(image);
+  } catch (const std::invalid_argument&) {
+    return complete<std::string>(executor, std::move(done), unsafe("the image reference"));
+  }
+  if (!_registries.allows(reference)) return complete<std::string>(executor, std::move(done), not_allowed(reference));
+  if (!reference.digest.empty()) return complete<std::string>(executor, std::move(done), reference.digest);
+  _http->request(http_verb::get, path("/distribution/" + image + "/json"), "", auth_for(reference), deadline, executor,
+                 [image, done = std::move(done)](Result<Reply> got) mutable {
+                   if (!got.ok()) return done(got.error());
+                   // The daemon answers 401 or 403 for a registry that refuses
+                   // it, and 404 for an unknown image or tag.
+                   if (got.value().status != 200) return done(from_status(got.value(), "resolving " + image));
+                   done(parsed<std::string>(got.value(), "resolving " + image, [](const std::string& body) { return parse_distribution(body); }));
+                 });
+}
 
 void DockerDriver::describe(Deadline deadline, Executor executor, Completion<RuntimeInfo> done) {
   const Budget budget(deadline);
@@ -113,16 +143,18 @@ void DockerDriver::describe(Deadline deadline, Executor executor, Completion<Run
 void DockerDriver::pull(const std::string& image, Deadline deadline, Executor executor, Completion<ImageInfo> done) {
   const Budget budget(deadline);
   // The reference goes into a query and a path, so it must be one.
+  model::ImageReference reference;
   try {
-    model::parse_image_reference(image);
+    reference = model::parse_image_reference(image);
   } catch (const std::invalid_argument&) {
     return complete<ImageInfo>(executor, std::move(done), unsafe("the image reference"));
   }
+  if (!_registries.allows(reference)) return complete<ImageInfo>(executor, std::move(done), not_allowed(reference));
   auto http = _http;
   auto failure = std::make_shared<std::optional<std::string>>();
   const std::string inspect_path = path("/images/" + image + "/json");
   _http->stream(
-      http_verb::post, path("/images/create?fromImage=" + url_encode(image)), "", budget.remaining(), executor,
+      http_verb::post, path("/images/create?fromImage=" + url_encode(image)), "", auth_for(reference), budget.remaining(), executor,
       [failure](std::string line) {
         if (*failure) return;
         try {

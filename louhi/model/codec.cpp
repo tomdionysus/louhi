@@ -256,6 +256,7 @@ Bytes encode(const TaskDefinition& record) {
   writer.u32(record.revision);
   writer.u32(record.cpu_millis);
   writer.u32(record.memory_mib);
+  writer.u32(record.ephemeral_storage_mib);
   put_count(writer, record.containers.size());
   for (const auto& container : record.containers) put_container(writer, container);
   put_count(writer, record.volumes.size());
@@ -278,6 +279,7 @@ TaskDefinition decode_task_definition(std::span<const uint8_t> bytes) {
   record.revision = reader.u32();
   record.cpu_millis = reader.u32();
   record.memory_mib = reader.u32();
+  record.ephemeral_storage_mib = reader.u32();
   const size_t containers = get_count(reader, max_containers);
   record.containers.reserve(containers);
   for (size_t i = 0; i < containers; ++i) record.containers.push_back(get_container(reader));
@@ -286,7 +288,7 @@ TaskDefinition decode_task_definition(std::span<const uint8_t> bytes) {
   for (size_t i = 0; i < volumes; ++i) {
     VolumeDefinition volume;
     volume.name = reader.string(max_name);
-    volume.kind = get_enum(reader, VolumeKind::scratch, VolumeKind::scratch);
+    volume.kind = get_enum(reader, VolumeKind::memory, VolumeKind::disk);
     volume.size_mib = reader.u32();
     record.volumes.push_back(std::move(volume));
   }

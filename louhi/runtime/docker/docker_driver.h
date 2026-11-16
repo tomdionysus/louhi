@@ -18,6 +18,7 @@
 #include "dannan/contract/thread_safety.h"
 #include "louhi/runtime/docker/local_http.h"
 #include "louhi/runtime/driver.h"
+#include "louhi/runtime/registries.h"
 
 // The Driver over the Docker Engine API (design, "The runtime"; the maintainer,
 // 2026-11-15), spoken over the daemon's local socket. Every request goes to
@@ -32,10 +33,13 @@ namespace louhi::runtime::docker {
 class DockerDriver final : public Driver {
  public:
   // `io` runs the connections. `socket_path` is the daemon's socket,
-  // /var/run/docker.sock on a node.
-  DockerDriver(boost::asio::any_io_executor io, std::string socket_path);
+  // /var/run/docker.sock on a node. `registries` says which registries images
+  // come from and how to sign in to each; a reference to any other is refused
+  // before the daemon is asked.
+  DockerDriver(boost::asio::any_io_executor io, std::string socket_path, Registries registries);
 
   void describe(Deadline deadline, Executor executor, Completion<RuntimeInfo> done) override;
+  void resolve(const std::string& image, Deadline deadline, Executor executor, Completion<std::string> done) override;
   void pull(const std::string& image, Deadline deadline, Executor executor, Completion<ImageInfo> done) override;
   void create_volume(const VolumeSpec& spec, Deadline deadline, Executor executor, Completion<Done> done) override;
   void remove_volume(const std::string& name, Deadline deadline, Executor executor, Completion<Done> done) override;
@@ -55,9 +59,13 @@ class DockerDriver final : public Driver {
   };
 
   std::string path(const std::string& rest) const;
+  // The X-Registry-Auth header for the reference's registry, when the
+  // operator gave credentials for it.
+  LocalHttp::Headers auth_for(const model::ImageReference& reference) const;
 
   boost::asio::any_io_executor _io;
   std::shared_ptr<LocalHttp> _http;
+  const Registries _registries;
   dannan::contract::Mutex _mutex;
   uint64_t _next_watch DANNAN_GUARDED_BY(_mutex) = 1;
   std::map<uint64_t, Watch> _watches DANNAN_GUARDED_BY(_mutex);

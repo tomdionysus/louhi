@@ -367,7 +367,7 @@ TEST_F(AgentTest, ATaskWantedStoppedIsRemovedWithItsVolumes) {
 TEST_F(AgentTest, WhatNothingWantsIsRemovedOnlyOnceTheDesiredStateIsWhole) {
   const Assignment gone = assignment(7);
   for (const auto& spec : container_specs(gone, policy.spec)) driver.add(spec, runtime::ContainerState::running);
-  for (const auto& volume : volume_specs(gone)) driver.add_volume(volume);
+  for (const auto& volume : volume_specs(gone, policy.spec)) driver.add_volume(volume);
   desired.set({}, false);
   start();
   EXPECT_EQ(driver.containers().size(), 2u);
@@ -381,7 +381,7 @@ TEST_F(AgentTest, ARestartedAgentAdoptsWhatIsRunning) {
   const Assignment a = assignment(1);
   desired.set({a});
   for (const auto& spec : container_specs(a, policy.spec)) driver.add(spec, runtime::ContainerState::running);
-  for (const auto& volume : volume_specs(a)) driver.add_volume(volume);
+  for (const auto& volume : volume_specs(a, policy.spec)) driver.add_volume(volume);
   start();
   EXPECT_EQ(reports.states(), (std::vector<model::TaskState>{model::TaskState::running}));
   for (const auto& call : driver.calls()) {
@@ -425,6 +425,40 @@ TEST_F(AgentTest, UnlessTheOperatorAllowsTasksWithoutUserNamespaces) {
   desired.set({assignment(1)});
   start();
   EXPECT_EQ(reports.last().state, model::TaskState::running);
+}
+
+// Without a storage bound a task can fill the node's disk (the maintainer, 2026-11-16:
+// refused unless the operator allows it, as memory is).
+TEST_F(AgentTest, ANodeThatCannotBoundStorageLaunchesNothing) {
+  driver.info.limits_storage = false;
+  desired.set({assignment(1)});
+  start();
+  EXPECT_TRUE(driver.containers().empty());
+  EXPECT_EQ(reports.last().state, model::TaskState::pending);
+  EXPECT_EQ(reports.last().reason, "not launched: this node's runtime cannot bound storage");
+}
+
+TEST_F(AgentTest, UnlessTheOperatorAllowsUnboundedStorageWhenNothingAsksForABound) {
+  driver.info.limits_storage = false;
+  policy.allow_unbounded_storage = true;
+  Assignment a = assignment(1);
+  a.definition.volumes.push_back({"cache", model::VolumeKind::disk, 4096});
+  desired.set({a});
+  start();
+  EXPECT_EQ(reports.last().state, model::TaskState::running);
+  // The runtime would refuse a bound it cannot keep.
+  for (const auto& c : driver.containers()) EXPECT_EQ(c.spec.storage_bytes, 0u) << c.info.name;
+  const auto cache = driver.volume(runtime::volume_name(a.task.id, "cache"));
+  ASSERT_TRUE(cache);
+  EXPECT_EQ(cache->kind, runtime::VolumeKind::disk);
+  EXPECT_EQ(cache->size_bytes, 0u);
+}
+
+TEST_F(AgentTest, ContainersAreLaunchedWithTheirStorageBound) {
+  desired.set({assignment(1)});
+  start();
+  ASSERT_EQ(driver.containers().size(), 2u);
+  for (const auto& c : driver.containers()) EXPECT_EQ(c.spec.storage_bytes, 1024ull << 20) << c.info.name;
 }
 
 TEST_F(AgentTest, ALostEventStreamIsWatchedAgain) {

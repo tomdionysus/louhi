@@ -51,10 +51,15 @@ Louhi is the compute layer written once for this stack:
   isolation; the first driver speaks the Docker Engine API over its local socket. Every
   container is hardened: not privileged, every capability dropped and eight ordinary ones
   (`CHOWN`, `KILL`, `SETUID` and the like) given back, no new privileges, an init process,
-  a private IPC namespace, CPU, memory, swap and process limits always, no host mounts
-  (scratch volumes are size-limited tmpfs), and no Docker networking. A node whose
-  runtime cannot enforce memory limits or lacks user namespaces launches nothing unless the
-  operator allows it, and says why.
+  a private IPC namespace, CPU, memory, swap and process limits always, a bound on what it
+  writes (the task's ephemeral storage, shared equally), no host mounts (scratch volumes
+  are size-limited, in memory and counted in the task's memory, or on disk), and no Docker
+  networking. A node whose runtime cannot enforce memory limits, cannot bound storage
+  (Docker needs overlay2 on xfs with project quotas) or lacks user namespaces launches
+  nothing unless the operator allows it, and says why.
+- **Images.** Pulled only from the registries the operator lists, signing in with the
+  operator's credentials for each. A tag is resolved to its digest when a definition is
+  registered, so every task of a revision runs the same bytes.
 - **The agent.** On each node, passes that compare what should run with what the runtime
   has, and act on the difference: launch, start, restart with backoff, stop, remove. A
   service's task that keeps failing is restarted within a budget and then parked: stopped,

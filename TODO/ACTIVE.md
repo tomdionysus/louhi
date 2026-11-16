@@ -58,7 +58,10 @@ session: a second `claim-board wait` replaces the first.
    caution: claimed collections stand on leases, which order work on one
    node only today.
 4. **Under-voltage:** node-a and node-d report
-   `throttled=0x50000`. Reported only.
+   `throttled=0x50000`. node-d went down three times on
+   2026-11-16: before 00:34Z, about 01:06Z, and again about 01:21Z (Lir's
+   report). It needs a power-cycle from the maintainer. Louhi builds nothing there
+   until the maintainer says it is sound.
 5. **xfs for Docker on a Pi.** Every Pi runs overlay2 on ext4, which cannot
    bound storage, so no Pi launches a task unless `louhi-node` runs with
    `--allow-unbounded-storage`. To test a kept bound, one Pi needs

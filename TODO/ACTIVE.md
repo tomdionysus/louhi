@@ -48,6 +48,9 @@ step per session.
    `Server::stop()` no longer posts to a stopped io, so a Node stopped
    while its io ran may be destroyed after it. Node's contract: stop it
    while its io runs. Louhi's order (destroy the Node first) stays right.
+   Lugh's develop (`2d75176`) pins Dannan 0.8.5 too, its back-off now
+   Dannan's: a Lugh pin past `382416d` needs Dannan 0.8.5 or a later 0.8
+   patch, so move Dannan first. `lugh_client`'s face is unchanged.
 2. **Tests of their own for `louhi-ctl` and `ServiceToken`**
    (`tools/louhi_ctl.cpp`, `louhi/auth/service_token.h`), against fakes. the maintainer
    chose this as the next step (2026-11-16). Neither has a test today.

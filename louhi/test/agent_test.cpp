@@ -39,6 +39,7 @@
 #include "louhi/runtime/labels.h"
 #include "louhi/test/fixtures/fake_driver.h"
 #include "louhi/test/fixtures/records.h"
+#include "louhi/test/fixtures/timers.h"
 
 using namespace louhi;
 using namespace louhi::agent;
@@ -96,37 +97,6 @@ class RecordedReports final : public Reports {
   std::vector<model::TaskStatus> _all;
 };
 
-// Timers the agent asked for, fired by the test as stepped time passes them.
-class Timers {
- public:
-  explicit Timers(dannan::test::SteppedTime& time) : _time(time) {}
-  void after(milliseconds delay, std::function<void()> fn) {
-    std::lock_guard<std::mutex> lock(_mutex);
-    _pending.push_back({_time.now() + delay, std::move(fn)});
-  }
-  // Fires every timer due by now.
-  void fire_due() {
-    std::vector<std::function<void()>> due;
-    {
-      std::lock_guard<std::mutex> lock(_mutex);
-      for (auto it = _pending.begin(); it != _pending.end();) {
-        if (it->first <= _time.now()) {
-          due.push_back(std::move(it->second));
-          it = _pending.erase(it);
-        } else {
-          ++it;
-        }
-      }
-    }
-    for (auto& fn : due) fn();
-  }
-
- private:
-  dannan::test::SteppedTime& _time;
-  std::mutex _mutex;
-  std::vector<std::pair<dannan::contract::TimePoint, std::function<void()>>> _pending;
-};
-
 const model::NodeId self_node = test::node_id(0x22);
 
 Assignment assignment(uint8_t id, std::string service = "frontend") {
@@ -144,7 +114,7 @@ struct AgentTest : ::testing::Test {
   RecordedReports reports;
   dannan::test::SteppedTime time;
   dannan::test::SteppedWall wall;
-  Timers timers{time};
+  test::Timers timers{time};
   Policy policy = [] {
     Policy p;
     p.restart_budget = 3;

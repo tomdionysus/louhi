@@ -150,6 +150,8 @@ All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is 
 ## Owed at the first release gate
 
 Build and run the four fuzz targets (`record`, `image_reference`,
-`docker_reply`, `api_body`) with clang, `-max_total_time=60` each; the `clang`, `asan`,
-`tsan` and `coverage` steps on a Pi. Hosted CI runs them on every push
-meanwhile.
+`docker_reply`, `api_body`) with clang, `-max_total_time=60` each; the `clang`, `asan`
+and `coverage` steps on a Pi. Hosted CI runs them on every push
+meanwhile. TSan cannot run on the Pis (g++ 14's TSan refuses their kernels'
+47-bit address space; relayed by Dannan, 2026-11-16), so the release's TSan
+run is hosted CI's `tsan` job.

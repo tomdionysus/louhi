@@ -40,13 +40,14 @@ step per session.
 
 ## Next, in order
 
-1. **Move the Dannan pin to `0.8.4`** (tag on main at `52fd53c`, released
-   2026-11-16; 0.8.0's ABI kept). It brings StartTLS with no answer, a stop
-   token on `NodeEvents::wait_for_change`, and a fix to deferred answers'
-   overload accounting. Its own commit, one gate. 0.8.5 is coming
-   (`release/0.8.5`, `44109dd`): a Node stopped while its io ran may then
-   be destroyed after the io stops. Louhi's order (destroy the Node first)
-   stays right either way. If 0.8.5 is tagged by then, pin it instead.
+1. **Move the Dannan pin from `0.8.3` to `0.8.5`** (tag on main at
+   `de631cc`, CI green, 0.8.0's ABI kept), as its own commit with one
+   gate. 0.8.4 brought StartTLS with no answer, a stop token on
+   `NodeEvents::wait_for_change`, and a fix to deferred answers' overload
+   accounting. 0.8.5 fixes Louhi's finding: a second `Client::stop()` or
+   `Server::stop()` no longer posts to a stopped io, so a Node stopped
+   while its io ran may be destroyed after it. Node's contract: stop it
+   while its io runs. Louhi's order (destroy the Node first) stays right.
 2. **Tests of their own for `louhi-ctl` and `ServiceToken`**
    (`tools/louhi_ctl.cpp`, `louhi/auth/service_token.h`), against fakes. the maintainer
    chose this as the next step (2026-11-16). Neither has a test today.

@@ -208,6 +208,32 @@ TEST_F(DockerDriverTest, AStorageBoundIsKeptOrRefusedNeverDropped) {
   }
 }
 
+// A disk volume's size is kept by the local driver's quota where the runtime
+// can bound storage: a write past it fails.
+TEST_F(DockerDriverTest, ADiskVolumesSizeIsKeptWhereStorageIsBounded) {
+  auto described = wait<RuntimeInfo>([&](auto done) { driver->describe(Deadline(30000), executor(), done); });
+  ASSERT_TRUE(described.ok());
+  if (!described.value().limits_storage) GTEST_SKIP() << "this daemon cannot bound storage";
+  VolumeSpec v{volume_name(task, "scratch"), VolumeKind::disk, 8ull << 20, {{std::string(label_task), model::to_string(task)}}};
+  auto made = wait<Done>([&](auto done) { driver->create_volume(v, Deadline(30000), executor(), done); });
+  ASSERT_TRUE(made.ok()) << made.error().message;
+  // Writes 16 MiB into an 8 MiB volume: dd fails, and the shell says so.
+  const std::string id = make_container(spec("app", {"sh", "-c", "dd if=/dev/zero of=/scratch/fill bs=1M count=16 2>/dev/null && exit 0 || exit 7"}));
+  ASSERT_FALSE(id.empty());
+  std::promise<int32_t> exited;
+  auto future = exited.get_future();
+  const uint64_t watching = driver->watch(
+      executor(),
+      [&, set = std::make_shared<std::atomic<bool>>(false)](ContainerEvent event) {
+        if (event.id == id && event.action == "die" && !set->exchange(true)) exited.set_value(event.exit_code.value_or(-1));
+      },
+      [](Error) {});
+  ASSERT_TRUE(wait<Done>([&](auto done) { driver->start(id, Deadline(30000), executor(), done); }).ok());
+  ASSERT_EQ(future.wait_for(std::chrono::seconds(60)), std::future_status::ready);
+  driver->unwatch(watching);
+  EXPECT_EQ(future.get(), 7) << "the write past the volume's size failed";
+}
+
 TEST_F(DockerDriverTest, APullOfNothingIsRefused) {
   auto got = wait<ImageInfo>([&](auto done) { driver->pull("louhi-no-such-image-anywhere:0", Deadline(120000), executor(), done); });
   ASSERT_FALSE(got.ok());

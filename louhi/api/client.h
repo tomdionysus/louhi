@@ -34,24 +34,32 @@ struct Endpoint {
 // no path; the port defaults to 80 or 443. Throws Invalid otherwise.
 Endpoint parse_endpoint(std::string_view url);
 
-class Client {
+// What asks the API, so what calls it is tested against a fake.
+class Requester {
+ public:
+  virtual ~Requester() = default;
+  // Sends `method target` with `body` (JSON, or empty) and the token as a
+  // Bearer, and completes with the server's status and its JSON body: on
+  // `executor`, once, never inline, by `deadline` (the whole exchange).
+  // Fails unavailable when the server cannot be reached, timed_out, or
+  // malformed for an answer that is not HTTP with a JSON body.
+  virtual void request(std::string method, std::string target, std::string body, std::string token, runtime::Deadline deadline, runtime::Executor executor,
+                       runtime::Completion<Response> done) = 0;
+};
+
+class Client final : public Requester {
  public:
   // The largest answer read.
   static constexpr size_t max_answer = 16u << 20;
 
   // `trust` is required for an https endpoint. The io context outlives this.
   Client(boost::asio::io_context& io, Endpoint endpoint, std::shared_ptr<const dannan::listen::ClientTrust> trust = nullptr);
-  ~Client();
+  ~Client() override;
   Client(const Client&) = delete;
   Client& operator=(const Client&) = delete;
 
-  // Sends `method target` with `body` (JSON, or empty) and the token as a
-  // Bearer, and completes with the server's status and its JSON body: on
-  // `executor`, once, never inline, by `deadline` (the whole exchange).
-  // Fails unavailable when the server cannot be reached, timed_out, or
-  // malformed for an answer that is not HTTP with a JSON body.
   void request(std::string method, std::string target, std::string body, std::string token, runtime::Deadline deadline, runtime::Executor executor,
-               runtime::Completion<Response> done);
+               runtime::Completion<Response> done) override;
 
  private:
   boost::asio::io_context& _io;

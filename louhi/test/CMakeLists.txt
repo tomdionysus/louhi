@@ -28,7 +28,7 @@ add_executable(louhi_tests
   version_test.cpp
 )
 if(LOUHI_BUILD_LUGH)
-  target_sources(louhi_tests PRIVATE auth_lugh_test.cpp auth_service_token_test.cpp)
+  target_sources(louhi_tests PRIVATE auth_lugh_test.cpp auth_service_token_test.cpp ctl_test.cpp)
 endif()
 target_link_libraries(louhi_tests PRIVATE louhi GTest::gtest_main louhi_warnings)
 # Dannan's fixtures (temp_dir.h) write only inside Louhi's build tree.

@@ -350,7 +350,12 @@ int main(int argc, char** argv) {
     config.telemetry_interval = options.heartbeat;
     config.version = std::string("louhi-node ") + louhi::kVersion;
     config.log = dannan::status::console_sink(options.log_format, options.log_level);
-    dannan::Node node(io, config);
+    // Held so it can be destroyed before the io threads end: its client's
+    // stop waits on its own strand, so a Node destroyed after io.stop() never
+    // returns (seen on a Pi, 2026-11-16).
+    std::optional<dannan::Node> node_holder;
+    node_holder.emplace(io, config);
+    dannan::Node& node = *node_holder;
     auto& context = node.context();
     const louhi::model::NodeId self = context.identity().id();
 
@@ -528,6 +533,10 @@ int main(int argc, char** argv) {
 #endif
     context.nodes().withdraw("louhi");
     node.stop();
+    // Dannan's node goes while its io threads still run, as dannan-node's
+    // does; nothing of Louhi's names it any more, everything Louhi started
+    // having stopped above.
+    node_holder.reset();
     // The io threads end here, while everything their handlers name (the
     // Api, the store, the plugin) still stands; what is still queued is
     // destroyed unrun with the io context.

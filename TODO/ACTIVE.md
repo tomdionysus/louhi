@@ -152,6 +152,10 @@ All the maintainer's, 2026-11-15. Superseded ones are folded in; the history is 
 Build and run the four fuzz targets (`record`, `image_reference`,
 `docker_reply`, `api_body`) with clang, `-max_total_time=60` each; the `clang`, `asan`
 and `coverage` steps on a Pi. Hosted CI runs them on every push
-meanwhile. TSan cannot run on the Pis (g++ 14's TSan refuses their kernels'
-47-bit address space; relayed by Dannan, 2026-11-16), so the release's TSan
-run is hosted CI's `tsan` job.
+meanwhile. TSan runs on one Pi only, node-a (a 39-bit VA kernel,
+clang 19 and `libclang-rt-19-dev`; build with `CC=clang-19
+CXX=clang++-19` and Makefiles, there is no ninja there). g++'s TSan fails
+on the other Pis' 47-bit kernels (relayed by Dannan, 2026-11-16). So the
+release's TSan run is on node-a with clang, or hosted CI's `tsan` job;
+`tools/ci.sh` names Ninja today, so a node-a run needs a generator
+setting first.

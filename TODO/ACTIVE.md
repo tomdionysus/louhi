@@ -77,9 +77,12 @@ step per session.
    (port 7537, not 7437), plain TCP, MQTT on 1983. Use the key from
    `../lir/build/pi-cluster/cluster.key`, copied to the node 0600 and
    deleted after. Tell the Lir session before and after, stop the node
-   cleanly, and space joins out: a departed member counts until Dannan's
-   horizon, and with node-d down the cluster keeps a majority only while
-   all three Lir nodes are up.
+   cleanly, and ask the maintainer before joining again: Dannan never drops an absent
+   member, only an operator's retire does, so every join stays in the
+   agreed roster for good. The node-c run of 2026-11-16 (01:34Z, node id
+   8e23d6f7673ee6cfc093b5061491b131) is still counted there as a fifth,
+   unreachable member, and the cluster reads majority 4 of 5 (found by the
+   Lir session, 2026-11-17; retiring it is the maintainer's call).
 5. **The image store on Dagda** (step 13's second half) and **the Dagda
    store** (step 4's second half): both wait on the Dagda ref.
 6. **Steps 6 and 7, and the rest of step 9**, wait on Dannan 0.9.0's agreement registers. A

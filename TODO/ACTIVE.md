@@ -4,9 +4,7 @@ Last updated: 2026-11-17. `COMPLETED.md` is the record.
 
 ## Resume here
 
-**State.** `develop` at `tomdionysus/louhi`, public; the commits since
-`e937fbd` are not pushed yet (the push was refused by the permission check
-on 2026-11-16 and waits on the maintainer).
+**State.** `develop` at `tomdionysus/louhi`, public and pushed.
 Done: steps 0 to 3, 5 and 8, and step 13's first half (records and codecs,
 the Docker driver, the agent, the in-memory store, `louhi-node`, the API
 with sign-in by the Lugh plugin and `louhi-ctl`, events on Lir, images by

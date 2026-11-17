@@ -2,6 +2,28 @@
 
 The record, newest first. `ACTIVE.md` is the plan.
 
+## louhi-node --retire (2026-11-17)
+
+- Found by the Lir session: the standing Lir cluster counted a fifth,
+  unreachable member, the `louhi-node` run on node-c of 2026-11-16, though
+  it stopped cleanly. Dannan never drops an absent member; only
+  `Nodes::retire` (an operator's word) does. The plan said otherwise and is
+  corrected.
+- the maintainer: Louhi needs the same command as `lir-node`'s. `louhi-node --key FILE
+  --state DIR --retire NODE_ID...` opens the node's state without starting
+  it and retires each id (Dannan 0.8.3 has `Nodes::retire`, so no pin
+  moves). Refused while the node runs (the state lock), and for this node's
+  own id; one JSON line an id, `retired` false when it was not a member.
+- Checked on node-b with two `louhi-node`s on loopback and a
+  throwaway key: refused while running (exit 1); b retired from a's state,
+  true, then false; a's own id refused (exit 1); a malformed id a usage
+  error (exit 2). Nothing left on the Pi. A `louhi-node` tool has no unit
+  test; the check is by hand, as `lir-node`'s.
+
+Gate on node-b (never throttled, Docker on ext4): **277 run, 276
+passed, 1 skipped** (the storage-bound test, which needs xfs quotas), the
+same count.
+
 ## Tests of their own for louhi-ctl and ServiceToken (2026-11-16)
 
 - `ServiceToken` (`auth/service_token.h`) takes the issuer's `lugh::client::Https`,

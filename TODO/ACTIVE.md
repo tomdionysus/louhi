@@ -1,15 +1,18 @@
 # Louhi - Active Work
 
-Last updated: 2026-11-16 (end of session). `COMPLETED.md` is the record.
+Last updated: 2026-11-17. `COMPLETED.md` is the record.
 
 ## Resume here
 
-**State.** `develop` at `tomdionysus/louhi`, public and pushed, clean.
+**State.** `develop` at `tomdionysus/louhi`, public; the commits since
+`e937fbd` are not pushed yet (the push was refused by the permission check
+on 2026-11-16 and waits on the maintainer).
 Done: steps 0 to 3, 5 and 8, and step 13's first half (records and codecs,
 the Docker driver, the agent, the in-memory store, `louhi-node`, the API
 with sign-in by the Lugh plugin and `louhi-ctl`, events on Lir, images by
 digest, storage bounds), and tests of their own for `louhi-ctl` (now
-`louhi::ctl`, `ctl/ctl.h`) and `ServiceToken`. Last gate: **277 passed** on
+`louhi::ctl`, `ctl/ctl.h`) and `ServiceToken`, and `louhi-node --retire`
+(2026-11-17; 276 passed and the storage test skipped on node-b). Last full gate: **277 passed** on
 node-c, whose Docker is on xfs with project quotas, so storage
 bounds are kept for real.
 Pins: Dannan `0.8.3`, Lugh `382416d`, Lir `4443c16`.

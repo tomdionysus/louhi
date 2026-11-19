@@ -514,11 +514,9 @@ wait on another project; the order can bend around whichever arrives first.
 
 ## What waits on others
 
-- **Dagda:** a ref Louhi can pin, for step 4. 0.2.0 has what Louhi needs
-  and waits on the maintainer's word to push it.
-- **Dannan:** the agreement registers (0.9.0), for steps 6 and 9.
-- **Lir:** the exported MQTT client library for step 8. Ready at a Lir
-  commit, on Dannan 0.8.2.
+As of 2026-11-19 (`ACTIVE.md` has the current state):
 
-The build Pis: Docker is installed on three of the four (node-a waits),
-and the memory controller is being turned on across them.
+- **Dagda:** a ref Louhi can pin, for step 4. Waits on the maintainer's word.
+- **Dannan:** the agreement registers, for steps 6 and 9. Released in
+  0.9.0; Louhi's pin has still to move to it.
+- **Lir:** the exported MQTT client library for step 8. Done.

@@ -30,7 +30,8 @@ Louhi is the compute layer written once for this stack:
   machines that are only partly trusted later.
 - **No scheduler.** Each task's placement is to be settled by Dannan's per-key agreement
   (CASPaxos registers): any node may propose, agreement picks one, and no node's loss stops
-  placement. Until that lands in Dannan 0.9.0, a task runs on the node that took it.
+  placement. Agreement arrived in Dannan 0.9.0; until Louhi is built on it, a task runs on
+  the node that took it.
 - **On the cluster that is already there.** Membership, node identity, reachability and
   placement functions are Dannan's; declared state is Dagda's; sign-in is Lugh's. Louhi adds
   only what makes it compute, and has no copy of anything below it.
@@ -120,8 +121,8 @@ Lir only an MQTT broker.
 A C++20 compiler, CMake 3.24 or later, Boost 1.83 or later (Asio, Beast and JSON; Debian
 13's is 1.83), OpenSSL 3, yaml-cpp (for Dannan) and GoogleTest for the tests. Dannan is
 fetched from `../dannan` at the pinned release (0.8.3), and Lugh's and Lir's clients from
-`../lugh` and `../lir` at pinned commits, so clone them beside this repository. Nodes are Linux only; macOS builds
-the library and runs the unit tests against fakes.
+`../lugh` and `../lir` at pinned commits, so clone them beside this repository. Nodes are
+Linux only; macOS builds the library and runs the unit tests against fakes.
 
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLOUHI_BUILD_TESTING=ON
@@ -146,12 +147,14 @@ does.
 
 ### Prepare a node
 
-A Linux machine with Docker, and two settings Louhi checks and reports at start:
+A Linux machine with Docker, and three things Louhi checks and reports at start:
 
 - **User namespaces**, so root in a container is not root on the node: `"userns-remap":
   "default"` in `/etc/docker/daemon.json`, then restart Docker.
 - **The memory controller**, so memory limits are enforced; on a Raspberry Pi,
   `cgroup_enable=memory` in `/boot/firmware/cmdline.txt` and a reboot.
+- **Storage bounds**, so a task cannot fill the node's disk: Docker's data
+  (`/var/lib/docker`) on xfs mounted with `pquota`, with the overlay2 driver.
 
 ### Run a node
 
@@ -170,9 +173,22 @@ printf '%s' 'a long shared secret' > cluster.key
 The API is served when at least one Lugh issuer (`--lugh-issuer`, repeated for each
 trusted Lugh; `--lugh-ca PEM` for their roots) and at least one listener are given. For
 HTTPS, `--api-https HOST:PORT --api-tls-chain chain.pem --api-tls-key key.pem`. Other
-nodes join with `--bootstrap HOST:PORT`. `--allow-unenforced-memory` and
-`--allow-without-user-namespaces` let a node launch tasks where the runtime cannot box them
-in as it should; the node says so in its status.
+nodes join with `--bootstrap HOST:PORT`. `--allow-unenforced-memory`,
+`--allow-without-user-namespaces` and `--allow-unbounded-storage` let a node launch tasks
+where the runtime cannot box them in as it should; the node says so in its status.
+
+Images come only from the registries the node lists: `--registry DOMAIN` for each
+(`docker.io` for Docker Hub; none listed allows none), and `--registry-credential
+DOMAIN=USER:PASSWORD` to sign in to one, kept in `secrets.yaml`.
+
+A node that has left the cluster for good is retired, since Dannan never drops a member
+for being absent and it would count against the majority for ever. On each remaining
+node in turn, with that node stopped:
+
+```
+./build/louhi-node --key cluster.key --state ./a --retire <node id>
+#   {"event":"retire","id":"...","retired":true}
+```
 
 `--lir` publishes events to the Lir nodes in the node's Dannan cluster (`--lir-tls`, and
 `--lir-tls-trust PEM`, for TLS). The node signs in to Lir with a token of its own from the
@@ -236,6 +252,7 @@ louhi/store/          the store contract and the in-memory store
 louhi/node/           the node's status report
 louhi/api/            the API: operations, request JSON, sign-in, HTTP server and client
 louhi/auth/           the Lugh plugin and the node's own service token
+louhi/ctl/            louhi-ctl's commands, credentials and sign-in
 louhi/events/         the events and their publisher on Lir
 louhi/test/           GoogleTest, one binary (louhi_tests); fixtures in louhi/test/fixtures/
 louhi/fuzz/           libFuzzer targets for untrusted bytes
@@ -248,31 +265,36 @@ Conventions, shared with the stack: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
-In development; no release is cut yet. Built and tested (207 tests, the Docker driver's
-against a real daemon under user namespaces): the records and their codecs; the Docker
-driver with the hardened profile and limits; the agent on one node, with restart, backoff
-and the parked state; `louhi-node`; the API with Lugh sign-in, project scopes and quota
-admission; `louhi-ctl`; and the events, against a fake publisher. Not yet run end to end:
-`louhi-ctl` against a real Lugh, and the events against a real Lir.
+In development; no release is cut yet. Built and tested (277 tests, the Docker driver's
+against a real daemon under user namespaces, with storage bounds kept on xfs): the records
+and their codecs; the Docker driver with the hardened profile and limits; images resolved
+to digests from allowed registries; ephemeral storage and scratch volume bounds; the agent
+on one node, with restart, backoff and the parked state; `louhi-node`; the API with Lugh
+sign-in, project scopes and quota admission; `louhi-ctl`; and the events. A node's status
+has been published to a real Lir cluster. Not yet run end to end: `louhi-ctl` and the
+node's own token against a real Lugh, task events against a real Lir, and a private
+registry.
 
 What it does not do yet, in the order it is to be built:
 
 - **Records in Dagda.** The store is in memory until Louhi can pin a Dagda release, so a
   node holds only what was declared since it started, and nodes do not share it.
-- **Placement across nodes**, by Dannan's agreement registers (Dannan 0.9.0). Until then a
-  task runs on the node that took the request, and quota is admitted on that node's view.
+- **Placement across nodes**, by Dannan's agreement registers (Dannan 0.9; Louhi still
+  builds on 0.8.3). Until then a task runs on the node that took the request, and quota is
+  admitted on that node's view.
 - **Services**: a desired count kept running, replacement, rolling deployment, health
   checks.
 - **Task networking**: an address per task in a subnet of a VPC, route tables, security
   groups, service discovery, then gateways and load balancers, carried between nodes over
   Dannan or WireGuard.
-- **Images by digest, ephemeral storage limits, then persistent volumes.**
+- **Images kept in Dagda, then persistent volumes.**
 
 Two limits are stated, not hidden. A principal disabled in Lugh keeps access until its
 token expires (five minutes by default), until Lugh publishes principal changes over Lir.
-And a reader that has just subscribed to a project's events may miss those of its first few
-seconds, the time Lir takes to spread a subscription across its nodes; the retained
-statuses are unaffected, and Lir closes the gap with Dannan 0.9.0.
+And a reader that has just subscribed to a project's events could miss those of its first
+moments while Lir spread the subscription across its nodes; Lir on Dannan 0.9 holds its
+acknowledgement until the other nodes have the subscription, for up to a second, which
+closes the gap except past that bound. The retained statuses were never affected.
 
 ## Licence
 

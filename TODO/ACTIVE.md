@@ -1,19 +1,26 @@
 # Louhi - Active Work
 
-Last updated: 2026-11-17. `COMPLETED.md` is the record.
+Last updated: 2026-11-19. `COMPLETED.md` is the record.
 
 ## Resume here
 
-**State.** `develop` at `tomdionysus/louhi`, public and pushed.
+**State.** `develop` at `tomdionysus/louhi`, public and pushed, clean.
 Done: steps 0 to 3, 5 and 8, and step 13's first half (records and codecs,
-the Docker driver, the agent, the in-memory store, `louhi-node`, the API
-with sign-in by the Lugh plugin and `louhi-ctl`, events on Lir, images by
-digest, storage bounds), and tests of their own for `louhi-ctl` (now
-`louhi::ctl`, `ctl/ctl.h`) and `ServiceToken`, and `louhi-node --retire`
-(2026-11-17; 276 passed and the storage test skipped on node-b). Last full gate: **277 passed** on
-node-c, whose Docker is on xfs with project quotas, so storage
-bounds are kept for real.
+the Docker driver, the agent, the in-memory store, `louhi-node` with
+`--retire`, the API with sign-in by the Lugh plugin, `louhi-ctl` as
+`louhi::ctl`, events on Lir, images by digest, storage bounds).
+Last full gate: **277 passed** on node-c (2026-11-16, Docker on xfs).
+Last gate: 276 passed, 1 skipped on node-b (2026-11-17, ext4).
 Pins: Dannan `0.8.3`, Lugh `382416d`, Lir `4443c16`.
+
+**Two things changed under the plan since the last step:**
+
+- **Dannan 0.9.0 is released** (0.9.2 is the latest, 2026-11-18), with
+  agreement (`Context::agreement()`). The pin move is no longer waiting;
+  it is item 1 below.
+- **The Pis were wiped to a bare OS** (the maintainer, 2026-11-18). No Pi has Docker,
+  and `/root/louhi-work` is gone from all four. Until Docker is back the
+  gate runs with the real-Docker tests skipped. See "The build Pis".
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -23,121 +30,144 @@ step per session.
 
 **How work is done.**
 
-- Nothing is built or run on the Mac (TSan there only to hunt a specific
-  bug). Builds and tests run on the shared Pi 5s, claimed on the board
-  first (`CLAUDE.local.md` has hosts and rules).
+- Nothing is built or run on the Mac, by this session, a subagent or a
+  worktree (the maintainer, repeated 2026-11-17: a build there is killed). Builds and
+  tests run on the shared Pi 5s, claimed on the board first
+  (`CLAUDE.local.md` has hosts and rules).
 - `build/pi.sh <address> [step] [gtest filter]` (untracked) syncs the tree
   and Dannan's, Lugh's and Lir's histories to a Pi and runs a `tools/ci.sh`
   step there at `-j2` under `nice 19`. To iterate on compile errors, rsync
   and run `ninja -k 0 -j2` in the Pi's `build-ci/release`.
-- Gate on **node-c** where it can be had: it is the only Pi whose
-  storage tests take their kept branch. node-b works, with those branches
-  as refusals. Not node-d (down, and too small for sanitizers). Not
-  node-a (no ninja, no Docker).
+- Which Pi: node-b or node-c. Not node-d until the maintainer says it is sound
+  (under-voltage, 4 GB). node-a builds now (it has ninja) but hosts the
+  board and reports under-voltage: last choice.
+- Sanitizers run only for a release or to hunt a named bug, never as a
+  step's gate (the maintainer; repeated to every session 2026-11-17).
 - The claim board's hook counts any package install or `mkfs` over ssh as
   heavy: claim at least one core first. One board wait per session; a
-  second `claim-board wait` replaces the first.
-- Lookups: the basemind CLI (`basemind -q code grep|outline|symbols`);
-  `grep`, `rg`, `awk`, `sed` and the like are blocked by a hook. Logs under
-  `build/` are not indexed: read them with Read, by line range.
+  second `claim-board wait` replaces the first. When another session's
+  work has priority on the cluster, start nothing until the board says it
+  is clear.
+- Lookups: the basemind CLI (`basemind -q code grep|outline|symbols`, with
+  `--path-contains`); `grep`, `rg`, `awk`, `sed`, `head`, `tail` and `cat`
+  over local files are blocked by a hook. Files under `build/` are not
+  indexed: read them with Read, by line range. A sibling's file at a pinned
+  tag: `git -C ../dannan show 0.8.3:path > build/name`, then Read.
 
 ## Next, in order
 
-1. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
+1. **Move the Dannan pin from `0.8.3` to `0.9.2`**, as its own commit with
+   one gate (the maintainer, 2026-11-16: the pin moves once, when 0.9.0 is out).
+   0.9.0 is a new minor: the ABI and some of the API change, so read
+   `../dannan/CHANGELOG.md` at the tag first. What rides along from 0.8.4
+   and 0.8.5: StartTLS with no answer, a stop token on
+   `NodeEvents::wait_for_change`, a fix to deferred answers' overload
+   accounting, and a second `Client::stop()` or `Server::stop()` no longer
+   posting to a stopped io (Louhi's finding; Louhi's order, destroy the
+   Node while its io runs, stays right). The Lugh and Lir pins move in the
+   same step if their clients need the new Dannan: check which commits of
+   each build on 0.9.x (Lugh `382416d` is on 0.8.3; the standing Lir
+   cluster runs on 0.9.2). `lugh_client`'s face was unchanged at `2d75176`.
+2. **`louhi-ctl login --scope openid` fails** (found 2026-11-16): the
+   issuer then returns an ID token, which Lugh's client verifies against a
+   `Verifier` holding no keys (`ctl/ctl.cpp`, `login`). Either load the
+   issuer's JWKS first or refuse `openid` as a usage error; louhi-ctl needs
+   no ID token. Small; a test in `ctl_test.cpp` first.
+3. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
    10 that need no agreement: Subnet, RouteTable and SecurityGroup records
    and codecs; a security group rendered to nftables rules as a pure
    function, behind an interface, tested against fakes; a task's network
    namespace on one node. Nothing that allocates addresses or places across
    nodes; anything near that line goes to the maintainer first.
-2. **`louhi-ctl login --scope openid` fails** (found 2026-11-16, not yet
-   fixed): the issuer then returns an ID token, which Lugh's client verifies
-   against a `Verifier` holding no keys (`ctl/ctl.cpp`, `login`). Either load
-   the issuer's JWKS first or refuse `openid` as a usage error; louhi-ctl
-   needs no ID token. Small; a test in `ctl_test.cpp` first.
-3. **The Dannan pin stays at `0.8.3` until Dannan 0.9.0** (the maintainer,
-   2026-11-16): no move to 0.8.5 meanwhile; the pin moves once, to 0.9.0,
-   as its own commit with one gate. What 0.8.4 and 0.8.5 bring rides along
-   then: 0.8.4 brought StartTLS with no answer, a stop token on
-   `NodeEvents::wait_for_change`, and a fix to deferred answers' overload
-   accounting. 0.8.5 fixes Louhi's finding: a second `Client::stop()` or
-   `Server::stop()` no longer posts to a stopped io, so a Node stopped
-   while its io ran may be destroyed after it. Node's contract: stop it
-   while its io runs. Louhi's order (destroy the Node first) stays right.
-   Lugh's develop (`2d75176`) pins Dannan 0.8.5 too, its back-off now
-   Dannan's: a Lugh pin past `382416d` needs Dannan 0.8.5 or a later 0.8
-   patch, so the Lugh pin stays at `382416d` until Dannan moves too.
-   `lugh_client`'s face is unchanged.
-4. **Owed, end to end**, when a Lugh issuer is at hand:
+4. **Steps 6 and 7, and the rest of step 9**, on Dannan's agreement
+   registers, once the pin has moved: placement, then services (a
+   service's task set changes through registers), then address allocation.
+   Design questions that the real agreement API raises go to the maintainer first.
+5. **Owed, end to end**, when a Lugh issuer is at hand:
    - `louhi-ctl login` and `ServiceToken` against a real Lugh;
    - task events (not only a node's status) published live to Lir, which
      needs the API, and so an issuer;
    - a private registry signed in to for real (`--registry-credential`).
-
-   For Lir: the standing cluster has `louhi/#` open to anonymous clients,
-   and it stays open (the maintainer, via the Lir session). Join at `192.0.2.10:7537`
-   (port 7537, not 7437), plain TCP, MQTT on 1983. Use the key from
-   `../lir/build/pi-cluster/cluster.key`, copied to the node 0600 and
-   deleted after. Tell the Lir session before and after, stop the node
-   cleanly, and ask the maintainer before joining again: Dannan never drops an absent
-   member, only an operator's retire does, so every join stays in the
-   agreed roster for good. The node-c run of 2026-11-16 (01:34Z, node id
-   8e23d6f7673ee6cfc093b5061491b131) is still counted there as a fifth,
-   unreachable member, and the cluster reads majority 4 of 5 (found by the
-   Lir session, 2026-11-17; retiring it is the maintainer's call).
-5. **The image store on Dagda** (step 13's second half) and **the Dagda
+6. **The image store on Dagda** (step 13's second half) and **the Dagda
    store** (step 4's second half): both wait on the Dagda ref.
-6. **Steps 6 and 7, and the rest of step 9**, wait on Dannan 0.9.0's agreement registers. A
-   service's task set changes through registers, so services wait with
-   placement (the maintainer: anything that can use agreement waits for it).
+
+The order of 1 to 3 is this session's reading (the pin was first only
+while 0.9.0 was awaited); the maintainer may put networking first again.
+
+### Joining the standing Lir cluster
+
+`louhi/#` is open to anonymous clients there and stays open (the maintainer, via the
+Lir session). **Ask the maintainer before joining again.** Dannan never drops an
+absent member; only an operator's retire does, so every join stays in the
+agreed roster for good. The node-c run of 2026-11-16 (node id
+`8e23d6f7673ee6cfc093b5061491b131`) was still counted as a fifth,
+unreachable member on 2026-11-17, and the cluster read majority 4 of 5;
+retiring it there is the maintainer's call and Lir's command (`lir-node --retire`).
+Ask the Lir session whether it is done before relying on it.
+
+When the maintainer allows a join: the address, ports and key location are in
+`CLAUDE.local.md` (never here: this repository is public); confirm them
+with the Lir session, since the cluster has been redeployed since. Copy
+the key to the node 0600 and delete it after. Tell the Lir session before and after, stop the
+node cleanly, then retire its id on every member (`louhi-node --retire`
+retires only from a Louhi node's own state).
 
 ## Waiting on the maintainer
 
-1. **Dagda ref.** the maintainer: wait. Dagda 0.2.0 is tagged locally and held. Its
-   caution: claimed collections stand on leases, which order work on one
-   node only today.
-2. **node-d** went down three times on 2026-11-16 (before 00:34Z,
-   about 01:06Z, about 01:21Z), and needs a power-cycle. It and
-   node-a report under-voltage (`throttled=0x50000`). Louhi builds
-   nothing on node-d until the maintainer says it is sound.
+1. **Docker on the Pis again.** The wipe removed it everywhere. The
+   real-Docker tests (the driver's, the agent's real task, the storage
+   bound) skip until it is back. Recommended: Docker with `userns-remap:
+   default` on node-b and node-c, and node-c's Docker data on xfs with
+   `pquota` again. Each is a change to a shared machine: it needs the maintainer's
+   go, a note on the board, and the previous settings saved first.
+2. **Dagda ref.** the maintainer: wait. Dagda has since tagged 0.3.1, with 0.3.2 at
+   its release gate (2026-11-19). The caution given at 0.2.0: claimed
+   collections stand on leases, which order work on one node only.
+3. **node-d:** Louhi builds nothing on it until the maintainer says it is
+   sound. It reported under-voltage again on 2026-11-19
+   (`throttled=0x50005`) and has 4 GB.
+4. **Hosted CI runs ASan, UBSan and TSan on every push**
+   (`.github/workflows/ci.yml`). It uses no Pi time, so it was left; the maintainer
+   may want it out under the sanitizer rule.
 
 ## The build Pis
 
-| Host | Docker | User namespaces | Memory controller | Storage bounds | Notes |
-|---|---|---|---|---|---|
-| node-b | yes | **no** (to do) | on | no (ext4) | lir-node, scheduler; Kvasir's MySQL container |
-| node-c | yes | yes | on | **yes** (xfs) | lir-node, scheduler, redis (not in Docker) |
-| node-d | yes | yes | on | no (ext4) | lir-node; down |
-| node-a | **no** (to do) | **no** | **off** (to do) | no | lir-node, the acting scheduler; clang 19, no ninja |
+Seen 2026-11-19, after the wipe. All four: Debian 13, kernel
+`6.18.62-v8-va48+` (4K pages, 48-bit VA), g++, clang++, cmake, ninja, and
+the four development packages the build needs (Boost, OpenSSL, yaml-cpp,
+GoogleTest). None has Docker. None has `/root/louhi-work`; `build/pi.sh`
+makes it again.
 
-All four run the 4K-page, 48-bit-VA kernel (`6.18.62-v8-va48+`) since
-2026-11-16, so ASan, UBSan and TSan run on each, with g++ and clang 19
-(node-d has no clang). There is no special sanitizer Pi.
+| Host | Memory | Memory controller | Throttled | Notes |
+|---|---|---|---|---|
+| node-b | 15 GB | on | no | first choice with node-c |
+| node-c | 15 GB | on | no | NVMe; was the xfs Docker host |
+| node-d | 4 GB | on | `0x50005` | not used by Louhi (Waiting on the maintainer, 3) |
+| node-a | 15 GB | **off** | `0x50000` | hosts the claim board; last choice |
 
-node-c's Docker data is in `/var/lib/docker-xfs.img` (16 GB),
-loop-mounted at `/var/lib/docker` with `pquota` from `/etc/fstab` (the maintainer's
-go, 2026-11-16). The undo is `/root/louhi-work/UNDO-xfs.txt`, beside
-`fstab.before-xfs`; the old data is in `/var/lib/docker.before-xfs`. Every
-other Pi needs `--allow-unbounded-storage` to launch a task.
+`lir-node` and `claim-board-scheduler` were active on node-a and node-c
+on 2026-11-19: the standing cluster survived the wipe or was redeployed.
+It is not Louhi's to touch.
 
-Owed, at the maintainer's go already given. Save the previous settings to
-`/root/louhi-work/` on each Pi first (`cmdline.txt.before`,
-`daemon.json.before`, `nft-before-docker.txt`):
+When Docker comes back (Waiting on the maintainer, 1), per Pi:
 
-- **node-a:** install `docker.io` and `docker-cli` (save the nft
-  ruleset first), `userns-remap: default` in `/etc/docker/daemon.json`,
-  `cgroup_enable=memory` in `/boot/firmware/cmdline.txt` (change nothing
-  else), one reboot. Lir cleared it on 2026-11-15 and asked to be told
-  before and after. It needs the whole machine: post a note, claim cores
-  "all" for about 20 minutes, queue for it if held. Checks after:
-  `systemctl is-active lir-node claim-board-scheduler`; `journalctl -u
-  claim-board-scheduler -n 3 -o cat` says "acting" on node-a, and node-b's
-  goes back to "standing by: node-a acts"; the board's
-  `/retained?filter=stack/%23` on node-a answers as another node's does.
-  If it is slow to come back, suspect its power supply first.
-- **node-b:** `userns-remap: default` and `systemctl restart docker`
-  while node-b is unclaimed, with a note; no reboot. Kvasir's MySQL
-  container runs there, so ask Kvasir first. Check `docker info` shows
-  `name=userns`.
+- Save first, to `/root/louhi-work/`: `nft list ruleset`,
+  `/etc/docker/daemon.json` if any, `/boot/firmware/cmdline.txt`,
+  `/etc/fstab`.
+- Install `docker.io` and `docker-cli`; `"userns-remap": "default"` in
+  `/etc/docker/daemon.json`; `systemctl restart docker`; `docker info`
+  shows `name=userns`.
+- node-a only, if it is ever a test node: `cgroup_enable=memory` in
+  `/boot/firmware/cmdline.txt` and one reboot. It hosts the board, so it
+  needs the whole machine claimed, a note, and the Lir session told before
+  and after; after, `systemctl is-active lir-node claim-board-scheduler`.
+- Storage bounds (node-c): a 16 GB file formatted xfs, loop-mounted at
+  `/var/lib/docker` with `pquota` from `/etc/fstab`, Docker stopped while
+  it is moved. Without it a node needs `--allow-unbounded-storage`.
+
+What each Pi's settings were before Louhi first changed them, and
+node-c's xfs undo note, were copied off before the wipe to
+`build/pi-records/<host>/` (untracked, on the Mac).
 
 ## Principles
 
@@ -170,12 +200,12 @@ history is in git.
   microVM driver later. Memory limits, user namespaces and (2026-11-16)
   storage bounds are enforced: the agent launches nothing on a runtime
   lacking any of them unless the operator allows it.
-- **Placement:** a register per task in Dannan's agreement (0.9.0): any
-  node proposes, agreement settles one node, no scheduler. `changed_at` is
-  the fencing token for run_once tasks. The same primitive serves address
+- **Placement:** a register per task in Dannan's agreement: any node
+  proposes, agreement settles one node, no scheduler. `changed_at` is the
+  fencing token for run_once tasks. The same primitive serves address
   allocation and quota admission across nodes. Nothing that places tasks
   across nodes, allocates addresses or keeps a service's count is built
-  before 0.9.0; no stand-in meanwhile.
+  without it; no stand-in.
 - **Tenants:** our own projects, each with enforced quotas from the start,
   created and set through the API by `louhi:admin` only.
 - **API:** Louhi's own, declarative, AWS's vocabulary; no Kubernetes or EC2
@@ -187,7 +217,8 @@ history is in git.
   MQTT client. The node signs in to Lir as a Lugh service principal by
   `private_key_jwt` or `client_secret_basic`, the operator's choice, or
   anonymously where Lir allows it. Live tests use the standing cluster,
-  where `louhi/#` stays open (2026-11-16).
+  where `louhi/#` stays open (2026-11-16), with the maintainer's word for each join
+  (2026-11-17).
 - **Images (2026-11-16):** a tag is resolved to a digest at registration
   through the runtime (the Docker driver's `GET /distribution`), with no
   registry client of Louhi's own. Registries are an operator allow-list
@@ -197,23 +228,24 @@ history is in git.
   by its `ephemeral_storage_mib`, shared equally, through xfs project
   quotas. Scratch volumes come in two kinds: memory (tmpfs, counted in the
   task's memory) and disk (quota-bounded).
-- **Dannan pin (2026-11-16):** stays at `0.8.3` until 0.9.0, then moves
-  once; the Lugh pin waits with it, since a later Lugh needs Dannan 0.8.5.
+- **Dannan pin (2026-11-16):** moves once from `0.8.3`, to the 0.9 line,
+  as its own commit with one gate; the Lugh pin moves with it.
+- **Retiring a node (2026-11-17):** `louhi-node --retire`, the same
+  command as `lir-node`'s.
 - **Workload identity:** deferred.
 - **Overlay carrier:** both: WireGuard (with a VPC tag inside) where two
   nodes reach each other directly, Dannan frames otherwise.
 - **Persistent volumes:** what they are made of is decided later (step 14).
 - **Hosted CI (2026-11-16):** stays without the Lugh plugin (Lugh is
   private; no read token). The Pis cover the plugin.
-- **The build Pis** are also Louhi's test bed: Docker, user namespaces and
-  the memory controller on all four; Docker on xfs on node-c (2026-11-16).
+- **The build Pis** are also Louhi's test bed; what is installed on them
+  for that is asked for each time (they were wiped on 2026-11-18).
 
 ## Owed at the first release gate
 
 - The four fuzz targets (`record`, `image_reference`, `docker_reply`,
   `api_body`) built with clang and run `-max_total_time=60` each.
-- The `clang`, `asan`, `tsan` and `coverage` steps on a Pi. Any of the four
-  runs sanitizers now. Prefer node-b or node-c (15 GB): node-d has 4 GB
-  and ran out of memory once. Check `free -m` first.
-
-Hosted CI runs all of these but the fuzzers on every push meanwhile.
+- The `clang`, `asan`, `tsan` and `coverage` steps on a Pi: node-b or
+  node-c (15 GB). Check `free -m` first.
+- A full gate with real Docker, user namespaces and xfs storage bounds,
+  none skipped.

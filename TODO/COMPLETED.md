@@ -1,6 +1,22 @@
 # Louhi - Completed Work
 
-The record, newest first. `ACTIVE.md` is the plan.
+The record, newest first. `ACTIVE.md` is the plan. Paths under
+`/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
+wiped that day.
+
+## The Pis wiped; the documents brought up to date (2026-11-19)
+
+- the maintainer had all four Pis cleaned to a bare OS on 2026-11-18. Docker and
+  `/root/louhi-work` are gone from each; the build toolchain is there.
+  The records of each Pi's settings before Louhi changed them were copied
+  off first, to `build/pi-records/<host>/` on the Mac (untracked).
+- Dannan 0.9.0 was released meanwhile (0.9.2 the latest), so the pin move
+  is first in the plan.
+- `ACTIVE.md` rewritten for both; the README's status brought up to what
+  is built (277 tests, images by digest, storage bounds, `--retire`,
+  `louhi::ctl`).
+
+No code changed, so no gate.
 
 ## louhi-node --retire (2026-11-17)
 

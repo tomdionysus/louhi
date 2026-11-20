@@ -10,11 +10,8 @@ the Docker driver, the agent, the in-memory store, `louhi-node` with
 `--retire`, the API with sign-in by the Lugh plugin, `louhi-ctl` as
 `louhi::ctl`, events on Lir, images by digest, storage bounds).
 Pins: Dannan `0.9.2`, Lugh `dbb0573`, Lir `6268fef` (2026-11-20).
-Last gate: **264 passed, 13 skipped** on node-c (2026-11-20): the
-skipped are every real-Docker test, since the Pis were wiped to a bare OS
-on 2026-11-18 and none has Docker. Last gate with Docker: **277 passed**
-(2026-11-16, Dannan 0.8.3). The Docker tests are owed on 0.9.2 when Docker
-is back ("Waiting on the maintainer", 1).
+Last gate: **277 passed**, none skipped, on node-c (2026-11-20),
+Docker on xfs with user namespaces.
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -99,63 +96,39 @@ retires only from a Louhi node's own state).
 
 ## Waiting on the maintainer
 
-1. **Docker on the Pis again.** The wipe removed it everywhere. The 13
-   real-Docker tests (the driver's, the agent's real task, the storage
-   bound) skip until it is back, and have not run on Dannan 0.9.2.
-   node-c keeps a stale `/var/run/docker.sock` from before the wipe;
-   `build/pi.sh` pings the daemon, so it is harmless, but it goes when
-   Docker is reinstalled. Recommended: Docker with `userns-remap:
-   default` on node-b and node-c, and node-c's Docker data on xfs with
-   `pquota` again. Each is a change to a shared machine: it needs the maintainer's
-   go, a note on the board, and the previous settings saved first.
-2. **Dagda ref.** the maintainer: wait. Dagda has since tagged 0.3.1, with 0.3.2 at
-   its release gate (2026-11-19). The caution given at 0.2.0: claimed
-   collections stand on leases, which order work on one node only.
-3. **node-d:** Louhi builds nothing on it until the maintainer says it is
+1. **node-d:** Louhi builds nothing on it until the maintainer says it is
    sound. It reported under-voltage again on 2026-11-19
    (`throttled=0x50005`) and has 4 GB.
-4. **Hosted CI runs ASan, UBSan and TSan on every push**
+2. **Hosted CI runs ASan, UBSan and TSan on every push**
    (`.github/workflows/ci.yml`). It uses no Pi time, so it was left; the maintainer
    may want it out under the sanitizer rule.
 
 ## The build Pis
 
-Seen 2026-11-19, after the wipe. All four: Debian 13, kernel
-`6.18.62-v8-va48+` (4K pages, 48-bit VA), g++, clang++, cmake, ninja, and
-the four development packages the build needs (Boost, OpenSSL, yaml-cpp,
-GoogleTest). None has Docker. None has `/root/louhi-work`; `build/pi.sh`
-makes it again.
+All four were wiped to a bare OS on 2026-11-18 and have Docker again
+since 2026-11-20 (the maintainer's word). All: Debian 13, kernel `6.18.62-v8-va48+`
+(4K pages, 48-bit VA), g++, clang++, cmake, ninja, the build's development
+packages, Docker 26.1.5 with `userns-remap: default`. Each runs lir-node,
+lugh, mimir and the board's scheduler (and macha on node-c and node-d):
+not Louhi's to touch.
 
-| Host | Memory | Memory controller | Throttled | Notes |
-|---|---|---|---|---|
-| node-b | 15 GB | on | no | first choice with node-c |
-| node-c | 15 GB | on | no | NVMe; was the xfs Docker host |
-| node-d | 4 GB | on | `0x50005` | not used by Louhi (Waiting on the maintainer, 3) |
-| node-a | 15 GB | **off** | `0x50000` | hosts the claim board; last choice |
+| Host | Memory | Memory controller | Storage bounds | Throttled | Notes |
+|---|---|---|---|---|---|
+| node-c | 15 GB | on | **yes** (xfs) | no | the gate's Pi |
+| node-b | 15 GB | on | no (ext4) | no | second choice |
+| node-d | 4 GB | on | no (ext4) | `0x50000` | not used for builds (Waiting on the maintainer, 1) |
+| node-a | 15 GB | **off** | no (ext4) | `0x50000` | hosts the board; last choice |
 
-`lir-node` and `claim-board-scheduler` were active on node-a and node-c
-on 2026-11-19: the standing cluster survived the wipe or was redeployed.
-It is not Louhi's to touch.
+node-c's Docker data is in `/var/lib/docker-xfs.img` (16 GB), loop-mounted
+at `/var/lib/docker` with `pquota` from `/etc/fstab`; the undo is
+`/root/louhi-work/UNDO-xfs.txt`. Every other Pi needs
+`--allow-unbounded-storage` to launch a task. What each install replaced is
+in `/root/louhi-work/` on each Pi; `build/docker-install.sh [xfs]` is the
+script. node-a's memory controller needs `cgroup_enable=memory` and a
+reboot of the board's host: only if the maintainer wants node-a as a test node.
 
-When Docker comes back (Waiting on the maintainer, 1), per Pi:
-
-- Save first, to `/root/louhi-work/`: `nft list ruleset`,
-  `/etc/docker/daemon.json` if any, `/boot/firmware/cmdline.txt`,
-  `/etc/fstab`.
-- Install `docker.io` and `docker-cli`; `"userns-remap": "default"` in
-  `/etc/docker/daemon.json`; `systemctl restart docker`; `docker info`
-  shows `name=userns`.
-- node-a only, if it is ever a test node: `cgroup_enable=memory` in
-  `/boot/firmware/cmdline.txt` and one reboot. It hosts the board, so it
-  needs the whole machine claimed, a note, and the Lir session told before
-  and after; after, `systemctl is-active lir-node claim-board-scheduler`.
-- Storage bounds (node-c): a 16 GB file formatted xfs, loop-mounted at
-  `/var/lib/docker` with `pquota` from `/etc/fstab`, Docker stopped while
-  it is moved. Without it a node needs `--allow-unbounded-storage`.
-
-What each Pi's settings were before Louhi first changed them, and
-node-c's xfs undo note, were copied off before the wipe to
-`build/pi-records/<host>/` (untracked, on the Mac).
+What each Pi's settings were before Louhi first changed them, before the
+wipe, are in `build/pi-records/<host>/` (untracked, on the Mac).
 
 ## Principles
 
@@ -226,8 +199,9 @@ history is in git.
 - **Persistent volumes:** what they are made of is decided later (step 14).
 - **Hosted CI (2026-11-16):** stays without the Lugh plugin (Lugh is
   private; no read token). The Pis cover the plugin.
-- **The build Pis** are also Louhi's test bed; what is installed on them
-  for that is asked for each time (they were wiped on 2026-11-18).
+- **The build Pis** are also Louhi's test bed: Docker with user
+  namespaces on all four, xfs storage bounds on node-c (2026-11-20, after
+  the wipe of 2026-11-18). Anything more is asked for each time.
 
 ## Owed at the first release gate
 
@@ -235,5 +209,3 @@ history is in git.
   `api_body`) built with clang and run `-max_total_time=60` each.
 - The `clang`, `asan`, `tsan` and `coverage` steps on a Pi: node-b or
   node-c (15 GB). Check `free -m` first.
-- A full gate with real Docker, user namespaces and xfs storage bounds,
-  none skipped.

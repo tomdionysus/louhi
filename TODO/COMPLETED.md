@@ -4,6 +4,25 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## Docker on all four Pis again; the full gate on Dannan 0.9.2 (2026-11-20)
+
+- the maintainer: put Docker on all the Pis. Each Pi in turn, one core claimed, a
+  note on the board before and after: `docker.io` and `docker-cli`
+  26.1.5, `userns-remap: default` written before the daemon's first
+  start, so it never ran without user namespaces. node-c's Docker data
+  is on a 16 GB xfs loop file (`/var/lib/docker-xfs.img`, `pquota`, in
+  `/etc/fstab`). What each change replaced is in `/root/louhi-work/` on
+  each Pi (`nft-before-docker.txt`, `cmdline.txt.before`, `fstab.before`;
+  node-c's `UNDO-xfs.txt`); the script is `build/docker-install.sh`.
+  No reboot; lir-node, lugh, mimir, macha and the board stayed active,
+  and the board answered on node-a after.
+- node-c's stale socket from before the wipe was removed first (no
+  daemon behind it).
+
+Gate on node-c (never throttled, Docker on xfs with user
+namespaces): **277 passed**, none skipped. Nothing left on the node but
+the busybox image, kept as a cache.
+
 ## Dannan 0.9.2, with Lugh and Lir moved with it (2026-11-20)
 
 - Pins: Dannan `0.8.3` to `0.9.2`; Lugh `382416d` to `dbb0573` (the

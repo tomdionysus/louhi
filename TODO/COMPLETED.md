@@ -4,6 +4,101 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## The stack's audits: what Louhi moved first (2026-11-20)
+
+the maintainer's two audits (no duplicated functionality; no special node) were
+negotiated among the sessions through the Lir Development Cluster session,
+which keeps the converged plan
+(`../lir-develop-cluster/TODO/2026-11-20-cluster-stack-placement.md`,
+"Louhi"). Louhi agreed it, correcting item 3. What it released to Louhi
+alone, done:
+
+- **Dannan's `RetryState`** for the agent's restart budget and backoff
+  (`Policy::restarts` is a `dannan::sched::RetryPolicy`; a quiet window
+  starts the backoff again; a launch backs off and is never parked) and
+  for the service token's backoff. The two never-parking policies take
+  the plan's interim form (no budget, a 1 ms window, no run bound) until
+  Dannan names one. One new test: after a quiet window a service task's
+  backoff starts again.
+- **Dannan's `hex`/`unhex`** for task ids; **`percent_encode`** for the
+  Docker API's query strings (it was the unreserved set, byte for byte).
+- **louhi-ctl tries every endpoint it knows** (S11): `--endpoint`
+  repeatable, `$LOUHI_ENDPOINT` a list, every endpoint given at login
+  saved (an older single `endpoint` is still read). A call goes to the
+  next endpoint past one that cannot be connected to (nothing was sent),
+  and a GET past one that gave no answer too; a write that may have
+  reached a node is never sent to another, and the person is told it may
+  have happened; any HTTP answer is the answer. Eight new tests.
+- Item 3 (`api/client.cpp` onto Lugh's `HttpsClient`) is not a straight
+  duplicate: Louhi's client speaks plain `http://`, which the maintainer ruled for
+  the API. Settled with the coordinator: it moves once, onto Dannan's
+  HTTP client if the maintainer says yes to the HTTP question, else onto Lugh's once
+  it takes `http://`. Left as it is until then.
+
+Gate on node-c: **302 passed**, none skipped (293 after the
+RetryState move, 292 before). Two runs failed to compile first (a call to
+the old backoff left in; local names shadowing in `ctl.cpp`), fixed.
+
+## Step 4 begun: Dagda fetched, the revision and admission registers (2026-11-20)
+
+- **the maintainer's rulings written into the design** ("What the stack provides",
+  "Records", "Placement", "Projects and quotas", the API): records in one
+  every-node head space of Dagda 0.3.2 in a domain "louhi"; the Task merge
+  (a stop absorbs, else last-writer-wins on the hybrid clock); revision
+  numbers and quota admission from agreement registers, their acceptor
+  state in Dagda's `AcceptorStore`. The earlier "quota enforced twice"
+  is replaced by admission through a register.
+- **The space's owner.** Dagda 0.3.2 has none outside its test fixtures.
+  Asked, the maintainer: "Dagda only does this if other projects that use Dagda can
+  use this feature." It is Dagda's ruled register map (slice 3), which
+  serves Lir, Lugh, the catalogue and the leases as well, and goes into
+  Dagda's next release (the maintainer's ruling in the Dagda session). Louhi writes
+  no owner, so its records wait for that release.
+- **Dagda fetched** at `0.3.2` (`LOUHI_BUILD_DAGDA`, default on), with
+  Dannan declared `OVERRIDE_FIND_PACKAGE` so Dagda's `find_package` takes
+  the fetched one, and Dagda `EXCLUDE_FROM_ALL`. Dagda is private, so
+  `tools/ci.sh` builds with it only where `../dagda` or
+  `LOUHI_DAGDA_REPOSITORY` is, and hosted CI and CodeQL build without it.
+  Configured, built and linked on node-c; Dagda's `install(EXPORT)`
+  raised nothing. Told to the Dagda session.
+- **`louhi::admit`**, Louhi's registers on Dannan's agreement:
+  - `admit/registers.h`: a family's revision counter (the next revision,
+    and the last 256 requests with what each was given, so a request asked
+    again is answered with its own number; one retried past that window
+    gets a new number, leaving a gap, never a duplicate); a project's
+    admitted tasks, by id with each one's CPU and memory, usage derived
+    from them and never counted, admitted all or none within the quota's
+    tasks, CPU and memory, a refusal naming the limit and committing the
+    value unchanged (a change cannot refuse); a release by task id, so it
+    gives a share back once. Every change is `repeatable`, and leaves a
+    value that does not decode as it was, with an empty result its caller
+    refuses rather than throwing on Dannan's strand. Codecs versioned from
+    1, bounded, in order, exact.
+  - `admit/agreement.h`: `Registers`, implemented on `agree::Agreement`
+    (`AgreementRegisters`, the slot by `slot_of`, the replica set the
+    caller's), and `take_revision`, `admit_tasks`, `release_task`, each
+    answering evidence with `unknown` when it may have taken effect.
+    Nothing calls them yet: in real use they wait on the `AcceptorStore`.
+  - Tested on Dannan's simulation harness (`sim::Cluster`, real
+    `Agreement`s on `sim::Store`, linked through `dannan_sim_checkers`;
+    a fetched Dannan has no `dannan::` alias for it): five nodes, one
+    message in eight lost, one in ten duplicated, delays to 30 ms, a node
+    crashing now and then, clients asking again with the same request
+    until answered, eight seeds. Thirty requests are given revisions 1 to
+    30, each one number however often it was asked; thirty admissions
+    against a quota of ten admit exactly ten, no answer ever showing more;
+    each admitted task released from two nodes at once leaves nothing
+    admitted, and the twenty refused then admit exactly ten.
+- **`louhi-ctl login --scope openid`** is a usage error before anything
+  is sent (`LoginRefusesTheOpenidScope`): louhi-ctl needs no ID token,
+  and one would fail verification after the person had answered.
+
+Gate on node-c (never throttled, Docker on xfs with user
+namespaces): **292 passed**, none skipped (277 before: one ctl test, twelve
+register tests, two simulation tests). `tools/ci.sh check` passes. The
+first run failed to compile (an include missing from the register test,
+and dangling-else warnings in the simulation test); fixed and run again.
+
 ## Docker on all four Pis again; the full gate on Dannan 0.9.2 (2026-11-20)
 
 - the maintainer: put Docker on all the Pis. Each Pi in turn, one core claimed, a

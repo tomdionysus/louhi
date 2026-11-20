@@ -68,10 +68,19 @@ adds `Context::agreement()` and `Context::hlc()`).
 - One process per node: a product binary links the stack, is a node, and
   advertises what it hosts.
 
-**Dagda 0.2.0** (held, unpushed; no ref Louhi can pin yet).
+**Dagda 0.3.2** (pinned at the tag since 2026-11-20; contract v2 is still
+growing and freezes at its slice 4).
 - Head spaces: the owner's state as immutable commits, with the owner's
   codec and merge. `Heads::watch` notifies when a head moves, a peer's commit
-  included; no polling.
+  included; no polling. Only `every_node` and `node_local` spaces open;
+  `replicas: N` is not built.
+- No read-one or list-by-prefix on the Context yet: one layer down,
+  `Space::local()` or `converged()` for a view and `Space::entries` for
+  pages of it in key order. Both are asked for the next release, with a
+  caught-up signal (`../dagda/TODO/2026-11-20-louhi-reads.md`).
+- A commit is made on this node, the peers owed it, with no durability
+  level (that is Dagda's slice 2).
+- One domain per Dagda node, its key derived by the hosted system.
 - Immutable, content-identified objects with claims and garbage collection.
 - "It gives no uniqueness, lock, transaction or linearizable write" (stack
   document). Uniqueness at creation is by its claimed collections.
@@ -137,6 +146,39 @@ Declared state lives in Dagda head spaces, keyed so a project's records
 share a prefix. Every record is versioned from 1, with a codec written
 against Dannan's byte codec.
 
+Where they live (the maintainer, 2026-11-20): one every-node head space of Dagda
+0.3.2, in a domain "louhi" whose key is derived from the cluster key by
+HKDF under the label "louhi/storage/v1", its spaces named under "louhi/".
+`store::Store` stays the one interface the rest of Louhi sees; the Dagda
+store is its implementation and `MemoryStore` stays for tests.
+
+- **A write reports what it is.** A commit is made on this node and owed
+  to the peers; Dagda 0.3.2 has no durability level to wait for. The API
+  says so: a write answered is a write this node holds.
+- **Never whole for removals.** Dagda 0.3.2 cannot say when a node's view
+  holds what its peers have committed, so the store answers `ready()`
+  false to anything that would remove what it does not find (discipline
+  3): the agent stops nothing for a record's absence until Dagda's
+  caught-up signal exists.
+- **Whose owner.** The space's owner (codec, mutation, merge, tree) is
+  Dagda's built-in register map (ruled in Dagda's three-systems design,
+  2026-11-13; its slice 3, not in 0.3.2): key to value or tombstone, last
+  writer wins, tombstones dropped after a window. Louhi writes no owner
+  (rule 3; the maintainer, 2026-11-20: Dagda builds a feature only where other
+  projects that use Dagda can use it). The records wait for it. If the
+  map gets no per-record merge hook, a task's stop is kept under a key of
+  its own, only ever written as stopped, so it absorbs under plain
+  last-writer-wins; and if it orders by its own counter rather than
+  Dannan's hybrid clock, the record carries its stamp inside.
+- **How two heads merge, by kind.** Every kind but Task merges
+  last-writer-wins on Dannan's hybrid clock (`Context::hlc()`), the stamp
+  carried beside each record; an observed record has one writer, so for
+  it the rule only orders that writer's own writes. A **Task** merges by field group (the maintainer, 2026-11-20): "wanted
+  stopped" absorbs, so no merge undoes a stop, and every other group is
+  last-writer-wins on the hybrid clock. A **TaskDefinition** revision is
+  immutable, so two copies of one key are equal or the revision number
+  was given twice, which agreement prevents (below).
+
 - **Project** and its **Quota**; **TaskDefinition** (immutable per revision); **Service**
   (definition revision, desired count, deployment settings, load balancer
   attachment); **Task** (the definition revision it runs, and where the
@@ -178,8 +220,14 @@ agreement waits for it, with nothing standing in meanwhile.
   never reused, comparable by a third party. Its side effects check it, so a
   task left running on a node cut off from the majority is refused by
   anything that has seen a later placement.
-- The same primitive serves address allocation (step 9) and quota admission
-  (step 5's cross-node half).
+- The same primitive serves address allocation (step 9), quota admission
+  and revision numbers (the maintainer, 2026-11-20; both below).
+- **Where the acceptors keep their state** (the maintainer, 2026-11-20): in Dagda's
+  durable `AcceptorStore`, asked of the Dagda session for its release
+  after 0.3.2, one for every hosted system (rule 3). Louhi writes no
+  acceptor store of its own. Until it lands, the registers' callers are
+  built and tested on Dannan's simulation harness with its in-memory
+  `test::sim::Store`, and nothing in real use proposes.
 
 Nothing that places tasks across nodes (step 6) or allocates addresses
 (step 9) is built before Dannan 0.9.0. A single node places on itself, which
@@ -193,14 +241,18 @@ cannot starve another (the maintainer: projects with quotas). A **Quota** record
 project bounds running tasks, CPU, memory, addresses, volumes and load
 balancers.
 
-Dagda gives no transaction, so a quota cannot be checked atomically: two
-API nodes can each admit a create that together exceed it. So the quota is
-enforced twice. Admission refuses what would exceed it on the admitting
-node's view, with the reason. And the reconciler that owns a project's
-key re-derives its usage from the records (never a stored counter,
-discipline 1) and parks the newest tasks past the limit, visibly, until
-usage falls or the quota rises. Over-admission is therefore brief and
-bounded, and never silent.
+Dagda gives no transaction, so a quota cannot be checked atomically on
+the records: two API nodes could each admit a create that together exceed
+it. So admission is agreement's (the maintainer, 2026-11-20): a register per project
+holds what is admitted (tasks, CPU, memory). RunTask commits "add this
+task's share if the sum stays within the quota", refused with the limit
+that would be passed; a stop commits the subtraction. Two API nodes
+admitting at once are settled by the register, so neither over-admits.
+The register's acceptor state waits for Dagda's `AcceptorStore` (above).
+
+Revision numbers are the same (the maintainer, 2026-11-20): a register per task
+definition family holds the next revision, so a number is given once; the
+revision's content is then written to Dagda under it.
 
 ### Networking
 
@@ -215,10 +267,13 @@ emulated Ethernet.
 - **RouteTable**: destinations to targets, evaluated on the sending node.
 - **SecurityGroup**: stateful allow rules on a task's interface, applied on
   its node by nftables.
-- **Gateway**: a node the operator marks as having public reach performs
-  source NAT for a subnet's outbound traffic.
-- **LoadBalancer**: layer 4 first, on nodes marked for ingress, spreading
-  connections across a service's healthy tasks; HTTP-aware later.
+- **Gateway**: source NAT for a subnet's outbound traffic, on any node
+  with public reach, the serving node settled by an agreement register and
+  replaced on its loss as a task's placement is: no node is marked or
+  special (the stack's no-special-node goal, 2026-11-20).
+- **LoadBalancer**: layer 4 first, spreading connections across a
+  service's healthy tasks, served the same way from any node with public
+  reach; HTTP-aware later.
 - **Service discovery**: a name per service resolving to its healthy tasks'
   addresses, answered on each node from the records.
 
@@ -437,9 +492,10 @@ without one.
 - A token bound to a key or a certificate (`cnf`) is refused until its
   binding can be checked, as Lir refuses one it cannot check.
 - RegisterTaskDefinition takes the family and the definition, and answers
-  the revision it was given: one more than the family's highest. Revisions
-  are allocated on the node that takes the request; two nodes allocating
-  at once is agreement's to settle (step 6), as quota admission is.
+  the revision it was given: the next from the family's agreement register
+  (the maintainer, 2026-11-20; "Projects and quotas"). Until that register can run,
+  revisions are allocated on the node that takes the request, one more
+  than the family's highest it sees.
 - RunTask takes a family, a revision (the latest when left out), a count
   (1 to 10, as ECS's) and an optional client token: a retry carrying the
   same token within an hour answers the tasks the first made rather than
@@ -515,9 +571,12 @@ wait on another project; the order can bend around whichever arrives first.
 
 ## What waits on others
 
-As of 2026-11-19 (`ACTIVE.md` has the current state):
+As of 2026-11-20 (`ACTIVE.md` has the current state):
 
-- **Dagda:** a ref Louhi can pin, for step 4. Waits on the maintainer's word.
-- **Dannan:** the agreement registers, for steps 6 and 9. Released in
-  0.9.0; Louhi's pin has still to move to it.
+- **Dagda:** 0.3.2 is pinned for step 4. Its next release is to bring
+  read-one and prefix listing on the Context, the caught-up signal,
+  fetching beside a fetched Dannan, and the `AcceptorStore` that
+  revisions, quota admission and placement wait on for real use.
+- **Dannan:** the agreement registers, for steps 6 and 9. In the pinned
+  0.9.2.
 - **Lir:** the exported MQTT client library for step 8. Done.

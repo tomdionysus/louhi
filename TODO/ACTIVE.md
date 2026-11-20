@@ -8,10 +8,27 @@ Last updated: 2026-11-20. `COMPLETED.md` is the record.
 Done: steps 0 to 3, 5 and 8, and step 13's first half (records and codecs,
 the Docker driver, the agent, the in-memory store, `louhi-node` with
 `--retire`, the API with sign-in by the Lugh plugin, `louhi-ctl` as
-`louhi::ctl`, events on Lir, images by digest, storage bounds).
-Pins: Dannan `0.9.2`, Lugh `dbb0573`, Lir `6268fef` (2026-11-20).
-Last gate: **277 passed**, none skipped, on node-c (2026-11-20),
+`louhi::ctl`, events on Lir, images by digest, storage bounds). Step 4
+under way: Dagda fetched; revision and admission registers (`louhi::admit`)
+built and tested on Dannan's simulation harness, not yet called by the API.
+Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `dbb0573`, Lir `6268fef`
+(2026-11-20).
+Last gate: **302 passed**, none skipped, on node-c (2026-11-20),
 Docker on xfs with user namespaces.
+
+**The stack's converged plan** (the maintainer's audits, 2026-11-20) gives Louhi its
+list: `../lir-develop-cluster/TODO/2026-11-20-cluster-stack-placement.md`,
+"The converged plan", "Louhi". Done of it: RetryState, hex, percent_encode,
+louhi-ctl's endpoints (COMPLETED.md). The rest waits on Lugh's client
+(relying party, discovery, token source, fake Https), Dannan's next minor
+(the node-tool helper, the random id type, the callback vocabulary, the
+in-memory AcceptorStore, replica sets that follow membership, readiness)
+and the maintainer's HTTP question (`api/client.cpp` moves then). Dannan's next minor
+has not started: the maintainer told Dannan to stop until he has answered the other
+agents' issues (2026-11-20). Gateways and ingress
+go on any node with public reach, settled by a register, not on nodes the
+operator marks (settled by the goals; the design's Networking section is
+to say so when step 12 is designed).
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -128,30 +145,59 @@ step per session.
 
    Neither Lir nor Lugh is on Dagda yet: Louhi is the first hosted system
    on its head spaces after Macha.
-1. **`louhi-ctl login --scope openid` fails** (found 2026-11-16): the
-   issuer then returns an ID token, which Lugh's client verifies against a
-   `Verifier` holding no keys (`ctl/ctl.cpp`, `login`). Either load the
-   issuer's JWKS first or refuse `openid` as a usage error; louhi-ctl needs
-   no ID token. Small; a test in `ctl_test.cpp` first.
-2. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
+
+   **The space's owner (the maintainer, 2026-11-20, asked this session):** "Dagda
+   only does this if other projects that use Dagda can use this feature."
+   The owner is Dagda's built-in register map (ruled 2026-11-13 in Dagda's
+   three-systems design, its slice 3, unbuilt; Lir's retained, Lugh's
+   JWKS, the catalogue and the leases use it), which the Dagda session
+   recommends for its next release. Louhi writes no owner. The two
+   additions Louhi would like (the owner's ordering stamp, a per-record
+   merge hook) go in only if another project needs them; if not, a task's
+   stop is a key of its own, only written as stopped, and the record
+   carries its hybrid-clock stamp inside. The Dagda session is asking Lir
+   and Lugh. The records therefore wait for that release.
+
+   the maintainer's rulings in the Dagda session (2026-11-20), for that release: the
+   register map (it serves Louhi, Lir, Lugh, the catalogue and the
+   leases); the `AcceptorStore` as a node-local log per agreement space
+   with group commit; caught-up per space as a query and a notice, from a
+   survey of the peers holding the space (not an advert), three-valued:
+   caught up, behind (naming peers and heads), or alone (no peer to
+   compare). Whether alone counts as whole for removals goes to the maintainer when
+   the store is built (a node that has never heard a peer may be cut off,
+   or may be the cluster's only node).
+
+   Done (2026-11-20, COMPLETED.md): Dagda fetched at 0.3.2; the revision
+   and admission registers (`admit/registers.h`, `admit/agreement.h`),
+   tested on Dannan's simulation harness.
+   Left in step 4, in order:
+   - the API onto the registers: RegisterTaskDefinition takes its
+     revision from `take_revision`, RunTask admits through `admit_tasks`,
+     StopTask releases through `release_task`. In real use they wait on
+     Dagda's `AcceptorStore`, and on **which replica set serves Louhi's
+     slots** (`Serving`), which goes to the maintainer with a recommendation when
+     the store is there: the tests use the simulation's genesis set;
+   - the Dagda store on the register map, when Dagda releases it.
+1. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
    10 that need no agreement: Subnet, RouteTable and SecurityGroup records
    and codecs; a security group rendered to nftables rules as a pure
    function, behind an interface, tested against fakes; a task's network
    namespace on one node. Nothing that allocates addresses or places across
    nodes; anything near that line goes to the maintainer first.
-3. **Steps 6 and 7, and the rest of step 9**, on Dannan's agreement
+2. **Steps 6 and 7, and the rest of step 9**, on Dannan's agreement
    registers (`Context::agreement()`, in the pinned Dannan): placement,
    then services, then address allocation, on the same Dagda
    `AcceptorStore` as revisions and quota; Louhi writes none of its own
    (the maintainer, 2026-11-20), as Lir does not.
-4. **Owed, end to end**, when a Lugh issuer is at hand:
+3. **Owed, end to end**, when a Lugh issuer is at hand:
    - `louhi-ctl login` and `ServiceToken` against a real Lugh;
    - task events (not only a node's status) published live to Lir, which
      needs the API, and so an issuer;
    - a private registry signed in to for real (`--registry-credential`).
-5. **The image store on Dagda** (step 13's second half), after item 0.
+4. **The image store on Dagda** (step 13's second half), after item 0.
 
-The order of 1 to 3 is this session's reading; the maintainer may put networking
+The order of 1 and 2 is this session's reading; the maintainer may put networking
 or placement first.
 
 ### Joining the standing Lir cluster
@@ -173,6 +219,18 @@ node cleanly, then retire its id on every member (`louhi-node --retire`
 retires only from a Louhi node's own state).
 
 ## Waiting on the maintainer
+
+0. **the maintainer's two stack audits (2026-11-20)**, no duplicated functionality and
+   no special node, are reported to the Lir Development Cluster session,
+   which correlates all eight projects
+   (`../lir-develop-cluster/TODO/2026-11-20-cluster-stack-placement.md`).
+   Louhi's findings: the Lugh relying-party plugin copied from Lir's, the
+   HTTP server and client cores, the node-tool scaffolding, OIDC discovery
+   and the service-token source (to Dannan or Lugh's client); and its own
+   fixes, using Dannan's `RetryState` and hex helpers. Special roles: the
+   first Lugh issuer for service tokens, one endpoint in louhi-ctl, and the
+   designed gateway and ingress nodes "the operator marks". Nothing moves
+   until the maintainer decides.
 
 1. **node-d:** Louhi builds nothing on it until the maintainer says it is
    sound. It reported under-voltage again on 2026-11-19

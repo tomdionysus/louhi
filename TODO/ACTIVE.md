@@ -47,6 +47,33 @@ step per session.
 
 ## Next, in order
 
+0. **The Dagda store** (step 4's second half; the maintainer, 2026-11-20: records
+   now, placement later). Louhi's records in an every-node head space of
+   Dagda `0.3.2`, pinned at the tag, behind `store/store.h`. What 0.3.2
+   gives and lacks (slice 1 only; slices 2 to 5 paused until Macha's
+   cutover), read 2026-11-20:
+   - head spaces with the owner's codec and merge, `watch` and `changed`
+     on `dagda::Context` (`dagda/context.h:340-421`, `heads/space.h`);
+   - no read-one or list-by-prefix on the Context: one layer down,
+     `Node::spaces()->find(id)` and `Space::entries` (`space.h:478-495`);
+     asked of the Dagda session for the Context;
+   - a commit is on this node, peers owed it, with no durability level
+     (slice 2): what the API's writes report must say so;
+   - no caught-up signal for a new node (the metadata plane is ready once
+     spaces open locally): the store stays `Whole::never` for the agent
+     until there is one, so nothing unknown is removed (discipline 3);
+     asked of the Dagda session;
+   - one domain per Dagda node, its key derived by the hosted system
+     (`StorageKey(Secret)`, no helper for other domains);
+   - `dagda::test_fixtures` (`Cluster`, `ClusterNode`, stepped time; real
+     loopback ports, so not fully deterministic);
+   - consumed as an installed package with exact-version compatibility
+     (`find_package(dagda 0.3.2)`); whether FetchContent works beside
+     Louhi's fetched Dannan is asked of the Dagda session.
+   Design questions this raises (the merge per record kind, what a
+   conflicting write of the same task means, the domain and key) go to
+   the maintainer first, written into the design. Neither Lir nor Lugh is on Dagda
+   yet: Louhi is the first hosted system on its head spaces after Macha.
 1. **`louhi-ctl login --scope openid` fails** (found 2026-11-16): the
    issuer then returns an ID token, which Lugh's client verifies against a
    `Verifier` holding no keys (`ctl/ctl.cpp`, `login`). Either load the
@@ -59,19 +86,16 @@ step per session.
    namespace on one node. Nothing that allocates addresses or places across
    nodes; anything near that line goes to the maintainer first.
 3. **Steps 6 and 7, and the rest of step 9**, on Dannan's agreement
-   registers (`Context::agreement()`, now in the pinned Dannan): placement,
-   then services (a service's task set changes through registers), then
-   address allocation. Read `dannan/agree/` and the 0.9.0 changelog first;
-   design questions the real agreement API raises go to the maintainer first (the
-   acceptor state lives behind a hosted system's `AcceptorStore`, which
-   for Louhi wants Dagda or a local durable store: ask).
+   registers (`Context::agreement()`, in the pinned Dannan): placement,
+   then services, then address allocation. They wait for Dagda's acceptor
+   store (its slice 4, paused until Macha's cutover); Louhi writes no
+   `AcceptorStore` of its own (the maintainer, 2026-11-20), as Lir does not.
 4. **Owed, end to end**, when a Lugh issuer is at hand:
    - `louhi-ctl login` and `ServiceToken` against a real Lugh;
    - task events (not only a node's status) published live to Lir, which
      needs the API, and so an issuer;
    - a private registry signed in to for real (`--registry-credential`).
-5. **The image store on Dagda** (step 13's second half) and **the Dagda
-   store** (step 4's second half): both wait on the Dagda ref.
+5. **The image store on Dagda** (step 13's second half), after item 0.
 
 The order of 1 to 3 is this session's reading; the maintainer may put networking
 or placement first.
@@ -193,6 +217,10 @@ history is in git.
   with Lugh and Lir (done 2026-11-20, at 0.9.2).
 - **Retiring a node (2026-11-17):** `louhi-node --retire`, the same
   command as `lir-node`'s.
+- **Dagda (2026-11-20):** records now, on Dagda `0.3.2`'s head spaces,
+  pinned at the tag though contract v2 freezes only at slice 4;
+  placement later, on Dagda's acceptor store. No acceptor store of
+  Louhi's own.
 - **Workload identity:** deferred.
 - **Overlay carrier:** both: WireGuard (with a VPC tag inside) where two
   nodes reach each other directly, Dannan frames otherwise.

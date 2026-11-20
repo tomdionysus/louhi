@@ -12,6 +12,7 @@
 #include <future>
 #include <iterator>
 #include <span>
+#include <sstream>
 
 #include "dannan/encoding/percent.h"
 #include "dannan/identity/durable_file.h"
@@ -90,6 +91,21 @@ lugh::client::Endpoints discover(const Environment& env, lugh::client::Https& ht
   return std::get<lugh::client::Endpoints>(endpoints);
 }
 
+// $LOUHI_ENDPOINT's list: separated by commas or spaces, empty items dropped.
+std::vector<std::string> endpoint_list(const std::string& text) {
+  std::vector<std::string> out;
+  std::string item;
+  for (const char ch : text + ",") {
+    if (ch == ',' || ch == ' ' || ch == '\t') {
+      if (!item.empty()) out.push_back(item);
+      item.clear();
+    } else {
+      item.push_back(ch);
+    }
+  }
+  return out;
+}
+
 // louhi-ctl is a public client: it proves nothing but its client_id.
 lugh::client::ClientIdentity public_client(const std::string& client_id) {
   lugh::client::ClientIdentity identity;
@@ -105,17 +121,25 @@ void keep(Credentials& c, const lugh::client::TokenSet& tokens, const dannan::co
 }
 
 int login(const Args& args, const Environment& env) {
-  if (args.positional.size() != 1) throw Usage("usage: louhi-ctl login --issuer URL --client-id ID --endpoint URL [--scope S]... [--ca FILE]");
+  if (args.positional.size() != 1) throw Usage("usage: louhi-ctl login --issuer URL --client-id ID --endpoint URL... [--scope S]... [--ca FILE]");
   const auto issuer = args.flag("issuer");
   const auto client_id = args.flag("client-id");
-  const auto endpoint = args.flag("endpoint");
-  if (!issuer || !client_id || !endpoint) throw Usage("login needs --issuer, --client-id and --endpoint");
-  endpoint_from_flag(*endpoint);
+  const auto apis = args.all("endpoint");
+  if (!issuer || !client_id || apis.empty()) throw Usage("login needs --issuer, --client-id and --endpoint");
+  for (const auto& api : apis) endpoint_from_flag(api);
   Credentials c;
   c.issuer = *issuer;
   c.client_id = *client_id;
-  c.endpoint = *endpoint;
+  c.endpoints = apis;
   c.scopes = args.all("scope");
+  // The issuer answers openid with an ID token, which louhi-ctl has no use
+  // for and holds no keys to verify: refused before anything is sent.
+  for (const auto& scope : c.scopes) {
+    std::istringstream words(scope);
+    for (std::string word; words >> word;) {
+      if (word == "openid") throw Usage("louhi-ctl needs no ID token: leave out --scope openid");
+    }
+  }
   const auto path = credentials_path(args, env.getenv);
 
   const auto https = env.issuer(args.flag("ca").value_or(""));
@@ -167,23 +191,35 @@ int call_api(const Args& args, const Environment& env) {
   } catch (const std::exception& why) {
     throw std::runtime_error("the credentials at " + path.string() + ": " + why.what() + ": run louhi-ctl login");
   }
-  api::Endpoint endpoint;
-  if (const auto given = args.flag("endpoint")) {
-    endpoint = endpoint_from_flag(*given);
+  // The endpoints, every one checked before any is called.
+  std::vector<std::pair<std::string, api::Endpoint>> endpoints;
+  if (const auto given = args.all("endpoint"); !given.empty()) {
+    for (const auto& url : given) endpoints.emplace_back(url, endpoint_from_flag(url));
   } else {
-    auto named = env.getenv("LOUHI_ENDPOINT").value_or("");
-    if (named.empty()) named = c.endpoint;
+    auto named = endpoint_list(env.getenv("LOUHI_ENDPOINT").value_or(""));
+    if (named.empty()) named = c.endpoints;
     if (named.empty()) throw std::runtime_error("no endpoint: give --endpoint");
-    endpoint = api::parse_endpoint(named);
+    for (const auto& url : named) endpoints.emplace_back(url, api::parse_endpoint(url));
   }
   const std::string token = access_token(args, env, *file, c);
 
-  const auto requester = env.api(endpoint, args.flag("ca").value_or(""));
-  const auto r = ask<runtime::Result<api::Response>>(
-      [&](auto done) { requester->request(call.method, call.target, call.body, token, step, env.executor, std::move(done)); }, patience);
-  if (!r.ok()) throw std::runtime_error(r.error().message);
-  *env.out << json::serialize(r.value().body) << "\n";
-  return r.value().status >= 200 && r.value().status < 300 ? 0 : 1;
+  // A request that never left this machine can go anywhere; a read can be
+  // asked again; a write that may have arrived must not be.
+  const bool read = call.method == "GET";
+  std::string failures;
+  for (const auto& [url, endpoint] : endpoints) {
+    const auto requester = env.api(endpoint, args.flag("ca").value_or(""));
+    const auto r = ask<runtime::Result<api::Response>>(
+        [&](auto done) { requester->request(call.method, call.target, call.body, token, step, env.executor, std::move(done)); }, patience);
+    if (r.ok()) {
+      *env.out << json::serialize(r.value().body) << "\n";
+      return r.value().status >= 200 && r.value().status < 300 ? 0 : 1;
+    }
+    failures += (failures.empty() ? "" : "; ") + url + ": " + r.error().message;
+    if (r.error().kind != runtime::Error::Kind::unavailable && !read)
+      throw std::runtime_error(failures + " (the request may have reached it, so it is not sent elsewhere)");
+  }
+  throw std::runtime_error("no endpoint answered: " + failures);
 }
 
 }  // namespace
@@ -219,9 +255,11 @@ Args parse(const std::vector<std::string>& arguments) {
 std::string encode(const Credentials& c) {
   json::array scopes;
   for (const auto& s : c.scopes) scopes.emplace_back(s);
+  json::array endpoints;
+  for (const auto& e : c.endpoints) endpoints.emplace_back(e);
   const json::object o{{"issuer", c.issuer},
                        {"client_id", c.client_id},
-                       {"endpoint", c.endpoint},
+                       {"endpoints", endpoints},
                        {"scopes", scopes},
                        {"access_token", c.access_token},
                        {"refresh_token", c.refresh_token},
@@ -241,7 +279,12 @@ Credentials decode(std::string_view text) {
   Credentials c;
   c.issuer = string_of("issuer");
   c.client_id = string_of("client_id");
-  c.endpoint = string_of("endpoint");
+  if (const auto* v = o.if_contains("endpoints"); v && v->is_array()) {
+    for (const auto& e : v->as_array())
+      if (e.is_string()) c.endpoints.emplace_back(e.as_string());
+  } else if (const auto old = string_of("endpoint"); !old.empty()) {
+    c.endpoints.push_back(old);
+  }
   c.access_token = string_of("access_token");
   c.refresh_token = string_of("refresh_token");
   // Anything but a whole number in range is no expiry: the token is

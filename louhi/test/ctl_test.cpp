@@ -13,7 +13,10 @@
 // - a call carries the access token held while more than a minute of it is
 //   left; otherwise the refresh token is spent first and the new tokens
 //   kept; a refresh refused says to log in and changes nothing;
-// - the endpoint is --endpoint, then $LOUHI_ENDPOINT, then the one saved;
+// - the endpoints are --endpoint, then $LOUHI_ENDPOINT, then those saved,
+//   each a node's API; a call goes to the next when one cannot be reached,
+//   and a read also when one gave no answer, but a write that may have
+//   arrived is never sent again; any HTTP answer is the answer;
 // - the answer's JSON goes to stdout, and the exit is 0 for a 2xx answer, 1
 //   for any other answer or failure;
 // - login signs in by the device flow, telling the person where to go, and
@@ -149,7 +152,7 @@ Credentials fresh() {
   Credentials c;
   c.issuer = issuer;
   c.client_id = "louhi-ctl";
-  c.endpoint = "http://louhi.example:8080";
+  c.endpoints = {"http://louhi.example:8080"};
   c.scopes = {"louhi:web:read"};
   c.access_token = "a1";
   c.refresh_token = "r1";
@@ -306,6 +309,14 @@ TEST(CtlCredentials, AFieldOfTheWrongTypeIsEmptyAndAnExpiryThatIsNotOneIsNone) {
   EXPECT_EQ(ctl::decode(R"({"expires_unix":"soon"})").expires_unix, 0u);
 }
 
+TEST(CtlCredentials, SavedEndpointsAreAListAndAnOldSingleOneIsRead) {
+  auto c = fresh();
+  c.endpoints = {"http://a.example:8080", "https://b.example"};
+  EXPECT_EQ(ctl::decode(ctl::encode(c)).endpoints, c.endpoints);
+  EXPECT_EQ(ctl::decode(R"({"endpoint":"http://old.example:8080"})").endpoints, words({"http://old.example:8080"}));
+  EXPECT_EQ(ctl::decode(R"({"endpoints":["http://a.example",4,"http://b.example"]})").endpoints, words({"http://a.example", "http://b.example"}));
+}
+
 TEST(CtlCredentials, TextThatIsNotAnObjectIsRefused) {
   for (const char* bad : {"", "[]", "\"x\"", "{", "{} {}"}) EXPECT_THROW(ctl::decode(bad), std::runtime_error) << bad;
 }
@@ -409,6 +420,83 @@ TEST_F(CtlTest, AnApiThatCannotBeReachedExitsOneAndSaysWhy) {
   EXPECT_EQ(run({"list-projects"}), 1);
   EXPECT_EQ(out.str(), "");
   EXPECT_NE(err.str().find("connection refused"), std::string::npos) << err.str();
+}
+
+// Any node serves the API, so a node down is not the person's problem.
+TEST_F(CtlTest, ACallGoesToTheNextEndpointWhenOneCannotBeReached) {
+  auto c = fresh();
+  c.endpoints = {"http://a.example:8080", "http://b.example:8080", "http://c.example:8080"};
+  files.put(home_credentials, c);
+  server->queue(runtime::Error{runtime::Error::Kind::unavailable, "connecting: refused"});
+  server->queue(runtime::Error{runtime::Error::Kind::unavailable, "connecting: no route"});
+  server->queue(api::Response{200, json::object{{"task", "t1"}}});
+  // A write too: nothing reached a node that could not be connected to.
+  EXPECT_EQ(run({"run-task", "web", "frontend"}), 0) << err.str();
+  EXPECT_EQ(out.str(), "{\"task\":\"t1\"}\n");
+  ASSERT_EQ(api_endpoints.size(), 3u);
+  EXPECT_EQ(api_endpoints[0].first.host, "a.example");
+  EXPECT_EQ(api_endpoints[1].first.host, "b.example");
+  EXPECT_EQ(api_endpoints[2].first.host, "c.example");
+  EXPECT_EQ(server->requests().size(), 3u);
+}
+
+TEST_F(CtlTest, AReadWithNoAnswerGoesToTheNextEndpoint) {
+  auto c = fresh();
+  c.endpoints = {"http://a.example:8080", "http://b.example:8080"};
+  files.put(home_credentials, c);
+  server->queue(runtime::Error{runtime::Error::Kind::timed_out, "no whole answer within the deadline"});
+  EXPECT_EQ(run({"list-projects"}), 0) << err.str();
+  EXPECT_EQ(server->requests().size(), 2u);
+  server->queue(runtime::Error{runtime::Error::Kind::malformed, "the answer is not HTTP"});
+  EXPECT_EQ(run({"describe-project", "web"}), 0) << err.str();
+  EXPECT_EQ(server->requests().size(), 4u);
+}
+
+TEST_F(CtlTest, AWriteThatMayHaveArrivedIsNeverSentAgain) {
+  auto c = fresh();
+  c.endpoints = {"http://a.example:8080", "http://b.example:8080"};
+  files.put(home_credentials, c);
+  server->queue(runtime::Error{runtime::Error::Kind::timed_out, "no whole answer within the deadline"});
+  EXPECT_EQ(run({"run-task", "web", "frontend"}), 1);
+  EXPECT_EQ(server->requests().size(), 1u);
+  EXPECT_NE(err.str().find("a.example"), std::string::npos) << err.str();
+  EXPECT_NE(err.str().find("may have"), std::string::npos) << "the person is told it may have happened: " << err.str();
+}
+
+TEST_F(CtlTest, AnHttpAnswerIsTheAnswerWhateverItSays) {
+  auto c = fresh();
+  c.endpoints = {"http://a.example:8080", "http://b.example:8080"};
+  files.put(home_credentials, c);
+  server->queue(api::Response{503, json::object{{"error", "not_ready"}}});
+  EXPECT_EQ(run({"list-projects"}), 1);
+  EXPECT_EQ(out.str(), "{\"error\":\"not_ready\"}\n");
+  EXPECT_EQ(server->requests().size(), 1u);
+}
+
+TEST_F(CtlTest, WhenNoEndpointAnswersEachIsNamedWithWhy) {
+  auto c = fresh();
+  c.endpoints = {"http://a.example:8080", "http://b.example:8080"};
+  files.put(home_credentials, c);
+  server->queue(runtime::Error{runtime::Error::Kind::unavailable, "connecting: refused"});
+  server->queue(runtime::Error{runtime::Error::Kind::unavailable, "connecting: no route"});
+  EXPECT_EQ(run({"list-projects"}), 1);
+  for (const char* expected : {"a.example", "refused", "b.example", "no route"}) EXPECT_NE(err.str().find(expected), std::string::npos) << err.str();
+}
+
+TEST_F(CtlTest, EndpointsComeFromRepeatedFlagsOrAListInTheVariable) {
+  files.put(home_credentials, fresh());
+  server->queue(runtime::Error{runtime::Error::Kind::unavailable, "connecting: refused"});
+  EXPECT_EQ(run({"list-nodes", "--endpoint", "http://f1.example", "--endpoint", "http://f2.example"}), 0) << err.str();
+  variables["LOUHI_ENDPOINT"] = "http://v1.example, https://v2.example";
+  server->queue(runtime::Error{runtime::Error::Kind::unavailable, "connecting: refused"});
+  EXPECT_EQ(run({"list-nodes"}), 0) << err.str();
+  ASSERT_EQ(api_endpoints.size(), 4u);
+  EXPECT_EQ(api_endpoints[0].first.host, "f1.example");
+  EXPECT_EQ(api_endpoints[1].first.host, "f2.example");
+  EXPECT_EQ(api_endpoints[2].first.host, "v1.example");
+  EXPECT_EQ(api_endpoints[3].first.host, "v2.example");
+  EXPECT_TRUE(api_endpoints[3].first.tls);
+  EXPECT_EQ(run({"list-nodes", "--endpoint", "http://ok.example", "--endpoint", "not-a-url"}), 2) << "every endpoint given is checked first";
 }
 
 TEST_F(CtlTest, TheEndpointIsTheFlagThenTheVariableThenTheOneSaved) {
@@ -526,6 +614,21 @@ TEST_F(CtlTest, LoginSignsInByTheDeviceFlowAndKeepsTheTokens) {
   EXPECT_FALSE(files.at(home_credentials));
 }
 
+TEST_F(CtlTest, LoginKeepsEveryEndpointGiven) {
+  issuer_answers(
+      [](const std::map<std::string, std::string>&) {
+        return test::json_answer(200, {{"access_token", "a1"}, {"token_type", "Bearer"}, {"expires_in", 3600}, {"refresh_token", "r1"}});
+      },
+      [](const std::map<std::string, std::string>&) {
+        return test::json_answer(
+            200, {{"device_code", "d1"}, {"user_code", "ABCD-EFGH"}, {"verification_uri", "https://lugh.example/activate"}, {"expires_in", 600}});
+      });
+  EXPECT_EQ(run({"login", "--issuer", issuer, "--client-id", "louhi-ctl", "--endpoint", "http://a.example:8080", "--endpoint", "https://b.example"}), 0)
+      << err.str();
+  ASSERT_TRUE(files.at(home_credentials));
+  EXPECT_EQ(files.at(home_credentials)->endpoints, words({"http://a.example:8080", "https://b.example"}));
+}
+
 TEST_F(CtlTest, ALoginRefusedKeepsNothing) {
   issuer_answers([](const std::map<std::string, std::string>&) { return test::json_answer(400, {{"error", "access_denied"}}); },
                  [](const std::map<std::string, std::string>&) {
@@ -542,6 +645,19 @@ TEST_F(CtlTest, LoginNeedsItsFlagsAndAnEndpointThatIsOne) {
   EXPECT_EQ(run({"login", "--issuer", issuer, "--endpoint", "http://louhi.example"}), 2);
   EXPECT_EQ(run({"login", "--issuer", issuer, "--client-id", "louhi-ctl", "--endpoint", "louhi.example"}), 2);
   EXPECT_TRUE(https->sent().empty());
+}
+
+// louhi-ctl needs no ID token, and one it cannot verify would fail the sign-in
+// after the person had answered: asking for one is a usage error, before
+// anything is sent.
+TEST_F(CtlTest, LoginRefusesTheOpenidScope) {
+  EXPECT_EQ(run({"login", "--issuer", issuer, "--client-id", "louhi-ctl", "--endpoint", "http://louhi.example", "--scope", "openid"}), 2);
+  EXPECT_EQ(
+      run({"login", "--issuer", issuer, "--client-id", "louhi-ctl", "--endpoint", "http://louhi.example", "--scope", "louhi:web:read", "--scope", "openid"}),
+      2);
+  EXPECT_NE(err.str().find("openid"), std::string::npos) << err.str();
+  EXPECT_TRUE(https->sent().empty());
+  EXPECT_FALSE(files.at(home_credentials));
 }
 
 TEST_F(CtlTest, LogoutRemovesTheCredentials) {

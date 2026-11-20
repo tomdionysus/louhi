@@ -11,7 +11,7 @@
 // minute of it is left, and prints each answer's JSON on stdout. It exits 0
 // for a 2xx answer, 1 for any other answer or failure, 2 for a usage error.
 //
-//   louhi-ctl login --issuer URL --client-id ID --endpoint URL [--scope S]... [--ca FILE]
+//   louhi-ctl login --issuer URL --client-id ID --endpoint URL... [--scope S]... [--ca FILE]
 //   louhi-ctl logout
 //   louhi-ctl list-projects
 //   louhi-ctl put-project PROJECT [--description TEXT]
@@ -29,8 +29,9 @@
 //   louhi-ctl list-nodes
 //   louhi-ctl --version
 //
-// Before any command: --endpoint URL (else $LOUHI_ENDPOINT, else the one
-// saved at login), --ca FILE (the roots an https endpoint and the issuer
+// Before any command: --endpoint URL, repeatable (else $LOUHI_ENDPOINT, a
+// list, else those saved at login), each node's API tried in turn until one
+// answers (ctl.h, run()), --ca FILE (the roots an https endpoint and the issuer
 // chain to; the system's when absent), --credentials FILE (else
 // $LOUHI_CREDENTIALS, else ~/.config/louhi/credentials.json).
 //

@@ -52,11 +52,13 @@ struct Args {
 // value.
 Args parse(const std::vector<std::string>& arguments);
 
-// What login keeps: where to sign in again and the tokens.
+// What login keeps: where to sign in again, the nodes' APIs to call, and the
+// tokens.
 struct Credentials {
   std::string issuer;
   std::string client_id;
-  std::string endpoint;
+  // Tried in order (run()). The file's older single "endpoint" is read as one.
+  std::vector<std::string> endpoints;
   std::vector<std::string> scopes;
   std::string access_token;
   std::string refresh_token;
@@ -142,6 +144,14 @@ struct Environment {
 // 2xx answer and for a login or logout done, 1 for any other answer or
 // failure, 2 for a usage error. Waits for each answer, at most a minute
 // beyond its deadline (a sign-in, until its code expires).
+//
+// Any node serves the API, so a call is made to each endpoint in turn
+// (--endpoint, repeatable; else $LOUHI_ENDPOINT, a list separated by commas
+// or spaces; else those saved at login) until one answers: past one that
+// cannot be connected to, where nothing was sent, and for a GET past one that
+// gave no answer too. A write that may have reached a node is never sent to
+// another; the person is told it may have happened. Any HTTP answer, an
+// error's included, is the answer.
 int run(const std::vector<std::string>& arguments, const Environment& environment);
 
 }  // namespace louhi::ctl

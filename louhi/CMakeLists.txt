@@ -9,6 +9,8 @@
 # "louhi/x.h"; everything else is included from the repository root as
 # "louhi/<subsystem>/x.h".
 add_library(louhi SHARED
+  admit/agreement.cpp
+  admit/registers.cpp
   agent/agent.cpp
   agent/specs.cpp
   agent/store_bindings.cpp
@@ -52,6 +54,10 @@ if(LOUHI_BUILD_LUGH)
   target_compile_definitions(louhi PUBLIC LOUHI_WITH_LUGH=1)
 else()
   target_sources(louhi PRIVATE runtime/docker/boost_json.cpp)
+endif()
+if(LOUHI_BUILD_DAGDA)
+  target_link_libraries(louhi PUBLIC dagda::dagda)
+  target_compile_definitions(louhi PUBLIC LOUHI_WITH_DAGDA=1)
 endif()
 if(LOUHI_BUILD_LIR)
   target_sources(louhi PRIVATE events/lir.cpp)

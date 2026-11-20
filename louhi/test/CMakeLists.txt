@@ -6,6 +6,8 @@
 #
 
 add_executable(louhi_tests
+  admit_agreement_test.cpp
+  admit_registers_test.cpp
   agent_docker_test.cpp
   agent_specs_test.cpp
   agent_test.cpp
@@ -30,6 +32,8 @@ add_executable(louhi_tests
 if(LOUHI_BUILD_LUGH)
   target_sources(louhi_tests PRIVATE auth_lugh_test.cpp auth_service_token_test.cpp ctl_test.cpp)
 endif()
-target_link_libraries(louhi_tests PRIVATE louhi GTest::gtest_main louhi_warnings)
+# Dannan's simulation harness: its header-only fixtures and its checkers,
+# which a fetched Dannan names without the dannan:: alias of an installed one.
+target_link_libraries(louhi_tests PRIVATE louhi dannan_sim_checkers GTest::gtest_main louhi_warnings)
 # Dannan's fixtures (temp_dir.h) write only inside Louhi's build tree.
 target_compile_definitions(louhi_tests PRIVATE DANNAN_TEST_TEMP_ROOT="${PROJECT_BINARY_DIR}/test-tmp")

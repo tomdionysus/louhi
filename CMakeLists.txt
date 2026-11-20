@@ -66,7 +66,7 @@ option(LOUHI_BUILD_LUGH "Build the Lugh plugin and the API's sign-in" ON)
 if(LOUHI_BUILD_LUGH)
   set(LOUHI_LUGH_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../lugh" CACHE STRING "Lugh's repository: a directory or a URL")
   # The commit Lir builds its Lugh plugin at, on the same Dannan.
-  set(LOUHI_LUGH_REF "dbb0573420952336ede86d8db3e86640e48dddb3")
+  set(LOUHI_LUGH_REF "53a3280fcb57075590dd5d1673917c74b5060b1a")
   FetchContent_Declare(lugh GIT_REPOSITORY "${LOUHI_LUGH_REPOSITORY}" GIT_TAG "${LOUHI_LUGH_REF}")
   set(LUGH_BUILD_NODE OFF CACHE BOOL "" FORCE)
   # Lugh's warnings are errors as Louhi's are: in the release and clang gates,

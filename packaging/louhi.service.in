@@ -1,0 +1,36 @@
+[Unit]
+Description=Louhi compute node
+Documentation=man:louhi-node(1)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/louhi-node --config @CMAKE_INSTALL_FULL_SYSCONFDIR@/louhi/config.yaml
+Restart=on-failure
+RestartSec=10s
+UMask=0077
+
+# The louhi system user, a member of the docker group: the node drives the
+# Docker Engine through its socket, which is as good as root on this machine.
+# Stopping the service leaves the tasks running (they are Docker's); started
+# again, the node adopts them.
+User=louhi
+Group=louhi
+StateDirectory=louhi
+StateDirectoryMode=0700
+
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

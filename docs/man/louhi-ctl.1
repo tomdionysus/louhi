@@ -1,0 +1,79 @@
+.\" Louhi - The Distributed Compute Layer
+.\" Copyright (C) 2026 Tom Cully <mail@tomcully.com>
+.\" Licensed under the GNU GPLv3 - see <https://www.gnu.org/licenses/gpl-3.0.html>
+.TH LOUHI-CTL 1 2026-11-20 Louhi "Louhi"
+.SH NAME
+louhi-ctl \- Louhi's API from a terminal
+.SH SYNOPSIS
+.B louhi-ctl login
+.B \-\-issuer
+.I URL
+.B \-\-client-id
+.I ID
+.B \-\-endpoint
+.IR URL ...
+.RB [ \-\-scope
+.IR SCOPE ...]
+.br
+.B louhi-ctl logout
+.br
+.B louhi-ctl
+.I COMMAND
+.RI [ ARGUMENT ...]
+.RB [ \-\-endpoint
+.IR URL ]
+.RB [ \-\-ca
+.IR FILE ]
+.RB [ \-\-credentials
+.IR FILE ]
+.SH DESCRIPTION
+.B louhi-ctl
+calls Louhi's HTTP API with a Lugh access token.
+.B login
+signs in once by Lugh's device flow and writes the issuer, client id,
+endpoints and scopes to
+.I ~/.config/louhi/config.yaml
+and the tokens to
+.IR ~/.config/louhi/credentials.yaml ,
+readable only by the user. The access token is refreshed when less than a
+minute of it is left.
+.B logout
+removes the tokens.
+.PP
+Each call goes to the endpoints in turn until one answers: past one that
+cannot be connected to, and for a read past one that gives no answer. A write
+that may have reached a node is never sent to another.
+.SH COMMANDS
+.BR list-projects ,
+.BR put-project ,
+.BR describe-project ,
+.BR put-quota ,
+.BR describe-quota ,
+.BR register-task-definition ,
+.BR list-task-definition-families ,
+.BR list-task-definitions ,
+.BR describe-task-definition ,
+.BR run-task ,
+.BR list-tasks ,
+.BR describe-task ,
+.BR stop-task ,
+.BR list-nodes .
+A command that takes a JSON document reads it from a file, or from standard
+input given
+.BR \- .
+Each prints the answer's JSON.
+.SH ENVIRONMENT
+.TP
+.B LOUHI_CONFIG
+The configuration file, in place of
+.IR ~/.config/louhi/config.yaml .
+.TP
+.B LOUHI_ENDPOINT
+The endpoints, separated by commas or spaces.
+.TP
+.B LOUHI_CREDENTIALS
+The credentials file.
+.SH EXIT STATUS
+0 for a 2xx answer, 1 for any other answer or failure, 2 for a usage error.
+.SH SEE ALSO
+.BR louhi-node (1)

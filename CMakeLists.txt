@@ -22,6 +22,14 @@ endif()
 option(LOUHI_BUILD_TESTING "Build louhi_tests (GoogleTest)" OFF)
 option(LOUHI_BUILD_FUZZING "Build the libFuzzer targets in louhi/fuzz; needs a clang that ships libFuzzer" OFF)
 option(LOUHI_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+# On, Dannan and Dagda are fetched at their tags into the build tree, for
+# development and CI. Off, the installed packages are found instead
+# (libdannan-dev, libdagda-dev), so the binaries link the packaged shared
+# libraries: the Debian package's build (docs/packaging.md).
+option(LOUHI_FETCH_DEPENDENCIES "Fetch Dannan and Dagda at their tags; off finds the installed packages" ON)
+
+# Where an install puts things; before any target names its install paths.
+include(GNUInstallDirs)
 
 find_package(Boost 1.83 CONFIG REQUIRED COMPONENTS headers)
 find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto SSL)
@@ -30,20 +38,27 @@ find_package(Threads REQUIRED)
 # Dannan reads YAML with it too, but links it privately.
 find_package(yaml-cpp 0.7 CONFIG REQUIRED)
 
+# Lugh's and Lir's clients are always fetched: neither has a package.
+include(FetchContent)
+
 # Dannan, the network layer, at its tag, cloned from the sibling checkout
 # into the build tree, so building Louhi never touches ../dannan.
-# A string, not a path: CI names a URL, which a PATH cache entry would turn
-# into a directory under the source tree.
-set(LOUHI_DANNAN_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dannan" CACHE STRING "Dannan's repository: a directory or a URL")
 # Not a cache variable: a moved pin must take effect in a build tree that
-# already exists.
+# already exists. Installed, it is the least patch of the minor accepted
+# (Dannan keeps its ABI across a minor's patches).
 set(LOUHI_DANNAN_TAG "0.9.2")
-include(FetchContent)
-# OVERRIDE_FIND_PACKAGE: Dagda finds Dannan with find_package, which this
-# makes answer with the Dannan fetched here.
-FetchContent_Declare(dannan GIT_REPOSITORY "${LOUHI_DANNAN_REPOSITORY}" GIT_TAG "${LOUHI_DANNAN_TAG}" OVERRIDE_FIND_PACKAGE)
-set(DANNAN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(dannan)
+if(LOUHI_FETCH_DEPENDENCIES)
+  # A string, not a path: CI names a URL, which a PATH cache entry would turn
+  # into a directory under the source tree.
+  set(LOUHI_DANNAN_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dannan" CACHE STRING "Dannan's repository: a directory or a URL")
+  # OVERRIDE_FIND_PACKAGE: Dagda finds Dannan with find_package, which this
+  # makes answer with the Dannan fetched here.
+  FetchContent_Declare(dannan GIT_REPOSITORY "${LOUHI_DANNAN_REPOSITORY}" GIT_TAG "${LOUHI_DANNAN_TAG}" OVERRIDE_FIND_PACKAGE)
+  set(DANNAN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(dannan)
+else()
+  find_package(dannan ${LOUHI_DANNAN_TAG} CONFIG REQUIRED)
+endif()
 
 # Dagda, the storage layer, where Louhi's records live (design, "Records"),
 # at its tag, fetched like Dannan (the maintainer, 2026-11-20). Its tools are not
@@ -51,11 +66,16 @@ FetchContent_MakeAvailable(dannan)
 # without the Dagda store, its records then kept in memory only.
 option(LOUHI_BUILD_DAGDA "Build the store on Dagda's head spaces" ON)
 if(LOUHI_BUILD_DAGDA)
-  set(LOUHI_DAGDA_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dagda" CACHE STRING "Dagda's repository: a directory or a URL")
   set(LOUHI_DAGDA_TAG "0.3.2")
-  FetchContent_Declare(dagda GIT_REPOSITORY "${LOUHI_DAGDA_REPOSITORY}" GIT_TAG "${LOUHI_DAGDA_TAG}" EXCLUDE_FROM_ALL)
-  set(DAGDA_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-  FetchContent_MakeAvailable(dagda)
+  if(LOUHI_FETCH_DEPENDENCIES)
+    set(LOUHI_DAGDA_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dagda" CACHE STRING "Dagda's repository: a directory or a URL")
+    FetchContent_Declare(dagda GIT_REPOSITORY "${LOUHI_DAGDA_REPOSITORY}" GIT_TAG "${LOUHI_DAGDA_TAG}" EXCLUDE_FROM_ALL)
+    set(DAGDA_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(dagda)
+  else()
+    # Each Dagda release is its own SONAME and package for now, so the tag.
+    find_package(dagda ${LOUHI_DAGDA_TAG} CONFIG REQUIRED)
+  endif()
 endif()
 
 # Lugh's client, for the Lugh plugin (sign-in to the API), at a commit of its
@@ -104,14 +124,40 @@ configure_file(louhi/include/louhi/version.h.in ${PROJECT_BINARY_DIR}/generated/
 
 add_subdirectory(louhi)
 
-# One node of Louhi: a Dannan node hosting the agent.
+# One node of Louhi: a Dannan node hosting the agent. Its configuration file
+# is found under the install's sysconfdir when none is named: /etc/louhi for
+# the package, /usr/local/etc/louhi for a source install.
 add_executable(louhi-node tools/louhi_node.cpp)
 target_link_libraries(louhi-node PRIVATE louhi louhi_warnings)
+target_compile_definitions(louhi-node PRIVATE LOUHI_DEFAULT_CONFIG="${CMAKE_INSTALL_FULL_SYSCONFDIR}/louhi/config.yaml")
+install(TARGETS louhi-node RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES docs/man/louhi-node.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 # The API from a terminal; it signs in through Lugh, so it needs the plugin.
 if(LOUHI_BUILD_LUGH)
   add_executable(louhi-ctl tools/louhi_ctl.cpp)
   target_link_libraries(louhi-ctl PRIVATE louhi louhi_warnings)
+  install(TARGETS louhi-ctl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  install(FILES docs/man/louhi-ctl.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+endif()
+
+# The example configuration the README documents, and the node's unit. The
+# generated files name the same install directories as the binaries, so they
+# agree on every prefix. An existing configuration is never overwritten: it
+# is the site's. The Debian package ships it as a conffile instead.
+configure_file(config/config.yaml.in config.yaml @ONLY)
+install(CODE "
+  set(louhi_config \"\$ENV{DESTDIR}${CMAKE_INSTALL_FULL_SYSCONFDIR}/louhi/config.yaml\")
+  if(EXISTS \"\${louhi_config}\")
+    message(STATUS \"Keeping existing configuration: \${louhi_config}\")
+  else()
+    # file(INSTALL) applies DESTDIR itself.
+    file(INSTALL \"${CMAKE_CURRENT_BINARY_DIR}/config.yaml\" DESTINATION \"${CMAKE_INSTALL_FULL_SYSCONFDIR}/louhi\")
+  endif()")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  configure_file(packaging/louhi.service.in louhi.service @ONLY)
+  # systemd reads units from <prefix>/lib/systemd/system, never lib64 or a multiarch libdir.
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/louhi.service DESTINATION lib/systemd/system)
 endif()
 
 if(LOUHI_BUILD_TESTING)

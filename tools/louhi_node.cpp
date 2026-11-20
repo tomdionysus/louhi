@@ -19,7 +19,8 @@
 // tasks running; a node started again adopts them.
 //
 // Every setting is also a key in a YAML file (--config PATH, $LOUHI_CONFIG,
-// or /usr/local/etc/louhi/config.yaml when it exists), in secrets.yaml beside
+// or <sysconfdir>/louhi/config.yaml when it exists: /etc/louhi for the
+// package, /usr/local/etc/louhi for a source install), in secrets.yaml beside
 // it, or a LOUHI_* variable, the flags winning (reader() below lists them).
 //
 //   louhi-node --key FILE --state DIR [--port N] [--listen ADDR]
@@ -173,7 +174,7 @@ dannan::config::Reader reader() {
   using Kind = dannan::config::Setting::Kind;
   dannan::config::Reader out;
   out.config_variable = "LOUHI_CONFIG";
-  out.default_path = "/usr/local/etc/louhi/config.yaml";
+  out.default_path = LOUHI_DEFAULT_CONFIG;
   const auto add = [&](std::string key, Kind kind, std::string flag, std::string what) {
     std::string variable = "LOUHI_";
     for (const char c : key) variable += c == '.' ? '_' : static_cast<char>(std::toupper(static_cast<unsigned char>(c)));

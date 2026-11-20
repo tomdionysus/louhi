@@ -11,10 +11,18 @@
 # anything that starts containers or changes a host's network, stay by hand.
 name: CI
 
+# develop, main and pull requests only: a feature branch's gate runs on the
+# Pi build servers. Notes and docs build nothing.
 on:
   push:
     branches: [main, develop]
+    paths-ignore: ['TODO/**', 'docs/**', '**/*.md']
   pull_request:
+    paths-ignore: ['TODO/**', 'docs/**', '**/*.md']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

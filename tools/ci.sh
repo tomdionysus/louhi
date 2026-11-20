@@ -19,8 +19,9 @@
 # (LOUHI_CI_JOBS to set it: 2 on the shared Pis). Dannan is fetched at the
 # pinned tag from the sibling checkout when there is one, else from its public
 # repository (LOUHI_DANNAN_REPOSITORY to name another), and Lir likewise
-# (LOUHI_LIR_REPOSITORY); Lugh, which is private, from
-# LOUHI_LUGH_REPOSITORY or the sibling, or not at all. Needs g++ cmake
+# (LOUHI_LIR_REPOSITORY); Lugh and Dagda, which are private, from
+# LOUHI_LUGH_REPOSITORY and LOUHI_DAGDA_REPOSITORY or the siblings, or not
+# at all. Needs g++ cmake
 # ninja-build libboost-dev libssl-dev libyaml-cpp-dev libgtest-dev, and for
 # its step clang, clang-format or lcov.
 
@@ -50,9 +51,19 @@ if [ -z "${LOUHI_LUGH_REPOSITORY:-}" ] && [ -d "$top/../lugh/.git" ]; then
   LOUHI_LUGH_REPOSITORY=$top/../lugh
 fi
 if [ -n "${LOUHI_LUGH_REPOSITORY:-}" ]; then
-  lugh="-DLOUHI_BUILD_LUGH=ON -DLOUHI_LUGH_REPOSITORY=$LOUHI_LUGH_REPOSITORY"
+  siblings="-DLOUHI_BUILD_LUGH=ON -DLOUHI_LUGH_REPOSITORY=$LOUHI_LUGH_REPOSITORY"
 else
-  lugh="-DLOUHI_BUILD_LUGH=OFF"
+  siblings="-DLOUHI_BUILD_LUGH=OFF"
+fi
+# Dagda is private too: from LOUHI_DAGDA_REPOSITORY or the sibling checkout,
+# else Louhi is built without the Dagda store.
+if [ -z "${LOUHI_DAGDA_REPOSITORY:-}" ] && [ -d "$top/../dagda/.git" ]; then
+  LOUHI_DAGDA_REPOSITORY=$top/../dagda
+fi
+if [ -n "${LOUHI_DAGDA_REPOSITORY:-}" ]; then
+  siblings="$siblings -DLOUHI_BUILD_DAGDA=ON -DLOUHI_DAGDA_REPOSITORY=$LOUHI_DAGDA_REPOSITORY"
+else
+  siblings="$siblings -DLOUHI_BUILD_DAGDA=OFF"
 fi
 
 # Warnings are errors in every build but the sanitizers': instrumented, g++
@@ -61,7 +72,7 @@ fi
 configure() {
   dir="$1"
   shift
-  cmake -S "$top" -B "$out/$dir" -G Ninja -DLOUHI_BUILD_TESTING=ON -DLOUHI_WARNINGS_AS_ERRORS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" -DLOUHI_LIR_REPOSITORY="$LOUHI_LIR_REPOSITORY" $lugh "$@"
+  cmake -S "$top" -B "$out/$dir" -G Ninja -DLOUHI_BUILD_TESTING=ON -DLOUHI_WARNINGS_AS_ERRORS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" -DLOUHI_LIR_REPOSITORY="$LOUHI_LIR_REPOSITORY" $siblings "$@"
   cmake --build "$out/$dir" -j "$jobs"
 }
 

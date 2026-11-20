@@ -110,7 +110,7 @@ jobs:
           mkdir -p build/ssl3-include
           ln -sfn "$ssl/include/openssl" build/ssl3-include/openssl
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLOUHI_BUILD_TESTING=ON -DLOUHI_WARNINGS_AS_ERRORS=ON \
-            -DLOUHI_DANNAN_REPOSITORY=https://github.com/tomdionysus/dannan.git -DLOUHI_BUILD_LUGH=OFF \
+            -DLOUHI_DANNAN_REPOSITORY=https://github.com/tomdionysus/dannan.git -DLOUHI_BUILD_LUGH=OFF -DLOUHI_BUILD_DAGDA=OFF \
             -DLOUHI_LIR_REPOSITORY=https://github.com/tomdionysus/lir.git \
             -DCMAKE_PREFIX_PATH="$(brew --prefix)" -DOPENSSL_ROOT_DIR="$ssl" \
             -DCMAKE_CXX_FLAGS="-I$PWD/build/ssl3-include --system-header-prefix=openssl/"

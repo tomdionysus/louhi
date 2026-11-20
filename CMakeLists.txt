@@ -36,9 +36,25 @@ set(LOUHI_DANNAN_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dannan" CACHE STRING
 # already exists.
 set(LOUHI_DANNAN_TAG "0.9.2")
 include(FetchContent)
-FetchContent_Declare(dannan GIT_REPOSITORY "${LOUHI_DANNAN_REPOSITORY}" GIT_TAG "${LOUHI_DANNAN_TAG}")
+# OVERRIDE_FIND_PACKAGE: Dagda finds Dannan with find_package, which this
+# makes answer with the Dannan fetched here.
+FetchContent_Declare(dannan GIT_REPOSITORY "${LOUHI_DANNAN_REPOSITORY}" GIT_TAG "${LOUHI_DANNAN_TAG}" OVERRIDE_FIND_PACKAGE)
 set(DANNAN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(dannan)
+
+# Dagda, the storage layer, where Louhi's records live (design, "Records"),
+# at its tag, fetched like Dannan (the maintainer, 2026-11-20). Its tools are not
+# built: EXCLUDE_FROM_ALL builds only what Louhi links. Dagda is private, as
+# Lugh is, so hosted CI builds without it, and the records are then kept in
+# memory only.
+option(LOUHI_BUILD_DAGDA "Build the store on Dagda's head spaces" ON)
+if(LOUHI_BUILD_DAGDA)
+  set(LOUHI_DAGDA_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dagda" CACHE STRING "Dagda's repository: a directory or a URL")
+  set(LOUHI_DAGDA_TAG "0.3.2")
+  FetchContent_Declare(dagda GIT_REPOSITORY "${LOUHI_DAGDA_REPOSITORY}" GIT_TAG "${LOUHI_DAGDA_TAG}" EXCLUDE_FROM_ALL)
+  set(DAGDA_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(dagda)
+endif()
 
 # Lugh's client, for the Lugh plugin (sign-in to the API), at a commit of its
 # develop on Dannan's minor; it takes the Dannan above rather than fetching

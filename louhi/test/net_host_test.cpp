@@ -186,6 +186,14 @@ TEST_F(NetHost, DetachRemovesThePairAndOneNotThereIsNoError) {
   EXPECT_EQ(commands.ran().at(0).argv, (Argv{"ip", "link", "delete", "lha0a1a2a3a4a5"}));
 }
 
+TEST_F(NetHost, ADetachTheKernelRefusesSaysWhy) {
+  commands.queue(CommandResult{2, "RTNETLINK answers: Operation not permitted", false});
+  const auto got = wait([&](auto done) { host.detach("lha0a1a2a3a4a5", 1s, io.get_executor(), std::move(done)); });
+  ASSERT_FALSE(got.ok());
+  EXPECT_EQ(got.error().kind, runtime::Error::Kind::refused);
+  EXPECT_NE(got.error().message.find("Operation not permitted"), std::string::npos) << got.error().message;
+}
+
 TEST_F(NetHost, TheFirewallAppliesItsScriptWithNft) {
   const std::string script = render(resolve("lha0a1a2a3a4a5", {}, {}));
   const auto got = wait([&](auto done) { firewall.apply(script, 1s, io.get_executor(), std::move(done)); });
@@ -199,6 +207,14 @@ TEST_F(NetHost, ARulesetNftRefusesIsRefusedWithItsWords) {
   const auto got = wait([&](auto done) { firewall.apply("bad", 1s, io.get_executor(), std::move(done)); });
   ASSERT_FALSE(got.ok());
   EXPECT_NE(got.error().message.find("syntax error"), std::string::npos) << got.error().message;
+}
+
+TEST_F(NetHost, NftThatCannotBeRunIsSaidSo) {
+  commands.queue(runtime::Error{runtime::Error::Kind::unavailable, "nft: not found"});
+  const auto got = wait([&](auto done) { firewall.apply("table inet t {}", 1s, io.get_executor(), std::move(done)); });
+  ASSERT_FALSE(got.ok());
+  EXPECT_EQ(got.error().kind, runtime::Error::Kind::unavailable);
+  EXPECT_EQ(got.error().message, "nft: not found");
 }
 
 TEST_F(NetHost, TheFirewallRemovesATableWhetherOrNotItIsThere) {

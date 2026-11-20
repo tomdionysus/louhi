@@ -17,10 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/local/stream_protocol.hpp>
-#include <boost/asio/read_until.hpp>
 #include <boost/asio/strand.hpp>
-#include <boost/asio/write.hpp>
 #include <boost/beast/http/verb.hpp>
 #include <chrono>
 #include <future>
@@ -33,86 +30,18 @@
 #include "dannan/test/fixtures/temp_dir.h"
 #include "louhi/runtime/docker/api.h"
 #include "louhi/runtime/docker/local_http.h"
+#include "louhi/test/fixtures/fake_daemon.h"
 
 using namespace louhi::runtime;
 using namespace louhi::runtime::docker;
 namespace asio = boost::asio;
-using local = asio::local::stream_protocol;
 using verb = boost::beast::http::verb;
 
 namespace {
 
 constexpr auto wait_limit = std::chrono::seconds(10);
 
-// Accepts connections on a socket and answers each with the next scripted
-// reply, written as given, then closes its side. An empty script entry means
-// "never answer"; one starting "hold:" is written without the prefix and the
-// connection is then held open, as the event stream is.
-class FakeDaemon {
- public:
-  explicit FakeDaemon(const std::string& path) : _acceptor(_io, local::endpoint(path)) {
-    accept();
-    _thread = std::thread([this] { _io.run(); });
-  }
-  ~FakeDaemon() {
-    _io.stop();
-    _thread.join();
-  }
-
-  void script(std::vector<std::string> replies) {
-    std::lock_guard<std::mutex> lock(_mutex);
-    _replies = std::move(replies);
-  }
-  std::vector<std::string> requests() {
-    std::lock_guard<std::mutex> lock(_mutex);
-    return _requests;
-  }
-
- private:
-  void accept() {
-    _acceptor.async_accept([this](const boost::system::error_code& failed, local::socket socket) {
-      if (failed) return;
-      auto shared = std::make_shared<local::socket>(std::move(socket));
-      auto buffer = std::make_shared<std::string>();
-      asio::async_read_until(*shared, asio::dynamic_buffer(*buffer), "\r\n\r\n", [this, shared, buffer](const boost::system::error_code& read, size_t) {
-        if (read) return;
-        std::string reply;
-        {
-          std::lock_guard<std::mutex> lock(_mutex);
-          _requests.push_back(*buffer);
-          if (!_replies.empty()) {
-            reply = _replies.front();
-            _replies.erase(_replies.begin());
-          }
-        }
-        if (reply.empty()) {
-          _held.push_back(shared);
-          return;
-        }
-        const bool hold = reply.rfind("hold:", 0) == 0;
-        if (hold) {
-          reply.erase(0, 5);
-          _held.push_back(shared);
-        }
-        auto text = std::make_shared<std::string>(std::move(reply));
-        asio::async_write(*shared, asio::buffer(*text), [shared, text, hold](const boost::system::error_code&, size_t) {
-          if (hold) return;
-          boost::system::error_code ignored;
-          shared->shutdown(local::socket::shutdown_send, ignored);
-        });
-      });
-      accept();
-    });
-  }
-
-  asio::io_context _io;
-  local::acceptor _acceptor;
-  std::thread _thread;
-  std::mutex _mutex;
-  std::vector<std::string> _replies;
-  std::vector<std::string> _requests;
-  std::vector<std::shared_ptr<local::socket>> _held;
-};
+using louhi::test::FakeDaemon;
 
 // The client's own io, run on a thread for the test's life.
 class Client {
@@ -280,6 +209,24 @@ TEST_F(LocalHttpTest, StreamFailureStatusCarriesTheBody) {
 TEST_F(LocalHttpTest, AStreamLineOverItsBoundEndsIt) {
   daemon.script({"HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(max_stream_line + 2) + "\r\n\r\n" + std::string(max_stream_line + 1, 'x') + "\n"});
   const Streamed got = run_stream(http, client, Deadline(5000));
+  ASSERT_TRUE(got.end);
+  ASSERT_FALSE(got.end->ok());
+  EXPECT_EQ(got.end->error().kind, Error::Kind::malformed);
+}
+
+TEST_F(LocalHttpTest, AStreamLineWithoutItsNewlinePastItsBoundEndsIt) {
+  daemon.script({"HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(max_stream_line + 2) + "\r\n\r\n" + std::string(max_stream_line + 2, 'x')});
+  const Streamed got = run_stream(http, client, Deadline(5000));
+  EXPECT_TRUE(got.lines.empty());
+  ASSERT_TRUE(got.end);
+  ASSERT_FALSE(got.end->ok());
+  EXPECT_EQ(got.end->error().kind, Error::Kind::malformed);
+}
+
+TEST_F(LocalHttpTest, AFailedStreamsBodyPastItsBoundIsMalformed) {
+  daemon.script({"HTTP/1.1 500 X\r\nContent-Length: " + std::to_string(max_reply_bytes + 1) + "\r\n\r\n" + std::string(max_reply_bytes + 1, 'x')});
+  const Streamed got = run_stream(http, client, Deadline(10000));
+  EXPECT_TRUE(got.lines.empty());
   ASSERT_TRUE(got.end);
   ASSERT_FALSE(got.end->ok());
   EXPECT_EQ(got.end->error().kind, Error::Kind::malformed);

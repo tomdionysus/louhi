@@ -58,8 +58,12 @@ model::Health health_of(const ContainerInfo& c) {
   }
 }
 
+// A reason from the runtime is untrusted: bounded, and a NUL, which no record
+// may hold, replaced, so the status carrying it is never refused and dropped.
 std::string truncated(std::string text, size_t maximum) {
   if (text.size() > maximum) text.resize(maximum);
+  for (auto& c : text)
+    if (c == '\0') c = '?';
   return text;
 }
 

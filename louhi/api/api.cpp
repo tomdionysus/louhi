@@ -434,7 +434,9 @@ Api::Usage Api::usage(const std::string& project) const {
       const auto definition = model::decode_task_definition(*bytes);
       out.cpu_millis += definition.cpu_millis;
       out.memory_mib += definition.memory_mib;
-    } catch (const model::DecodeError&) {
+    } catch (const model::DecodeError& bad) {
+      // Counted as a task, its resources unknown: said, never silent.
+      _logger.warn("task " + key + " runs a revision that does not decode, so its CPU and memory are not counted: " + bad.what());
     }
   }
   return out;

@@ -117,6 +117,13 @@ TEST(StoreDesired, RunsWhatIsPlacedHereWithItsRevision) {
   put(s, io, model::key(elsewhere), model::encode(elsewhere));
   put(s, io, model::key(missing_revision), model::encode(missing_revision));
   put(s, io, "task/web/" + std::string(32, '9'), {0xff, 0x00});
+  // A task here whose revision's record does not decode is skipped too.
+  auto broken_revision = test::task();
+  broken_revision.id = test::task_id(0x66);
+  broken_revision.revision = 7;
+  broken_revision.node = here.node;
+  put(s, io, model::key(broken_revision), model::encode(broken_revision));
+  put(s, io, model::task_definition_key("web", "frontend", 7), {0xff, 0x00});
 
   agent::StoreDesired desired(s, test::node_id(0x22), quiet());
   EXPECT_TRUE(desired.ready());

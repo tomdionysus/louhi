@@ -36,6 +36,47 @@ Gates on node-b: release **334 passed, 1 skipped**; ASan with UBSan
 and TSan **334 passed, 1 skipped** each (the skip is node-b's: Docker on
 ext4 cannot bound storage). 335 tests, 318 before.
 
+## Coverage to 99.2% of lines; two bugs it found; stale objects on a Pi (2026-11-20)
+
+the maintainer: "You will maintain ~100% code coverage on all code." Measured on a Pi
+with Lugh and Dagda built in (hosted CI cannot build Lugh's plugin on
+macOS): **95.3% of lines and 95.1% of functions before, 99.2% and 97.7%
+after**, 400 tests (356 before).
+
+- New tests across the agent, the API, its HTTP server and client, the
+  Docker driver's error paths (against a fake daemon, `fixtures/fake_daemon.h`,
+  so they run everywhere), the Lugh plugin, the registers, the store and
+  the network host. `events_lir_test.cpp` tests the Lir publisher against a
+  small fake Lir on a localhost socket speaking MQTT through Lir's own
+  codec: CONNECT with a fresh password and the will, QoS 1 and retain,
+  refusals counted and never retried, a full queue counted.
+- Left uncovered, by choice: the fallthrough returns after exhaustive enum
+  switches (`-Wreturn-type` needs them), lines gcov reports for closing
+  braces and initialisers, a `catch (...)` reachable only by allocation
+  failure, and one accept racing the server's stop.
+- **Bug: a runtime message holding a NUL** made the task's status fail
+  validation and be dropped, so the task kept showing its earlier state.
+  The agent's reasons now replace a NUL (test first).
+- **Bug: admission skipped an undecodable definition's resources
+  silently.** It now says so in the log. A damaged latest revision makes
+  RunTask fail inside Louhi rather than run another revision.
+- **A test race found by TSan**: the Lir test's stop callbacks set a promise
+  on the waiter's stack, which `set_value` could still be using as it died.
+  The callbacks now share it.
+- **Stale objects on node-b.** `build/pi.sh` synced with `rsync -a`, keeping
+  the Mac's file times, so switching the Pi's tree between branches could
+  leave an object built from another branch's source that ninja took for
+  current. `Api` was compiled from an older `api.cpp` than the test saw, and
+  its destructor met a corrupted map. `pi.sh` now syncs by content, every
+  Louhi object on node-b was removed, and develop was gated again from clean
+  objects: release, ASan and TSan **355 passed, 1 skipped** each, 356 tests.
+  So the route-table gate below counted 351 where the true count was 356:
+  stale objects had left five tests out of that binary. Hosted CI, which
+  builds from nothing, passed every one of those merges.
+
+Gates on node-b: release, ASan with UBSan and TSan **399 passed, 1
+skipped** each (the skip is node-b's: Docker on ext4 cannot bound storage).
+
 ## The API's route table, its OpenAPI document, and /v1/status (2026-11-20)
 
 The dashboard's first step (`TODO/2026-11-20-dashboard.md`, "Order" 1 and

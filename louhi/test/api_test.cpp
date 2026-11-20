@@ -123,6 +123,14 @@ struct ApiTest : ::testing::Test {
     return r.status == 200 ? r.body.at("revision").to_number<uint32_t>() : 0;
   }
 
+  // Bytes put under a key as they are, decodable or not.
+  void put_raw(const std::string& key, store::Bytes bytes) {
+    bool written = false;
+    store.put(key, std::move(bytes), store::Deadline(1000), io.get_executor(), [&](auto r) { written = r.ok(); });
+    settle();
+    ASSERT_TRUE(written) << key;
+  }
+
   std::string code(const api::Response& r) {
     return r.body.is_object() && r.body.as_object().contains("error") ? std::string(r.body.at("error").as_string()) : "";
   }
@@ -521,4 +529,114 @@ TEST_F(ApiTest, StatusIsOfThisNodeAloneAndShowsTheStoresState) {
 
   store.unready = true;
   EXPECT_FALSE(call(web, "GET", "/v1/status").body.at("store").at("ready").as_bool());
+}
+
+// A record that does not decode is damage in the store, not the caller's
+// fault: every list skips it and answers the rest, and admission still counts
+// a running task whose revision does not decode, without its resources.
+TEST_F(ApiTest, ARecordThatDoesNotDecodeIsSkippedByEveryList) {
+  make_project(R"({"max_tasks":3,"max_cpu_millis":1000,"max_memory_mib":1024})");
+  register_definition();
+  auto run = call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})");
+  ASSERT_EQ(run.status, 200u) << json::serialize(run.body);
+  const std::string id(run.body.at("tasks").as_array()[0].at("id").as_string());
+
+  const store::Bytes garbage{0xff, 0x00};
+  model::Project other;
+  other.name = "zzz";
+  put_raw(model::key(other), garbage);
+  put_raw(model::task_definition_key("web", "frontend", 3), garbage);
+  // Running revision 3, whose record does not decode.
+  put_raw(model::key(test::task()), model::encode(test::task()));
+  model::Task broken;
+  broken.id = test::task_id(0x77);
+  broken.project = "web";
+  put_raw(model::key(broken), garbage);
+  auto status = test::task_status();
+  status.task = *model::TaskId::parse(id);
+  status.node = test::node_id(0x99);
+  put_raw(model::key(status), garbage);
+  auto node = test::node_status();
+  node.node = test::node_id(0x99);
+  put_raw(model::key(node), garbage);
+
+  auto projects = call(admin, "GET", "/v1/projects");
+  ASSERT_EQ(projects.status, 200u);
+  EXPECT_EQ(projects.body.at("projects").as_array().size(), 1u);
+  auto revisions = call(web, "GET", "/v1/projects/web/task-definitions/frontend");
+  ASSERT_EQ(revisions.status, 200u);
+  EXPECT_EQ(revisions.body.at("task_definitions").as_array().size(), 1u);
+  auto tasks = call(web, "GET", "/v1/projects/web/tasks");
+  ASSERT_EQ(tasks.status, 200u);
+  EXPECT_EQ(tasks.body.at("tasks").as_array().size(), 2u);
+  auto described = call(web, "GET", "/v1/projects/web/tasks/" + id);
+  ASSERT_EQ(described.status, 200u);
+  EXPECT_TRUE(described.body.at("statuses").as_array().empty());
+  auto nodes = call(admin, "GET", "/v1/nodes");
+  ASSERT_EQ(nodes.status, 200u);
+  EXPECT_TRUE(nodes.body.at("nodes").as_array().empty());
+
+  // Revision 1 named: the latest, 3, is the damaged one, and running "the
+  // latest" must not quietly run another.
+  auto two = call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend","revision":1,"count":2})");
+  EXPECT_EQ(two.status, 409u);
+  EXPECT_NE(std::string(two.body.at("message").as_string()).find("max_tasks"), std::string::npos) << json::serialize(two.body);
+  EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend","revision":1})").status, 200u);
+  // The latest is the damaged revision: it fails inside Louhi, not elsewhere.
+  EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})").status, 500u);
+}
+
+// The one record an operation reads does not decode: it fails inside Louhi,
+// saying nothing of the record; putting the project again replaces it.
+TEST_F(ApiTest, ARecordAnOperationNeedsThatDoesNotDecodeFailsInsideLouhi) {
+  put_raw(model::key(test::project()), store::Bytes{0xff});
+  auto r = call(web, "GET", "/v1/projects/web");
+  EXPECT_EQ(r.status, 500u);
+  EXPECT_EQ(code(r), "internal");
+  auto put = call(admin, "PUT", "/v1/projects/web", R"({"description":"again"})");
+  ASSERT_EQ(put.status, 200u) << json::serialize(put.body);
+  EXPECT_EQ(put.body.at("created_unix_ms"), 1'800'000'000'000ull) << "made now: when it was first made is lost";
+  EXPECT_EQ(call(web, "GET", "/v1/projects/web").status, 200u);
+}
+
+TEST_F(ApiTest, StatusWithAReportThatDoesNotDecodeIsNotReady) {
+  model::NodeStatus probe;
+  probe.node = self;
+  put_raw(model::key(probe), store::Bytes{0xff});
+  auto r = call(admin, "GET", "/v1/status");
+  ASSERT_EQ(r.status, 200u);
+  EXPECT_FALSE(r.body.at("ready").as_bool());
+  EXPECT_TRUE(r.body.at("report").is_null());
+}
+
+TEST_F(ApiTest, AClientTokenRetryWhileTheFirstsWritesAreInFlightAnswersTheSame) {
+  make_project();
+  register_definition();
+  const std::string body = R"({"family":"frontend","count":2,"client_token":"retry-1"})";
+  store.hold = true;
+  std::optional<api::Response> first;
+  api.handle(web, {"POST", "/v1/projects/web/tasks", {}, body}, [&](api::Response r) { first = std::move(r); });
+  settle();
+  EXPECT_FALSE(first) << "its writes are held";
+  auto again = call(web, "POST", "/v1/projects/web/tasks", body);
+  ASSERT_EQ(again.status, 200u);
+  store.release();
+  settle();
+  ASSERT_TRUE(first);
+  ASSERT_EQ(first->status, 200u);
+  EXPECT_EQ(first->body.at("tasks"), again.body.at("tasks"));
+  EXPECT_EQ(store.list(model::tasks_prefix("web")).size(), 2u);
+}
+
+// The runtime's resolve answers what is not a digest: nothing is registered
+// and no revision is spent.
+TEST_F(ApiTest, ADigestThatIsNotOneRegistersNothing) {
+  make_project();
+  images.digests["alpine:3.20"] = "latest";
+  auto r = call(web, "POST", "/v1/projects/web/task-definitions",
+                R"({"family":"frontend","cpu_millis":250,"memory_mib":128,"containers":[{"name":"app","image":"alpine:3.20"}]})");
+  EXPECT_EQ(r.status, 500u);
+  EXPECT_EQ(code(r), "internal");
+  images.digests["alpine:3.20"] = alpine_digest;
+  EXPECT_EQ(register_definition(), 1u);
 }

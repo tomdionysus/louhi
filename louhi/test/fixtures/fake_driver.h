@@ -19,7 +19,8 @@
 
 // A runtime in memory, for the agent's tests: it keeps containers and volumes
 // as the driver contract describes them, posts every completion to the
-// caller's executor, and lets a test make a container exit, fail the next call
+// caller's executor, and lets a test make a container exit or change its
+// health, fail the next call
 // of an operation, or lose the event stream. Every call is recorded in order.
 namespace louhi::test {
 
@@ -73,6 +74,11 @@ class FakeDriver final : public runtime::Driver {
       watchers.swap(_watchers);
     }
     for (const auto& [n, w] : watchers) boost::asio::post(w.executor, [w] { w.lost({runtime::Error::Kind::unavailable, "the runtime restarted"}); });
+  }
+  // A container's health check says so.
+  void set_health(const std::string& id, runtime::Health health) {
+    std::lock_guard<std::mutex> lock(_mutex);
+    _containers.at(id).info.health = health;
   }
   // A container made outside this test's agent, as by an earlier one.
   std::string add(runtime::ContainerSpec spec, runtime::ContainerState state) {

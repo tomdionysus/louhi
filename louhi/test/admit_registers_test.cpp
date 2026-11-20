@@ -191,6 +191,20 @@ TEST(AdmitRegisters, CodecsRoundTripExactlyAndRefuseWhatTheyDoNotDefine) {
   // A refusal names its limit, and only a refusal does.
   EXPECT_THROW(decode_decision(encode(Decision{Verdict::admitted, Limit::cpu, {}})), dannan::net::DecodeError);
   EXPECT_THROW(decode_decision(encode(Decision{Verdict::refused, Limit::none, {}})), dannan::net::DecodeError);
+  // A verdict the format does not define.
+  for (const uint8_t verdict : {uint8_t{0}, uint8_t{99}}) {
+    auto unknown = encode(Decision{Verdict::admitted, Limit::none, {}});
+    unknown[2] = verdict;
+    EXPECT_THROW(decode_decision(unknown), dannan::net::DecodeError) << int{verdict};
+  }
+}
+
+// A request names itself apart from every other: fresh randomness each time.
+TEST(AdmitRegisters, RequestIdsAreRandom) {
+  const auto a = RequestId::random();
+  const auto b = RequestId::random();
+  EXPECT_FALSE(a == b);
+  EXPECT_FALSE(a == RequestId{});
 }
 
 TEST(AdmitRegisters, AdmittedTasksAreDecodedOnlyInOrderEachOnce) {

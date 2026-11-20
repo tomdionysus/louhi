@@ -15,6 +15,8 @@
 
 #include <boost/json.hpp>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "louhi/api/json.h"
 #include "louhi/test/fixtures/records.h"
@@ -201,4 +203,41 @@ TEST(ApiJson, StatusesShowTheirStatesByName) {
   EXPECT_EQ(shown.at("containers").as_array()[1].as_object().at("exit_code"), -9);
   EXPECT_EQ(api::to_json(test::task()).at("desired"), "running");
   EXPECT_EQ(api::to_json(test::node_status()).at("ready"), true);
+
+  auto status = test::task_status();
+  const std::vector<std::pair<model::TaskState, const char*>> states{{model::TaskState::pending, "pending"},   {model::TaskState::pulling, "pulling"},
+                                                                     {model::TaskState::starting, "starting"}, {model::TaskState::running, "running"},
+                                                                     {model::TaskState::stopping, "stopping"}, {model::TaskState::stopped, "stopped"},
+                                                                     {model::TaskState::parked, "parked"}};
+  for (const auto& [state, name] : states) {
+    status.state = state;
+    EXPECT_EQ(api::to_json(status).at("state"), name);
+  }
+  status.containers = {{"app", model::ContainerState::created, std::nullopt, 0, model::Health::unhealthy},
+                       {"web", model::ContainerState::running, std::nullopt, 0, model::Health::healthy},
+                       {"job", model::ContainerState::exited, 0, 0, model::Health::unknown}};
+  const auto containers = api::to_json(status).at("containers").as_array();
+  ASSERT_EQ(containers.size(), 3u);
+  EXPECT_EQ(containers[0].at("state"), "created");
+  EXPECT_EQ(containers[0].at("health"), "unhealthy");
+  EXPECT_EQ(containers[1].at("state"), "running");
+  EXPECT_EQ(containers[1].at("health"), "healthy");
+  EXPECT_EQ(containers[2].at("state"), "exited");
+  EXPECT_EQ(containers[2].at("health"), "unknown");
+}
+
+TEST(ApiJson, APortIsTcpOrUdp) {
+  auto body = minimal_definition();
+  auto& container = body["containers"].as_array()[0].as_object();
+  container["ports"] = json::array{json::object{{"container_port", 53}, {"protocol", "udp"}}, json::object{{"container_port", 80}}};
+  const auto d = api::task_definition_body(body, "web");
+  ASSERT_EQ(d.containers[0].ports.size(), 2u);
+  EXPECT_EQ(d.containers[0].ports[0].protocol, model::Protocol::udp);
+  EXPECT_EQ(d.containers[0].ports[1].protocol, model::Protocol::tcp) << "tcp unless it says";
+  container["ports"] = json::array{json::object{{"container_port", 80}, {"protocol", "sctp"}}};
+  EXPECT_NE(refusal([&] { api::task_definition_body(body, "web"); }), "");
+}
+
+TEST(ApiJson, AQuotaIsForAProjectByItsName) {
+  EXPECT_NE(refusal([] { api::quota_body(json::parse(R"({"max_tasks":1})").as_object(), "Not A Name"); }), "");
 }

@@ -21,9 +21,12 @@
 
 #include <gtest/gtest.h>
 
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -254,6 +257,51 @@ TEST(AdmitAgreement, AProjectNeverHasMoreAdmittedThanItsQuota) {
     ASSERT_TRUE(sim.run());
     EXPECT_EQ(admitted_again, quota.max_tasks) << "what was given back is admitted again, and no more";
   }
+}
+
+// A register holding bytes that are not its value: the change leaves them as
+// they are (registers.cpp, guarded), and the caller is told the value could
+// not be read, never given a revision or a decision.
+class OneRegister final : public Registers {
+ public:
+  explicit OneRegister(Bytes start) : value(std::move(start)) {}
+  void change(const std::string&, dannan::agree::Change change, std::chrono::milliseconds, Executor executor,
+              std::function<void(dannan::agree::Outcome)> done) override {
+    std::vector<std::optional<Bytes>> current{value};
+    auto changed = change(current);
+    if (changed.values.at(0)) value = *changed.values.at(0);
+    dannan::agree::Outcome outcome;
+    outcome.committed = true;
+    outcome.values = {value};
+    outcome.result = std::move(changed.result);
+    boost::asio::post(executor, [done = std::move(done), outcome = std::move(outcome)] { done(outcome); });
+  }
+  Bytes value;
+};
+
+TEST(AdmitEvidence, ARegisterValueThatDoesNotDecodeIsReportedNotRead) {
+  boost::asio::io_context io;
+  const Bytes junk{9, 9, 9};
+  OneRegister registers(junk);
+  std::optional<RevisionEvidence> revision;
+  take_revision(registers, "web", "frontend", RequestId::random(), 1'000ms, io.get_executor(), [&](RevisionEvidence evidence) { revision = evidence; });
+  model::Quota quota;
+  quota.project = "web";
+  quota.max_tasks = 1;
+  quota.max_cpu_millis = 1;
+  quota.max_memory_mib = 1;
+  std::optional<AdmissionEvidence> admission;
+  admit_tasks(registers, quota, {task_numbered(1)}, {1, 1}, 1'000ms, io.get_executor(), [&](AdmissionEvidence evidence) { admission = evidence; });
+  io.run();
+  ASSERT_TRUE(revision);
+  EXPECT_FALSE(revision->finished);
+  EXPECT_FALSE(revision->revision);
+  EXPECT_FALSE(revision->unknown);
+  EXPECT_NE(revision->why.find("could not be read"), std::string::npos) << revision->why;
+  ASSERT_TRUE(admission);
+  EXPECT_FALSE(admission->finished);
+  EXPECT_NE(admission->why.find("could not be read"), std::string::npos) << admission->why;
+  EXPECT_EQ(registers.value, junk) << "left as it was";
 }
 
 }  // namespace

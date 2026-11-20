@@ -12,26 +12,37 @@
 // containers, so they run only where LOUHI_DOCKER_SOCKET names a daemon's
 // socket (a node of the build cluster, by hand); elsewhere they are skipped.
 // They pull busybox:1.36, and remove everything they make.
+//
+// The second half runs everywhere, against a fake daemon on a socket in the
+// build tree: what a daemon answers that a healthy one seldom does (a reply
+// not understood, a status the API does not use for the call, a refusal, an
+// event stream that ends), and what the driver refuses without asking.
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <boost/asio/io_context.hpp>
 #include <boost/json.hpp>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <future>
 #include <iostream>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "dannan/test/fixtures/temp_dir.h"
 #include "louhi/model/ids.h"
 #include "louhi/model/image.h"
 #include "louhi/runtime/docker/api.h"
 #include "louhi/runtime/docker/docker_driver.h"
 #include "louhi/runtime/docker/local_http.h"
 #include "louhi/runtime/labels.h"
+#include "louhi/test/fixtures/fake_daemon.h"
 
 using namespace louhi;
 using namespace louhi::runtime;
@@ -350,4 +361,203 @@ TEST_F(DockerDriverTest, ANameThatCouldChangeThePathIsRefusedUnsent) {
   auto image_got = wait<ImageInfo>([&](auto done) { driver->pull("busybox?x=1", Deadline(30000), executor(), done); });
   ASSERT_FALSE(image_got.ok());
   EXPECT_EQ(image_got.error().kind, Error::Kind::refused);
+}
+
+namespace {
+
+std::string reply(const std::string& body, unsigned status = 200) {
+  return "HTTP/1.1 " + std::to_string(status) + " X\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body;
+}
+
+std::string lower(std::string text) {
+  std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return text;
+}
+
+class DockerDriverRepliesTest : public ::testing::Test {
+ protected:
+  ~DockerDriverRepliesTest() override {
+    _work.reset();
+    _io.stop();
+    _thread.join();
+  }
+
+  Executor executor() { return _io.get_executor(); }
+
+  template <class T, class Start>
+  Result<T> wait(Start start) {
+    std::promise<Result<T>> promise;
+    auto future = promise.get_future();
+    start(Completion<T>([&promise](Result<T> r) { promise.set_value(std::move(r)); }));
+    if (future.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+      ADD_FAILURE() << "no completion";
+      return Error{Error::Kind::timed_out, "test wait"};
+    }
+    return future.get();
+  }
+
+  // The first loss a watch reports, and the events before it.
+  struct Watched {
+    std::vector<ContainerEvent> events;
+    std::optional<Error> lost;
+    int losses = 0;
+  };
+  Watched watch_until_lost(Driver& on) {
+    auto watched = std::make_shared<Watched>();
+    auto mutex = std::make_shared<std::mutex>();
+    auto ended = std::make_shared<std::promise<void>>();
+    const uint64_t id = on.watch(
+        executor(),
+        [watched, mutex](ContainerEvent event) {
+          std::lock_guard<std::mutex> lock(*mutex);
+          watched->events.push_back(std::move(event));
+        },
+        [watched, mutex, ended](Error lost) {
+          std::lock_guard<std::mutex> lock(*mutex);
+          if (watched->losses++ == 0) {
+            watched->lost = std::move(lost);
+            ended->set_value();
+          }
+        });
+    EXPECT_EQ(ended->get_future().wait_for(std::chrono::seconds(10)), std::future_status::ready);
+    on.unwatch(id);
+    std::lock_guard<std::mutex> lock(*mutex);
+    return *watched;
+  }
+
+  ContainerSpec spec() {
+    ContainerSpec s;
+    s.name = "louhi-c";
+    s.image = "busybox:1.36";
+    s.cpu_millis = 250;
+    s.memory_bytes = 64ull << 20;
+    s.pids_limit = 64;
+    return s;
+  }
+
+  dannan::test::TempDir dir;
+  std::string socket = (dir.path() / "d.sock").string();
+  test::FakeDaemon daemon{socket};
+
+ private:
+  asio::io_context _io;
+  asio::executor_work_guard<asio::io_context::executor_type> _work = asio::make_work_guard(_io);
+  std::thread _thread{[this] { _io.run(); }};
+
+ protected:
+  docker::DockerDriver driver{_io.get_executor(), socket,
+                              Registries({"docker.io", "registry.example.net"}, {{"registry.example.net", {"robot", "secret", ""}}})};
+};
+
+}  // namespace
+
+// Design, "Images in detail": the operator's credential for a registry signs
+// in to that registry, and is never sent for another.
+TEST_F(DockerDriverRepliesTest, ARegistrysCredentialGoesOnlyToThatRegistry) {
+  const std::string digest = "sha256:" + std::string(64, 'a');
+  const std::string distribution = R"({"Descriptor": {"digest": ")" + digest + R"("}})";
+  daemon.script({reply(distribution), reply(distribution)});
+  auto signed_in = wait<std::string>([&](auto done) { driver.resolve("registry.example.net/app:1", Deadline(5000), executor(), done); });
+  ASSERT_TRUE(signed_in.ok()) << signed_in.error().message;
+  EXPECT_EQ(signed_in.value(), digest);
+  auto hub = wait<std::string>([&](auto done) { driver.resolve("busybox:1.36", Deadline(5000), executor(), done); });
+  ASSERT_TRUE(hub.ok()) << hub.error().message;
+  const auto seen = daemon.requests();
+  ASSERT_EQ(seen.size(), 2u);
+  EXPECT_NE(lower(seen[0]).find("x-registry-auth: "), std::string::npos) << seen[0];
+  EXPECT_EQ(lower(seen[1]).find("x-registry-auth"), std::string::npos) << seen[1];
+}
+
+TEST_F(DockerDriverRepliesTest, AReferenceThatIsNotOneIsRefusedUnsent) {
+  auto got = wait<std::string>([&](auto done) { driver.resolve("busybox?x=1", Deadline(5000), executor(), done); });
+  ASSERT_FALSE(got.ok());
+  EXPECT_EQ(got.error().kind, Error::Kind::refused);
+  EXPECT_TRUE(daemon.requests().empty());
+}
+
+// Every bound is always set (driver.h): a spec without one is refused before
+// the runtime could take it without the bound.
+TEST_F(DockerDriverRepliesTest, ASpecWithoutItsBoundsIsRefusedUnsent) {
+  const VolumeSpec unbounded{"louhi-v", VolumeKind::memory, 0, {}};
+  auto volume = wait<Done>([&](auto done) { driver.create_volume(unbounded, Deadline(5000), executor(), done); });
+  ASSERT_FALSE(volume.ok());
+  EXPECT_EQ(volume.error().kind, Error::Kind::refused);
+  auto no_pids = spec();
+  no_pids.pids_limit = 0;
+  auto container = wait<std::string>([&](auto done) { driver.create(no_pids, Deadline(5000), executor(), done); });
+  ASSERT_FALSE(container.ok());
+  EXPECT_EQ(container.error().kind, Error::Kind::refused);
+  EXPECT_TRUE(daemon.requests().empty());
+}
+
+TEST_F(DockerDriverRepliesTest, ABodyNotUnderstoodIsMalformed) {
+  daemon.script({reply("not json"), reply(R"({"Version": "1"})"), reply("{}")});
+  auto volumes = wait<std::vector<VolumeInfo>>([&](auto done) { driver.list_volumes(Deadline(5000), executor(), done); });
+  ASSERT_FALSE(volumes.ok());
+  EXPECT_EQ(volumes.error().kind, Error::Kind::malformed);
+  auto described = wait<RuntimeInfo>([&](auto done) { driver.describe(Deadline(5000), executor(), done); });
+  ASSERT_FALSE(described.ok());
+  EXPECT_EQ(described.error().kind, Error::Kind::malformed);
+  EXPECT_EQ(described.error().message.rfind("describing the runtime", 0), 0u) << described.error().message;
+}
+
+// Docker answers 201 for a container made: another success is not one this
+// call has, so it is not understood rather than taken.
+TEST_F(DockerDriverRepliesTest, ASuccessTheCallDoesNotHaveIsMalformed) {
+  daemon.script({reply(R"({"Id": "abc"})", 200)});
+  auto created = wait<std::string>([&](auto done) { driver.create(spec(), Deadline(5000), executor(), done); });
+  ASSERT_FALSE(created.ok());
+  EXPECT_EQ(created.error().kind, Error::Kind::malformed);
+}
+
+TEST_F(DockerDriverRepliesTest, TheDaemonsRefusalKeepsItsKindAndReason) {
+  daemon.script({reply(R"({"message": "volume is in use"})", 409), reply(R"({"message": "it broke"})", 500)});
+  auto removed = wait<Done>([&](auto done) { driver.remove_volume("louhi-v", Deadline(5000), executor(), done); });
+  ASSERT_FALSE(removed.ok());
+  EXPECT_EQ(removed.error().kind, Error::Kind::refused);
+  EXPECT_NE(removed.error().message.find("volume is in use"), std::string::npos) << removed.error().message;
+  auto started = wait<Done>([&](auto done) { driver.start("abc", Deadline(5000), executor(), done); });
+  ASSERT_FALSE(started.ok());
+  EXPECT_EQ(started.error().kind, Error::Kind::unavailable);
+  EXPECT_NE(started.error().message.find("it broke"), std::string::npos) << started.error().message;
+}
+
+TEST_F(DockerDriverRepliesTest, APullWhoseProgressIsNotUnderstoodFails) {
+  daemon.script({"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\ngarbage\n"});
+  auto pulled = wait<ImageInfo>([&](auto done) { driver.pull("busybox:1.36", Deadline(5000), executor(), done); });
+  ASSERT_FALSE(pulled.ok());
+  EXPECT_EQ(pulled.error().kind, Error::Kind::refused);
+  EXPECT_NE(pulled.error().message.find("not understood"), std::string::npos) << pulled.error().message;
+  EXPECT_EQ(daemon.requests().size(), 1u) << "nothing is inspected after a failed pull";
+}
+
+// Events only prompt a re-list: one not understood is skipped, and the end of
+// the stream is a loss, told once.
+TEST_F(DockerDriverRepliesTest, AnEventNotUnderstoodIsSkippedAndTheStreamsEndIsALoss) {
+  const std::string die = R"({"Type": "container", "Action": "die", "Actor": {"ID": "abc", "Attributes": {"exitCode": "3", "louhi.task": "t1"}}})";
+  const std::string body = "garbage\n" + die + "\n";
+  daemon.script({"HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body});
+  const auto watched = watch_until_lost(driver);
+  ASSERT_EQ(watched.events.size(), 1u);
+  EXPECT_EQ(watched.events[0].id, "abc");
+  EXPECT_EQ(watched.events[0].exit_code, 3);
+  ASSERT_TRUE(watched.lost);
+  EXPECT_EQ(watched.lost->kind, Error::Kind::unavailable);
+  EXPECT_EQ(watched.losses, 1);
+}
+
+TEST_F(DockerDriverRepliesTest, AnEventStreamTheDaemonRefusesIsALoss) {
+  daemon.script({reply(R"({"message": "no"})", 500)});
+  const auto watched = watch_until_lost(driver);
+  EXPECT_TRUE(watched.events.empty());
+  ASSERT_TRUE(watched.lost);
+  EXPECT_EQ(watched.lost->kind, Error::Kind::unavailable);
+  EXPECT_NE(watched.lost->message.find("watching events"), std::string::npos) << watched.lost->message;
+}
+
+TEST_F(DockerDriverRepliesTest, ARuntimeThatIsNotThereIsALoss) {
+  docker::DockerDriver nowhere(executor(), (dir.path() / "none.sock").string(), Registries());
+  const auto watched = watch_until_lost(nowhere);
+  ASSERT_TRUE(watched.lost);
+  EXPECT_EQ(watched.lost->kind, Error::Kind::unavailable);
 }

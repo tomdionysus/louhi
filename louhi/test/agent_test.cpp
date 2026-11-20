@@ -20,6 +20,8 @@
 // - an agent started over containers already running adopts them and
 //   launches nothing (disciplines 1 and 3);
 // - a node that cannot enforce memory limits launches nothing unless allowed;
+// - a pass that cannot describe the runtime, or list its containers or
+//   volumes, launches nothing and tries again after the backoff;
 // - runtime events only prompt a pass; a lost event stream is watched again;
 // - a status is reported only when it changes, each with a higher sequence.
 // Driven by a fake runtime and stepped clocks: no sleep anywhere.
@@ -310,6 +312,16 @@ TEST_F(AgentTest, AfterAQuietWindowAServiceTaskStartsItsBackoffAgain) {
   EXPECT_EQ(reports.last().containers[0].restarts, 5u);
 }
 
+// The runtime's words are untrusted: a byte a status may not hold is replaced,
+// never the reason to drop the status, so the failure is still seen.
+TEST_F(AgentTest, ARuntimeMessageWithAByteAStatusCannotHoldIsStillReported) {
+  desired.set({assignment(1)});
+  driver.fail_next("pull", {runtime::Error::Kind::refused, std::string("pull\0denied", 11)});
+  start();
+  EXPECT_EQ(reports.last().state, model::TaskState::pending);
+  EXPECT_EQ(reports.last().reason, "launch failed: pull?denied");
+}
+
 TEST_F(AgentTest, AFailedLaunchIsReportedAndRetriedAfterABackoff) {
   const Assignment a = assignment(1);
   desired.set({a});
@@ -477,4 +489,80 @@ TEST_F(AgentTest, StopLeavesTasksRunning) {
   EXPECT_TRUE(stopped);
   EXPECT_EQ(driver.watchers(), 0u);
   EXPECT_EQ(driver.named(container(1, "app"))->info.state, runtime::ContainerState::running);
+}
+
+TEST_F(AgentTest, StopWaitsForThePassUnderWay) {
+  desired.set({assignment(1)});
+  start();
+  bool stopped = false;
+  agent->poke();
+  agent->stop([&] { stopped = true; });
+  settle();
+  EXPECT_TRUE(stopped);
+  EXPECT_EQ(driver.watchers(), 0u);
+  // Stopped, it makes no more passes.
+  driver.clear_calls();
+  agent->poke();
+  settle();
+  EXPECT_TRUE(driver.calls().empty());
+}
+
+TEST_F(AgentTest, ARuntimeThatCannotBeDescribedLaunchesNothingUntilItIs) {
+  driver.fail_next("describe", {runtime::Error::Kind::unavailable, "the socket is not there"});
+  desired.set({assignment(1)});
+  start();
+  EXPECT_TRUE(driver.containers().empty());
+  EXPECT_EQ(reports.last().state, model::TaskState::pending);
+  EXPECT_EQ(reports.last().reason, "waiting to describe this node's runtime");
+  advance(seconds(1));
+  EXPECT_EQ(reports.last().state, model::TaskState::running);
+}
+
+TEST_F(AgentTest, APassThatCannotListContainersTriesAgainAfterTheBackoff) {
+  driver.fail_next("list", {runtime::Error::Kind::timed_out, "no answer"});
+  desired.set({assignment(1)});
+  start();
+  EXPECT_TRUE(driver.containers().empty());
+  EXPECT_TRUE(reports.all().empty()) << "nothing is known to report";
+  advance(seconds(1));
+  EXPECT_EQ(reports.last().state, model::TaskState::running);
+}
+
+TEST_F(AgentTest, APassThatCannotListVolumesTriesAgainAfterTheBackoff) {
+  driver.fail_next("list_volumes", {runtime::Error::Kind::timed_out, "no answer"});
+  desired.set({assignment(1)});
+  start();
+  EXPECT_TRUE(driver.containers().empty());
+  EXPECT_TRUE(reports.all().empty());
+  advance(seconds(1));
+  EXPECT_EQ(reports.last().state, model::TaskState::running);
+}
+
+TEST_F(AgentTest, APassBeforeALaunchsBackoffWaitsSayingWhy) {
+  desired.set({assignment(1)});
+  driver.fail_next("pull", {runtime::Error::Kind::refused, "pull access denied"});
+  start();
+  EXPECT_EQ(reports.last().reason, "launch failed: pull access denied");
+  driver.clear_calls();
+  pass();
+  EXPECT_EQ(reports.last().state, model::TaskState::pending);
+  EXPECT_EQ(reports.last().reason, "waiting to retry: pull access denied");
+  for (const auto& call : driver.calls()) EXPECT_EQ(call.rfind("pull ", 0), std::string::npos) << call;
+  advance(seconds(1));
+  EXPECT_EQ(reports.last().state, model::TaskState::running);
+}
+
+TEST_F(AgentTest, AContainersHealthIsReported) {
+  desired.set({assignment(1)});
+  start();
+  EXPECT_EQ(reports.last().containers[0].health, model::Health::unknown);
+  driver.set_health(id_of(1, "app"), runtime::Health::healthy);
+  driver.set_health(id_of(1, "log-shipper"), runtime::Health::unhealthy);
+  pass();
+  ASSERT_EQ(reports.last().containers.size(), 2u);
+  EXPECT_EQ(reports.last().containers[0].health, model::Health::healthy);
+  EXPECT_EQ(reports.last().containers[1].health, model::Health::unhealthy);
+  driver.set_health(id_of(1, "app"), runtime::Health::starting);
+  pass();
+  EXPECT_EQ(reports.last().containers[0].health, model::Health::unknown) << "starting is not yet known";
 }

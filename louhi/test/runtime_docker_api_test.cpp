@@ -254,6 +254,7 @@ TEST(DockerApi, InspectRefusesWhatItDoesNotUnderstand) {
            R"({"Id": "a", "State": {"Status": "sleeping"}})", R"({"Id": "a", "State": {"Status": "exited", "ExitCode": "1"}})",
            R"({"Id": "a", "State": {"Status": "exited", "ExitCode": 99999999999}})", R"({"Id": "a", "State": {"Status": "running", "OOMKilled": 1}})",
            R"({"Id": "a", "State": {"Status": "running", "StartedAt": "yesterday"}})",
+           R"({"Id": "a", "State": {"Status": "running", "Health": {"Status": "poorly"}}})",
            R"({"Id": "a", "Config": {"Labels": {"k": 1}}, "State": {"Status": "running"}})"}) {
     EXPECT_THROW(parse_inspect(bad), MalformedReply) << bad;
   }

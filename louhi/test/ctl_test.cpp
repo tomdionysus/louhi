@@ -531,6 +531,13 @@ TEST_F(CtlTest, ACommandLineThatCannotBeActedOnExitsTwoBeforeAnythingIsAsked) {
   EXPECT_TRUE(files.at(home_credentials)) << "a usage error removes nothing";
 }
 
+TEST_F(CtlTest, ASwitchThatIsNeitherTrueNorFalseExitsTwo) {
+  EXPECT_EQ(run({"--version=maybe"}), 2);
+  EXPECT_EQ(err.str().rfind("louhi-ctl: ", 0), 0u) << err.str();
+  EXPECT_NE(err.str().find("maybe"), std::string::npos) << "the value refused is named: " << err.str();
+  EXPECT_TRUE(out.str().empty()) << "no version is printed";
+}
+
 TEST_F(CtlTest, AConfigurationThatCannotBeReadOrUsedExitsTwo) {
   files.put(home_credentials, fresh());
   write_file(home_config, "endpoints: [http://louhi.example\n");

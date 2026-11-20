@@ -46,6 +46,12 @@ until Dagda and Lugh release on it (one Dannan a process). Its CHANGELOG's
   `encoding/base.h`; hand-written mkdir-and-fsync to the durable helpers.
 - `Completion<T>`/`Outcome<T>` replace Louhi's own callback result types
   where they match (the store, the drivers' completions).
+- When the node's config or logging is next touched: the stack's log
+  settings, `log.level` (all, debug, info, warn, error;
+  `dannan::status::parse_log_level`) and `log.format` (text, json;
+  `parse_log_format`), read through `dannan::config`. Flags and
+  environment keep the same names (`--log-level`, `LOUHI_LOG_LEVEL`) only
+  while those layers exist, which is still open with the maintainer.
 - CI: asan and tsan steps set `DANNAN_SANITIZE`, and the symbol check
   (`nm -D --undefined-only`) runs in them.
 Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`, Lir `e40dd2e` (opt-in)

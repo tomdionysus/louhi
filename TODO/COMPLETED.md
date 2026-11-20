@@ -4,6 +4,30 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## Dannan 0.9.2, with Lugh and Lir moved with it (2026-11-20)
+
+- Pins: Dannan `0.8.3` to `0.9.2`; Lugh `382416d` to `dbb0573` (the
+  commit Lir's Lugh plugin builds at, on the same Dannan); Lir `4443c16`
+  to `6268fef` (its pushed develop, on 0.9.2). One step, as decided.
+- No source change was needed. Of 0.9.0's changes for a caller from 0.8,
+  Louhi uses none (`CallOutcome::peer`, `InboundHandlers`, `StateLock`);
+  `durable_replace_file`'s new `FileSystem&` defaults to POSIX. Lugh's
+  client dropped `public_key_der`, which Louhi never called; Lir's client
+  is unchanged between the two commits. Dannan's TSan suppressions are
+  still at `dannan/test/tsan-suppressions.txt`.
+- Found by the first run, which aborted: node-c keeps a Docker socket
+  file from before the wipe with no daemon behind it, so `build/pi.sh`
+  turned the real-Docker tests on, and `AgentOnDocker`'s first failed
+  ASSERT returned past its io thread, still joinable: `std::terminate`,
+  the rest of the binary unrun. The test now stops its io and joins on
+  every way out, so a failure fails it alone. `build/pi.sh` turns the
+  Docker tests on only when the daemon answers `/_ping`. The stale socket
+  is left (not Louhi's machine to change).
+
+Gate on node-c (never throttled, no Docker since the wipe): **277
+run, 264 passed, 13 skipped** (every real-Docker test). The Docker tests
+have not yet run on Dannan 0.9.2; they are owed when Docker is back.
+
 ## The Pis wiped; the documents brought up to date (2026-11-19)
 
 - the maintainer had all four Pis cleaned to a bare OS on 2026-11-18. Docker and

@@ -30,8 +30,8 @@ Louhi is the compute layer written once for this stack:
   machines that are only partly trusted later.
 - **No scheduler.** Each task's placement is to be settled by Dannan's per-key agreement
   (CASPaxos registers): any node may propose, agreement picks one, and no node's loss stops
-  placement. Agreement arrived in Dannan 0.9.0; until Louhi is built on it, a task runs on
-  the node that took it.
+  placement. Agreement arrived in Dannan 0.9.0, which Louhi now builds on; until placement
+  uses it, a task runs on the node that took it.
 - **On the cluster that is already there.** Membership, node identity, reachability and
   placement functions are Dannan's; declared state is Dagda's; sign-in is Lugh's. Louhi adds
   only what makes it compute, and has no copy of anything below it.
@@ -120,7 +120,7 @@ Lir only an MQTT broker.
 
 A C++20 compiler, CMake 3.24 or later, Boost 1.83 or later (Asio, Beast and JSON; Debian
 13's is 1.83), OpenSSL 3, yaml-cpp (for Dannan) and GoogleTest for the tests. Dannan is
-fetched from `../dannan` at the pinned release (0.8.3), and Lugh's and Lir's clients from
+fetched from `../dannan` at the pinned release (0.9.2), and Lugh's and Lir's clients from
 `../lugh` and `../lir` at pinned commits, so clone them beside this repository. Nodes are
 Linux only; macOS builds the library and runs the unit tests against fakes.
 
@@ -279,8 +279,8 @@ What it does not do yet, in the order it is to be built:
 
 - **Records in Dagda.** The store is in memory until Louhi can pin a Dagda release, so a
   node holds only what was declared since it started, and nodes do not share it.
-- **Placement across nodes**, by Dannan's agreement registers (Dannan 0.9; Louhi still
-  builds on 0.8.3). Until then a task runs on the node that took the request, and quota is
+- **Placement across nodes**, by Dannan's agreement registers (in the Dannan Louhi
+  builds on, not yet used). Until then a task runs on the node that took the request, and quota is
   admitted on that node's view.
 - **Services**: a desired count kept running, replacement, rolling deployment, health
   checks.

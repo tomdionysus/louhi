@@ -1,6 +1,6 @@
 # Louhi - Active Work
 
-Last updated: 2026-11-19. `COMPLETED.md` is the record.
+Last updated: 2026-11-20. `COMPLETED.md` is the record.
 
 ## Resume here
 
@@ -9,18 +9,12 @@ Done: steps 0 to 3, 5 and 8, and step 13's first half (records and codecs,
 the Docker driver, the agent, the in-memory store, `louhi-node` with
 `--retire`, the API with sign-in by the Lugh plugin, `louhi-ctl` as
 `louhi::ctl`, events on Lir, images by digest, storage bounds).
-Last full gate: **277 passed** on node-c (2026-11-16, Docker on xfs).
-Last gate: 276 passed, 1 skipped on node-b (2026-11-17, ext4).
-Pins: Dannan `0.8.3`, Lugh `382416d`, Lir `4443c16`.
-
-**Two things changed under the plan since the last step:**
-
-- **Dannan 0.9.0 is released** (0.9.2 is the latest, 2026-11-18), with
-  agreement (`Context::agreement()`). The pin move is no longer waiting;
-  it is item 1 below.
-- **The Pis were wiped to a bare OS** (the maintainer, 2026-11-18). No Pi has Docker,
-  and `/root/louhi-work` is gone from all four. Until Docker is back the
-  gate runs with the real-Docker tests skipped. See "The build Pis".
+Pins: Dannan `0.9.2`, Lugh `dbb0573`, Lir `6268fef` (2026-11-20).
+Last gate: **264 passed, 13 skipped** on node-c (2026-11-20): the
+skipped are every real-Docker test, since the Pis were wiped to a bare OS
+on 2026-11-18 and none has Docker. Last gate with Docker: **277 passed**
+(2026-11-16, Dannan 0.8.3). The Docker tests are owed on 0.9.2 when Docker
+is back ("Waiting on the maintainer", 1).
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -56,43 +50,34 @@ step per session.
 
 ## Next, in order
 
-1. **Move the Dannan pin from `0.8.3` to `0.9.2`**, as its own commit with
-   one gate (the maintainer, 2026-11-16: the pin moves once, when 0.9.0 is out).
-   0.9.0 is a new minor: the ABI and some of the API change, so read
-   `../dannan/CHANGELOG.md` at the tag first. What rides along from 0.8.4
-   and 0.8.5: StartTLS with no answer, a stop token on
-   `NodeEvents::wait_for_change`, a fix to deferred answers' overload
-   accounting, and a second `Client::stop()` or `Server::stop()` no longer
-   posting to a stopped io (Louhi's finding; Louhi's order, destroy the
-   Node while its io runs, stays right). The Lugh and Lir pins move in the
-   same step if their clients need the new Dannan: check which commits of
-   each build on 0.9.x (Lugh `382416d` is on 0.8.3; the standing Lir
-   cluster runs on 0.9.2). `lugh_client`'s face was unchanged at `2d75176`.
-2. **`louhi-ctl login --scope openid` fails** (found 2026-11-16): the
+1. **`louhi-ctl login --scope openid` fails** (found 2026-11-16): the
    issuer then returns an ID token, which Lugh's client verifies against a
    `Verifier` holding no keys (`ctl/ctl.cpp`, `login`). Either load the
    issuer's JWKS first or refuse `openid` as a usage error; louhi-ctl needs
    no ID token. Small; a test in `ctl_test.cpp` first.
-3. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
+2. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
    10 that need no agreement: Subnet, RouteTable and SecurityGroup records
    and codecs; a security group rendered to nftables rules as a pure
    function, behind an interface, tested against fakes; a task's network
    namespace on one node. Nothing that allocates addresses or places across
    nodes; anything near that line goes to the maintainer first.
-4. **Steps 6 and 7, and the rest of step 9**, on Dannan's agreement
-   registers, once the pin has moved: placement, then services (a
-   service's task set changes through registers), then address allocation.
-   Design questions that the real agreement API raises go to the maintainer first.
-5. **Owed, end to end**, when a Lugh issuer is at hand:
+3. **Steps 6 and 7, and the rest of step 9**, on Dannan's agreement
+   registers (`Context::agreement()`, now in the pinned Dannan): placement,
+   then services (a service's task set changes through registers), then
+   address allocation. Read `dannan/agree/` and the 0.9.0 changelog first;
+   design questions the real agreement API raises go to the maintainer first (the
+   acceptor state lives behind a hosted system's `AcceptorStore`, which
+   for Louhi wants Dagda or a local durable store: ask).
+4. **Owed, end to end**, when a Lugh issuer is at hand:
    - `louhi-ctl login` and `ServiceToken` against a real Lugh;
    - task events (not only a node's status) published live to Lir, which
      needs the API, and so an issuer;
    - a private registry signed in to for real (`--registry-credential`).
-6. **The image store on Dagda** (step 13's second half) and **the Dagda
+5. **The image store on Dagda** (step 13's second half) and **the Dagda
    store** (step 4's second half): both wait on the Dagda ref.
 
-The order of 1 to 3 is this session's reading (the pin was first only
-while 0.9.0 was awaited); the maintainer may put networking first again.
+The order of 1 to 3 is this session's reading; the maintainer may put networking
+or placement first.
 
 ### Joining the standing Lir cluster
 
@@ -114,9 +99,12 @@ retires only from a Louhi node's own state).
 
 ## Waiting on the maintainer
 
-1. **Docker on the Pis again.** The wipe removed it everywhere. The
+1. **Docker on the Pis again.** The wipe removed it everywhere. The 13
    real-Docker tests (the driver's, the agent's real task, the storage
-   bound) skip until it is back. Recommended: Docker with `userns-remap:
+   bound) skip until it is back, and have not run on Dannan 0.9.2.
+   node-c keeps a stale `/var/run/docker.sock` from before the wipe;
+   `build/pi.sh` pings the daemon, so it is harmless, but it goes when
+   Docker is reinstalled. Recommended: Docker with `userns-remap:
    default` on node-b and node-c, and node-c's Docker data on xfs with
    `pquota` again. Each is a change to a shared machine: it needs the maintainer's
    go, a note on the board, and the previous settings saved first.
@@ -228,8 +216,8 @@ history is in git.
   by its `ephemeral_storage_mib`, shared equally, through xfs project
   quotas. Scratch volumes come in two kinds: memory (tmpfs, counted in the
   task's memory) and disk (quota-bounded).
-- **Dannan pin (2026-11-16):** moves once from `0.8.3`, to the 0.9 line,
-  as its own commit with one gate; the Lugh pin moves with it.
+- **Dannan pin (2026-11-16):** moved once from `0.8.3` to the 0.9 line,
+  with Lugh and Lir (done 2026-11-20, at 0.9.2).
 - **Retiring a node (2026-11-17):** `louhi-node --retire`, the same
   command as `lir-node`'s.
 - **Workload identity:** deferred.

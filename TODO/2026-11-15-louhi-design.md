@@ -44,7 +44,8 @@ shape: sizes are declared per task, and capacity is the cluster's concern.
 Checked against `../dagda/TODO/2026-11-03-stack.md` and the code where noted;
 otherwise as the sibling sessions stated it on 2026-11-15.
 
-**Dannan 0.8.3** (released, in use).
+**Dannan** (written against 0.8.3; Louhi pins 0.9.2 since 2026-11-20, which
+adds `Context::agreement()` and `Context::hlc()`).
 - `dannan::Context` is the whole contract (`dannan/context.h`, read): Nodes,
   Routes, Channels, Identity, Budget, Faults, Time, Telemetry, Status.
 - Sessions between every pair of nodes through NATs, on two lanes, with

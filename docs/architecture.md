@@ -60,8 +60,8 @@ in exactly one.
   it is an identity provider: the Lugh plugin links Lugh's client library to verify tokens,
   and `louhi-ctl` signs in through it.
 - **[Lir](https://github.com/tomdionysus/lir)** is the event system. Louhi publishes its
-  events to it as any MQTT client does, through Lir's own `lir::client`, finding Lir's
-  nodes in Dannan's roster.
+  events to it as any MQTT client does, through Lir's own client library, finding Lir's
+  nodes in Dannan's roster. Not in 0.1.0: no Lir release ships that library yet.
 
 Hosted systems never address one another: Lugh is to Louhi only an identity provider, and
 Lir only an MQTT broker.

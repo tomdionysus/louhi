@@ -67,9 +67,9 @@ journalctl -u louhi -f
 
 ## The 0.1.0 package's limits
 
-- **No events.** Lir's client is withdrawn until Lir's rewrite brings it back,
-  so the package is built with `LOUHI_BUILD_LIR=OFF` and publishes nothing to
-  Lir.
+- **No events.** No Lir release ships a client library yet (it returns as
+  `liblir-client0.1`), so Louhi 0.1.0 is built without Lir, as every default
+  build is (`LOUHI_BUILD_LIR=OFF`), and publishes nothing to Lir.
 - **Records in memory.** A node holds only what was declared to it since it
   started, and nodes do not share records, until Dagda's register map ships.
   A task runs on the node whose API took it.

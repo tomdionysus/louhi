@@ -44,8 +44,8 @@ sudoedit /etc/louhi/config.yaml        # see "Running louhi-node" below
 sudo systemctl enable --now louhi
 ```
 
-The 0.1.0 package publishes no events (it is built without Lir's client, which returns
-with Lir's rewrite), and keeps records in memory (see Status).
+Louhi 0.1.0 publishes no events: no Lir release ships a client yet, so Louhi is built
+without Lir by default (see "Events on Lir"). It keeps records in memory (see Status).
 [docs/packaging.md](docs/packaging.md) says what it installs where, its dependencies, and
 how to build it.
 
@@ -60,12 +60,11 @@ sudo apt-get install g++ cmake ninja-build git ca-certificates \
 
 That is a C++20 compiler, CMake 3.24 or later, Boost 1.83 or later, OpenSSL 3 and
 yaml-cpp; GoogleTest only for the tests. The build fetches the sibling projects at pinned
-versions into the build tree: Dannan `0.9.2`, Dagda `0.3.2`, and Lugh's and Lir's clients
-at pinned commits.
+versions into the build tree: Dannan `0.9.2`, Dagda `0.3.2` and Lugh's client, and Lir's
+client only when the events are asked for.
 
 The simplest build is `tools/ci.sh`, which takes each sibling from a checkout beside this
-one (`../dannan`, `../dagda`, `../lugh`, `../lir`) when there is one and from its public
-GitHub repository otherwise:
+one when there is one and from its public GitHub repository otherwise:
 
 ```
 git clone https://github.com/tomdionysus/louhi.git
@@ -87,7 +86,7 @@ cmake --build build
 | Option | Default | Meaning |
 |---|---|---|
 | `LOUHI_BUILD_LUGH` | `ON` | The Lugh plugin, the API's sign-in and `louhi-ctl`; off, the node serves no API |
-| `LOUHI_BUILD_LIR` | `ON` | The events publisher on Lir's client; off, no events |
+| `LOUHI_BUILD_LIR` | `OFF` | The events publisher on Lir's client, at an unreleased commit (see "Events on Lir") |
 | `LOUHI_BUILD_DAGDA` | `ON` | Fetch and build against Dagda |
 | `LOUHI_FETCH_DEPENDENCIES` | `ON` | Fetch Dannan and Dagda at their tags; off, find the installed `libdannan-dev` and `libdagda-dev` (the package's build) |
 | `LOUHI_BUILD_TESTING` | `OFF` | Build `louhi_tests` |
@@ -189,7 +188,7 @@ The settings, by key and flag:
 | `api.tls_chain`, `api.tls_key` | `--api-tls-chain`, `--api-tls-key` | The HTTPS certificate chain (PEM, leaf first) and key |
 | `lugh.issuer` | `--lugh-issuer` | A trusted Lugh, as its tokens name it; a list |
 | `lugh.ca` | `--lugh-ca` | The roots the issuers' HTTPS chains to; the system's when absent |
-| `lir.enabled` | `--lir` | Publish events to Lir |
+| `lir.enabled` | `--lir` | Publish events to Lir (a build with `LOUHI_BUILD_LIR` only) |
 | `lir.tls`, `lir.tls_trust` | `--lir-tls`, `--lir-tls-trust` | Reach Lir over TLS, and the roots its certificate chains to |
 | `lir.client_id` | `--lir-client-id` | This node's Lugh client, for its token to Lir |
 | `lir.client_key`, `lir.client_kid` | `--lir-client-key`, `--lir-client-kid` | Its signing key (PKCS#8 DER, `private_key_jwt`) and the key's kid |
@@ -218,9 +217,12 @@ audiences.
 
 ### Events on Lir
 
-Not in the 0.1.0 package, which is built without Lir's client. In a build with it
-(`LOUHI_BUILD_LIR`), with `lir.enabled` the node publishes to the Lir nodes it finds in its
-Dannan cluster.
+Not in 0.1.0. The publisher is written and tested, but
+[Lir](https://github.com/tomdionysus/lir)'s releases ship no client yet: its client
+library returns as `liblir-client0.1`, and the events come to a Louhi release after it.
+Until then they build only on request (`-DLOUHI_BUILD_LIR=ON`, or `tools/ci.sh events`),
+against a commit of Lir from before its rewrite. In such a build, with `lir.enabled` the
+node publishes to the Lir nodes it finds in its Dannan cluster.
 It signs in with a token of its own from the first Lugh issuer, as a Lugh service
 principal: `lir.client_id` with either `lir.client_key` and `lir.client_kid`, or
 `lir.client_secret`. Without a client it connects with no password, for a Lir that allows
@@ -352,8 +354,9 @@ and its store's, and for `louhi:admin` its task count and full report. Errors ar
 This is Louhi's first release. What works today, on one node: the records and their
 codecs; the Docker driver with the hardened profile, limits and storage bounds; images by
 digest from allowed registries; the agent, with restart, backoff and the parked state;
-`louhi-node`; the API with Lugh sign-in, project scopes and quota admission; `louhi-ctl`;
-and events on Lir.
+`louhi-node`; the API with Lugh sign-in, project scopes and quota admission; and
+`louhi-ctl`. Events on Lir are written and tested but wait for a released Lir client (see
+"Events on Lir").
 
 What it does not do yet:
 

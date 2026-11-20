@@ -5,12 +5,12 @@
 # Copyright (C) 2026 Tom Cully <mail@tomcully.com>
 # Licensed under the GNU GPLv3 - see <https://www.gnu.org/licenses/gpl-3.0.html>
 #
-# The CMake install rules say where everything goes; debian/louhi.install
-# names it. Dannan and Dagda are the installed packages (libdannan-dev,
+# The CMake install rules say where everything goes, straight into
+# debian/louhi. Dannan and Dagda are the installed packages (libdannan-dev,
 # libdagda-dev), so the binaries link their shared libraries. Lugh's client
 # has no package: it is fetched at its pinned commit and linked in statically,
 # from LOUHI_LUGH_REPOSITORY (tools/build-deb.sh sets it). Lir's client is
-# left out (LOUHI_BUILD_LIR off): the package publishes no events.
+# left out (LOUHI_BUILD_LIR off, as by default): no events.
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 

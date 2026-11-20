@@ -18,6 +18,7 @@
 
 #include "dannan/contract/thread_safety.h"
 #include "dannan/contract/time_source.h"
+#include "dannan/sched/retry.h"
 #include "dannan/status/log.h"
 #include "lugh/client/https.h"
 #include "lugh/client/oauth_client.h"
@@ -76,7 +77,9 @@ class ServiceToken : public std::enable_shared_from_this<ServiceToken> {
   boost::asio::strand<boost::asio::any_io_executor> _strand;
   After _after;
   std::unique_ptr<lugh::client::OAuthClient> _oauth;
-  std::chrono::milliseconds _backoff{0};
+  // Dannan's retry discipline, with no budget: a node never gives up on its
+  // token, as nothing but a token signs it in.
+  dannan::sched::RetryState _retries;
   bool _stopped = false;
 
   mutable dannan::contract::Mutex _mutex;

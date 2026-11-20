@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "dannan/contract/time_source.h"
+#include "dannan/sched/retry.h"
 #include "dannan/status/log.h"
 #include "louhi/agent/specs.h"
 #include "louhi/model/records.h"
@@ -82,10 +83,11 @@ struct Clock {
 
 struct Policy {
   SpecPolicy spec;
-  uint32_t restart_budget = 5;
-  std::chrono::milliseconds restart_window = std::chrono::minutes(10);
-  std::chrono::milliseconds first_backoff = std::chrono::seconds(1);
-  std::chrono::milliseconds max_backoff = std::chrono::minutes(1);
+  // A service's task relaunched: Dannan's retry discipline (backoff, a budget
+  // in a window, then parked). Its unbroken-run backstop is off: a task that
+  // runs between its exits is not failing unbroken, and a quiet window starts
+  // its backoff again.
+  dannan::sched::RetryPolicy restarts{5, std::chrono::minutes(10), std::chrono::seconds(1), std::chrono::minutes(1), std::chrono::milliseconds{0}};
   std::chrono::seconds stop_grace{10};
   runtime::Deadline call_deadline{30'000};
   runtime::Deadline pull_deadline{600'000};
@@ -125,11 +127,13 @@ class Agent : public std::enable_shared_from_this<Agent> {
 
   // What the agent keeps about a task between passes: only what paces it.
   struct Pacing {
-    uint32_t failures = 0;
+    // Launches that failed: backed off, never parked, since what fails a
+    // launch (a registry away, a pull refused) is not the task's doing.
+    dannan::sched::RetryState launches;
     std::optional<TimePoint> retry_at;
     std::string last_error;
-    std::deque<TimePoint> restarts;
-    uint32_t total_restarts = 0;
+    // A service task's exits, each a relaunch, against Policy::restarts.
+    dannan::sched::RetryState restarts;
     bool parked = false;
     std::string parked_reason;
     // A task run on its own that has finished; never launched again.
@@ -150,7 +154,8 @@ class Agent : public std::enable_shared_from_this<Agent> {
   Step start_created(std::vector<runtime::ContainerInfo> containers);
   Step report_step(const Assignment& assignment, model::TaskState state, std::string reason, std::vector<runtime::ContainerInfo> observed);
   void report(const Assignment& assignment, model::TaskState state, std::string reason, const std::vector<runtime::ContainerInfo>& observed);
-  std::chrono::milliseconds backoff(uint32_t attempt) const;
+  // Policy::restarts' backoff with no budget: a launch is never parked.
+  dannan::sched::RetryPolicy launch_policy() const;
   void wake_at(TimePoint when);
 
   runtime::Driver& _driver;

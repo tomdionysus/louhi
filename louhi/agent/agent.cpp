@@ -11,6 +11,7 @@
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/post.hpp>
 #include <iterator>
+#include <limits>
 #include <set>
 #include <utility>
 
@@ -142,7 +143,7 @@ void Agent::watch() {
         self->_watch.reset();
         if (self->_stopping) return;
         self->_logger.warn("lost the runtime's event stream (" + lost.message + "); watching again and re-listing");
-        self->_clock.after(self->_policy.first_backoff, [weak] {
+        self->_clock.after(self->_policy.restarts.initial_backoff, [weak] {
           if (auto again = weak.lock())
             asio::dispatch(again->_strand, [again] {
               again->watch();
@@ -195,14 +196,14 @@ void Agent::pass() {
     self->_driver.list(self->_policy.call_deadline, self->_strand, [self](Result<std::vector<ContainerInfo>> containers) {
       if (!containers.ok()) {
         self->_logger.warn("cannot list containers: " + containers.error().message);
-        self->wake_at(self->_clock.steady->now() + self->backoff(1));
+        self->wake_at(self->_clock.steady->now() + self->_policy.restarts.initial_backoff);
         return self->finish_pass();
       }
       self->_driver.list_volumes(self->_policy.call_deadline, self->_strand,
                                  [self, containers = std::move(containers.value())](Result<std::vector<runtime::VolumeInfo>> volumes) {
                                    if (!volumes.ok()) {
                                      self->_logger.warn("cannot list volumes: " + volumes.error().message);
-                                     self->wake_at(self->_clock.steady->now() + self->backoff(1));
+                                     self->wake_at(self->_clock.steady->now() + self->_policy.restarts.initial_backoff);
                                      return self->finish_pass();
                                    }
                                    auto steps = std::make_shared<std::vector<Step>>(self->plan(self->_desired.assignments(), containers, volumes.value()));
@@ -314,24 +315,24 @@ Agent::Step Agent::handle(const Assignment& a, std::vector<ContainerInfo> observ
       p.finished_reason = reason;
       return chain(teardown(running, {}, false), report_step(a, model::TaskState::stopped, reason, observed));
     }
-    while (!p.restarts.empty() && p.restarts.front() + _policy.restart_window < now) p.restarts.pop_front();
-    if (p.restarts.size() >= _policy.restart_budget) {
+    // A window gone quiet since the last exit starts the backoff again.
+    if (p.restarts.consecutive_failures() > 0 && now - p.restarts.last_failure() > _policy.restarts.failure_window) p.restarts.succeeded();
+    const auto delay = p.restarts.failed(_policy.restarts, now);
+    if (!delay) {
       p.parked = true;
-      p.parked_reason = "restarted " + std::to_string(p.restarts.size()) + " times within " +
-                        std::to_string(std::chrono::duration_cast<std::chrono::seconds>(_policy.restart_window).count()) + " seconds; last, " + reason;
+      p.parked_reason = "restarted " + std::to_string(p.restarts.failures_in_window() - 1) + " times within " +
+                        std::to_string(std::chrono::duration_cast<std::chrono::seconds>(_policy.restarts.failure_window).count()) + " seconds; last, " + reason;
       _logger.warn("parking task " + model::to_string(a.task.id) + ": " + p.parked_reason);
       return chain(teardown(running, {}, false), report_step(a, model::TaskState::parked, p.parked_reason, observed));
     }
-    p.restarts.push_back(now);
-    ++p.total_restarts;
-    p.retry_at = now + backoff(static_cast<uint32_t>(p.restarts.size()));
+    p.retry_at = now + *delay;
     wake_at(*p.retry_at);
     return chain(teardown(observed, {}, true), report_step(a, model::TaskState::pending, "restarting: " + reason, {}));
   }
 
   if (present == 0) {
     if (!_runtime) {
-      wake_at(now + backoff(1));
+      wake_at(now + _policy.restarts.initial_backoff);
       return report_step(a, model::TaskState::pending, "waiting to describe this node's runtime", {});
     }
     if (!_runtime->limits_memory && !_policy.allow_unenforced_memory) {
@@ -362,7 +363,7 @@ Agent::Step Agent::handle(const Assignment& a, std::vector<ContainerInfo> observ
 
   if (!created.empty()) return chain(start_created(created), report_step(a, model::TaskState::starting, "", observed));
 
-  p.failures = 0;
+  p.launches.succeeded();
   p.last_error.clear();
   p.retry_at.reset();
   return report_step(a, model::TaskState::running, "", observed);
@@ -392,9 +393,9 @@ Agent::Step Agent::launch(const Assignment& a) {
     // Any failure ends the launch; the next pass removes what it made.
     auto fail = [self, a, next](const runtime::Error& error) {
       Pacing& p = self->_pacing[a.task.id];
-      ++p.failures;
       p.last_error = truncated(error.message, 512);
-      p.retry_at = self->_clock.steady->now() + self->backoff(p.failures);
+      const auto now = self->_clock.steady->now();
+      p.retry_at = now + p.launches.failed(self->launch_policy(), now).value_or(self->_policy.restarts.max_backoff);
       self->wake_at(*p.retry_at);
       self->_logger.warn("launching task " + model::to_string(a.task.id) + " failed (" + runtime::kind_name(error.kind) + "): " + error.message);
       self->report(a, model::TaskState::pending, "launch failed: " + p.last_error, {});
@@ -519,7 +520,8 @@ void Agent::report(const Assignment& a, model::TaskState state, std::string reas
       container.name = name;
       container.state = state_of(c);
       if (container.state == model::ContainerState::exited) container.exit_code = c.exit_code;
-      container.restarts = p.total_restarts;
+      // Relaunches made: the exit that parked a task made none.
+      container.restarts = static_cast<uint32_t>(p.restarts.total_failures() - (p.parked ? 1 : 0));
       container.health = health_of(c);
       status.containers.push_back(std::move(container));
       if (c.started_unix_ms != 0 && (status.started_unix_ms == 0 || c.started_unix_ms < status.started_unix_ms)) status.started_unix_ms = c.started_unix_ms;
@@ -547,10 +549,14 @@ void Agent::report(const Assignment& a, model::TaskState state, std::string reas
   _reports.report(status);
 }
 
-std::chrono::milliseconds Agent::backoff(uint32_t attempt) const {
-  auto delay = _policy.first_backoff;
-  for (uint32_t i = 1; i < attempt && delay < _policy.max_backoff; ++i) delay *= 2;
-  return std::min(delay, _policy.max_backoff);
+dannan::sched::RetryPolicy Agent::launch_policy() const {
+  dannan::sched::RetryPolicy launches = _policy.restarts;
+  // The stack's never-parking form until Dannan names one: no budget, a window
+  // that remembers nothing, no run bound.
+  launches.max_failures_in_window = std::numeric_limits<size_t>::max();
+  launches.failure_window = std::chrono::milliseconds{1};
+  launches.max_failing_duration = std::chrono::milliseconds{0};
+  return launches;
 }
 
 void Agent::wake_at(TimePoint when) {

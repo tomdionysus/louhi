@@ -11,6 +11,7 @@
 #include <boost/json.hpp>
 #include <limits>
 
+#include "dannan/encoding/percent.h"
 #include "louhi/model/image.h"
 #include "louhi/runtime/labels.h"
 
@@ -267,21 +268,7 @@ std::string registry_auth(const RegistryCredential& credential, const std::strin
   return out;
 }
 
-std::string url_encode(std::string_view text) {
-  static constexpr char hex[] = "0123456789ABCDEF";
-  std::string out;
-  for (const char c : text) {
-    const auto b = static_cast<unsigned char>(c);
-    if ((b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '-' || b == '_' || b == '.' || b == '~') {
-      out.push_back(c);
-    } else {
-      out.push_back('%');
-      out.push_back(hex[b >> 4]);
-      out.push_back(hex[b & 0x0f]);
-    }
-  }
-  return out;
-}
+std::string url_encode(std::string_view text) { return dannan::encoding::percent_encode(text); }
 
 std::string louhi_filter() {
   json::object filters;

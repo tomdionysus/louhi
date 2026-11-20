@@ -117,10 +117,10 @@ struct AgentTest : ::testing::Test {
   test::Timers timers{time};
   Policy policy = [] {
     Policy p;
-    p.restart_budget = 3;
-    p.restart_window = std::chrono::minutes(10);
-    p.first_backoff = seconds(1);
-    p.max_backoff = seconds(8);
+    p.restarts.max_failures_in_window = 3;
+    p.restarts.failure_window = std::chrono::minutes(10);
+    p.restarts.initial_backoff = seconds(1);
+    p.restarts.max_backoff = seconds(8);
     return p;
   }();
   std::shared_ptr<Agent> agent;
@@ -286,6 +286,28 @@ TEST_F(AgentTest, PastItsBudgetAServiceTaskIsParkedUntilUnparked) {
   advance(seconds(1));
   EXPECT_EQ(driver.named(container(1, "app"))->info.state, runtime::ContainerState::running);
   EXPECT_EQ(reports.last().state, model::TaskState::running);
+}
+
+// Exits a window apart are not a crash loop: the backoff starts again at its
+// first step, and the budget counts only the window's exits.
+TEST_F(AgentTest, AfterAQuietWindowAServiceTaskStartsItsBackoffAgain) {
+  desired.set({assignment(1)});
+  start();
+  for (const auto wait : {seconds(1), seconds(2)}) {
+    driver.exit(id_of(1, "app"), 1);
+    settle();
+    advance(wait);
+    ASSERT_TRUE(driver.named(container(1, "app"))) << "relaunched after " << wait.count() << "s";
+  }
+  advance(std::chrono::minutes(11));
+  for (int again = 0; again < 3; ++again) {
+    driver.exit(id_of(1, "app"), 1);
+    settle();
+    EXPECT_EQ(reports.last().state, model::TaskState::pending) << "exit " << again << " of a fresh window";
+    advance(seconds(1) * (1 << again));
+    ASSERT_TRUE(driver.named(container(1, "app"))) << "relaunched after " << (1 << again) << "s, exit " << again;
+  }
+  EXPECT_EQ(reports.last().containers[0].restarts, 5u);
 }
 
 TEST_F(AgentTest, AFailedLaunchIsReportedAndRetriedAfterABackoff) {

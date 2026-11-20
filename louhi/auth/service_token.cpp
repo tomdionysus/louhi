@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <boost/asio/post.hpp>
 #include <boost/json.hpp>
+#include <limits>
 #include <stdexcept>
 
 namespace louhi::auth {
@@ -21,8 +22,9 @@ namespace json = boost::json;
 using namespace std::chrono_literals;
 using Method = lugh::client::ClientIdentity::Method;
 
-constexpr std::chrono::milliseconds first_backoff = 5s;
-constexpr std::chrono::milliseconds most_backoff = 5min;
+// From 5 s to 5 min, never parked: the stack's never-parking form until
+// Dannan names one (no budget, a window that remembers nothing, no run bound).
+constexpr dannan::sched::RetryPolicy retry_policy{std::numeric_limits<size_t>::max(), 1ms, 5s, 5min, 0ms};
 constexpr std::chrono::milliseconds least_refresh = 10s;
 constexpr std::chrono::milliseconds step_deadline = 30s;
 
@@ -77,8 +79,10 @@ void ServiceToken::later(std::chrono::milliseconds delay) {
 }
 
 void ServiceToken::retry() {
-  _backoff = _backoff.count() == 0 ? first_backoff : std::min(_backoff * 2, most_backoff);
-  later(_backoff);
+  // With no budget and no run bound the policy reads no time but the
+  // failure's own stamp: the wall clock's is as good as any.
+  const dannan::contract::TimePoint now(std::chrono::milliseconds(_wall.unix_ms()));
+  later(_retries.failed(retry_policy, now).value_or(retry_policy.max_backoff));
 }
 
 void ServiceToken::fetch() {
@@ -120,7 +124,7 @@ void ServiceToken::fetch() {
       dannan::contract::Lock lock(self->_mutex);
       self->_token = std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     }
-    self->_backoff = std::chrono::milliseconds(0);
+    self->_retries.succeeded();
     const auto life = std::chrono::milliseconds(std::chrono::seconds(got.value.expires_in));
     self->later(std::max(least_refresh, life * 2 / 3));
   });

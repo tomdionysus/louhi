@@ -64,26 +64,33 @@ class Simulation {
   using Report = std::function<bool(bool finished)>;
   using Call = std::function<void(Registers&, Report)>;
   void until_finished(Call call) {
+    // The simulation owns each attempt; what it schedules holds it weakly, so
+    // nothing keeps itself alive past the simulation.
     auto attempt = std::make_shared<std::function<void()>>();
+    _attempts.push_back(attempt);
+    std::weak_ptr<std::function<void()>> again = attempt;
     auto finished = std::make_shared<bool>(false);
     auto round = std::make_shared<uint64_t>(0);
-    *attempt = [this, call, attempt, finished, round] {
+    *attempt = [this, call, again, finished, round] {
       if (*finished) return;
       const uint64_t mine = ++*round;
       auto registers = std::make_shared<AgreementRegisters>(
           cluster.agreement(any_up()), [this](dannan::agree::Slot) { return Serving{cluster.ids(), Cluster::genesis_version}; }, Cluster::space);
-      call(*registers, [this, attempt, finished, round, mine, registers](bool done) {
+      call(*registers, [this, again, finished, round, mine, registers](bool done) {
         if (*finished || *round != mine) return false;
         if (done) {
           *finished = true;
           return true;
         }
-        world.after(50 + world.random.below(100), *attempt);
+        world.after(50 + world.random.below(100), [again] {
+          if (const auto next = again.lock()) (*next)();
+        });
         return true;
       });
       // A node that crashes drops what it was asked: ask again past the deadline.
-      world.after(2'500, [attempt, finished, round, mine] {
-        if (!*finished && *round == mine) (*attempt)();
+      world.after(2'500, [again, finished, round, mine] {
+        if (*finished || *round != mine) return;
+        if (const auto next = again.lock()) (*next)();
       });
     };
     (*attempt)();
@@ -125,6 +132,7 @@ class Simulation {
   }
 
   std::vector<std::shared_ptr<bool>> _finished;
+  std::vector<std::shared_ptr<std::function<void()>>> _attempts;
 };
 
 RequestId request_numbered(size_t n) {

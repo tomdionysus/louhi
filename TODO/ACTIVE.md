@@ -49,9 +49,12 @@ until Dagda and Lugh release on it (one Dannan a process). Its CHANGELOG's
 - When the node's config or logging is next touched: the stack's log
   settings, `log.level` (all, debug, info, warn, error;
   `dannan::status::parse_log_level`) and `log.format` (text, json;
-  `parse_log_format`), read through `dannan::config`. Flags and
-  environment keep the same names (`--log-level`, `LOUHI_LOG_LEVEL`) only
-  while those layers exist, which is still open with the maintainer.
+  `parse_log_format`), read through `dannan::config`. The maintainer's
+  ruling (2026-11-20): YAML is the source of truth, and flags and
+  environment variables override any key through `dannan::config`, named
+  by one pattern: key `a.b` is `--a-b` and `LOUHI_A_B` (`log.level` is
+  `--log-level` and `LOUHI_LOG_LEVEL`). Check every existing flag of
+  `louhi-node` and `louhi-ctl` against its YAML key by that pattern.
 - CI: asan and tsan steps set `DANNAN_SANITIZE`, and the symbol check
   (`nm -D --undefined-only`) runs in them.
 Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`, Lir `e40dd2e` (opt-in)

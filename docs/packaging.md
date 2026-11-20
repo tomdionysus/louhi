@@ -25,8 +25,9 @@ CMake install rules decide where every file goes.
 - `libdannan0.9` (at least 0.9.2) and `libdagda0.3.2`, the shared libraries of
   Dannan's and Dagda's packages, through `${shlibs:Depends}`. Neither is
   bundled. Building needs `libdannan-dev` and `libdagda-dev`.
-- Lugh's client has no package. It is fetched at the commit `CMakeLists.txt`
-  pins and linked into both binaries as a static library.
+- Lugh's client has no package (Lugh 0.2.0 packages only its node). It is
+  fetched at Lugh's `0.2.0` tag and linked into both binaries as a static
+  library.
 - Louhi's own library is static too, as Manannan's core is: nothing but the
   two binaries links it, so it is never installed.
 - Docker is recommended (`docker.io` or `docker-ce`) rather than required, so

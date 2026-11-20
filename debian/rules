@@ -8,7 +8,7 @@
 # The CMake install rules say where everything goes, straight into
 # debian/louhi. Dannan and Dagda are the installed packages (libdannan-dev,
 # libdagda-dev), so the binaries link their shared libraries. Lugh's client
-# has no package: it is fetched at its pinned commit and linked in statically,
+# has no package: it is fetched at its release tag and linked in statically,
 # from LOUHI_LUGH_REPOSITORY (tools/build-deb.sh sets it). Lir's client is
 # left out (LOUHI_BUILD_LIR off, as by default): no events.
 

@@ -41,6 +41,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   check(bytes, decode_task);
   check(bytes, decode_task_status);
   check(bytes, decode_node_status);
+  check(bytes, decode_vpc);
+  check(bytes, decode_subnet);
+  check(bytes, decode_route_table);
+  check(bytes, decode_security_group);
   try {
     peek_kind(bytes);
   } catch (const DecodeError&) {

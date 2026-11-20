@@ -56,4 +56,22 @@ std::string tasks_prefix(std::string_view project) { return project.empty() ? st
 
 std::string task_statuses_prefix(const TaskId& task) { return "taskstatus/" + to_string(task) + "/"; }
 
+std::string key(const Vpc& record) { return "vpc/" + named("project", record.project) + "/" + named("vpc", record.name); }
+
+std::string key(const Subnet& record) { return subnets_prefix(record.project, record.vpc) + named("subnet", record.name); }
+
+std::string key(const RouteTable& record) { return route_tables_prefix(record.project, record.vpc) + named("route table", record.name); }
+
+std::string key(const SecurityGroup& record) { return security_groups_prefix(record.project, record.vpc) + named("security group", record.name); }
+
+std::string subnets_prefix(std::string_view project, std::string_view vpc) { return "subnet/" + named("project", project) + "/" + named("vpc", vpc) + "/"; }
+
+std::string route_tables_prefix(std::string_view project, std::string_view vpc) {
+  return "routetable/" + named("project", project) + "/" + named("vpc", vpc) + "/";
+}
+
+std::string security_groups_prefix(std::string_view project, std::string_view vpc) {
+  return "securitygroup/" + named("project", project) + "/" + named("vpc", vpc) + "/";
+}
+
 }  // namespace louhi::model

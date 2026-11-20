@@ -4,6 +4,46 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## Networking groundwork: the network records, security groups as nftables (2026-11-20)
+
+The design first ("The network records and security groups in detail"),
+then the tests, then the code; on `feature/network-records`, squashed onto
+develop (the maintainer's word to the stack: features on branches, squashed).
+
+- `model/network.h`: Vpc, Subnet, RouteTable and SecurityGroup, with
+  their checks. Ranges are IPv4 with no host bits, parsed by Dannan's
+  `listen::Prefix` with one spelling each; a VPC or subnet is /16 to /28.
+  `check_subnet` (inside its VPC, overlapping no sibling, the sibling
+  named) and `check_route_table` (no route inside the VPC's range, which
+  is local) need other records, so they are checks apart from
+  `validate()`. `route()` is local first, then the longest prefix.
+  A security rule is any, tcp, udp or icmp, ports only for tcp and udp,
+  exactly one peer, a range or a group.
+- Codecs for the four (kinds 8 to 11, format version unchanged), keys
+  under `vpc/`, `subnet/`, `routetable/` and `securitygroup/` by project
+  and VPC, and the `record` fuzz target over the new decoders.
+- `net/firewall.h`: `resolve()` turns a task's groups into rules with every
+  peer a range (a group peer is its members, one with none matches
+  nothing); `render()` writes one nftables table of the task's own,
+  replaced whole (add, delete, define), on its host-side interface:
+  established and related accepted, invalid dropped, the rules accepted,
+  the rest dropped, each direction alone. Interface names are checked, so
+  no record writes into the rules. `Firewall` is the interface the `nft`
+  driver will implement with the task namespaces (step 9).
+- Found by the first run: the design's own rule refused a default route
+  (`0.0.0.0/0` overlaps every VPC). The rule is AWS's: a route may not lie
+  inside the VPC's range. Fixed in the design, the check and its test. A
+  codec test used kind 8 as its unknown kind; it now uses 12 and 255.
+
+Gate on node-c: **318 passed**, none skipped (302 before). Before
+the merge (the maintainer: sanitizers on a feature's completion), on node-b:
+ASan with UBSan **317 passed, 1 skipped**, TSan **317 passed, 1 skipped**
+(`DockerDriverTest.ADiskVolumesSizeIsKeptWhereStorageIsBounded`: node-b's
+Docker is on ext4, which cannot bound storage). The first TSan build
+stopped in Lugh's client, whose warnings are errors by default while g++
+warns inside Asio under `-fsanitize=thread`; a fetched Lugh's warnings are
+now errors only where Louhi's are (develop `6971f64`).
+
 ## The stack's audits: what Louhi moved first (2026-11-20)
 
 the maintainer's two audits (no duplicated functionality; no special node) were

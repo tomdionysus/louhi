@@ -132,7 +132,10 @@ TEST(Codec, PeekRefusesUnknownKindsAndShortBytes) {
   EXPECT_THROW(peek_kind(Bytes{}), DecodeError);
   EXPECT_THROW(peek_kind(Bytes{1}), DecodeError);
   EXPECT_THROW(peek_kind(Bytes{0, 1}), DecodeError);
-  EXPECT_THROW(peek_kind(Bytes{8, 1}), DecodeError);
+  // The first kind past those this build knows (the network records took 8
+  // to 11).
+  EXPECT_THROW(peek_kind(Bytes{12, 1}), DecodeError);
+  EXPECT_THROW(peek_kind(Bytes{255, 1}), DecodeError);
 }
 
 TEST(Codec, AKindIsNeverReadAsAnother) {

@@ -283,6 +283,47 @@ everything that keys on an address also keys on the VPC: a connection
 tracking zone per VPC for the security groups, and a VPC identifier on
 every packet carried between nodes.
 
+#### The network records and security groups in detail (groundwork, 2026-11-20)
+
+The parts of steps 9 and 10 that need no agreement: the records, their
+checks, routing as a function, and a security group as nftables rules.
+Nothing here gives out an address or places anything.
+
+- **Addresses are IPv4 for now**, each range a prefix with no host bits set,
+  written as `10.0.0.0/16`, parsed by Dannan's `listen::Prefix` (rule 3;
+  the host-bit check moves into it when Dannan takes Lugh's additions).
+- **Vpc**: a project's name, a range from /16 to /28, a description. Two
+  VPCs may overlap.
+- **Subnet**: in one VPC, a range inside the VPC's, /16 to /28, and the
+  route table it uses by name (none: the VPC's own range only). Two
+  subnets of a VPC must not overlap; that is checked against the subnets
+  the checking node sees (`check_subnet`), since it needs other records,
+  and two made at once in a partition are a later step's (agreement).
+- **RouteTable**: in one VPC, up to 50 routes, each a destination range and
+  a target, a gateway by name. Every table holds the VPC's own range as
+  local, implicitly; a route may not lie inside it (one holding it, as a
+  default route does, is allowed, and local still wins by its longer
+  prefix). A destination is routed by
+  the longest prefix that holds it (`route`): local, a gateway, or none.
+- **SecurityGroup**: in one VPC, up to 60 ingress and 60 egress rules, each
+  a protocol (any, tcp, udp, icmp), a port range for tcp and udp, and one
+  peer: a range or another group of the VPC by name (its members'
+  addresses). Allow rules only, stateful: what is not allowed is dropped,
+  and an answer to what was allowed is let through.
+- **Rendering.** A task's groups become one nftables table of its own,
+  `inet louhi_<host interface>`, built by a pure function from the groups
+  with every group peer resolved to addresses (`resolve`, then `render`),
+  so it is tested as text and replaced whole. On the task's host-side
+  interface: established and related traffic accepted, invalid dropped,
+  the allowed rules accepted, the rest dropped, each direction alone.
+  A group peer with no members matches nothing. Interface names are
+  checked (at most 15 letters, digits and '-'), so no record can put text
+  into the rules. Connection-tracking zones are per VPC and belong to the
+  VPC's own devices (step 9), not to a task's table. Applying it sits
+  behind `net::Firewall`; the driver that runs `nft` comes with the task
+  namespaces (step 9), which change a node and need the maintainer's go-ahead on the
+  Pis.
+
 **The carrier**, two paths per pair of nodes (the maintainer: kernel when direct,
 Dannan otherwise), behind one interface, `net::Carrier`:
 

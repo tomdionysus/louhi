@@ -13,8 +13,19 @@ under way: Dagda fetched; revision and admission registers (`louhi::admit`)
 built and tested on Dannan's simulation harness, not yet called by the API.
 Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `dbb0573`, Lir `6268fef`
 (2026-11-20).
-Last gate: **302 passed**, none skipped, on node-c (2026-11-20),
-Docker on xfs with user namespaces.
+Last gate: **318 passed**, none skipped, on node-c (2026-11-20),
+Docker on xfs with user namespaces, on `feature/network-records` (the
+network records and security groups as nftables), which squashes onto
+develop once ASan and TSan have run on it once each (the maintainer, 2026-11-20:
+sanitizers on a feature's completion, before the merge).
+
+**the maintainer's working rules for the stack (2026-11-20):** features and milestones
+on `feature/<name>` branches, squashed onto develop when done; every build
+and test on the cluster; ASan and TSan on a feature's completion before
+its merge, or to hunt a bug nothing else found; test once; no mutants
+unless the change is small or high risk; no flaky test tolerated; commit
+and push at any time; settle cross-project questions with the other
+sessions by the stack's goals before asking the maintainer.
 
 **The stack's converged plan** (the maintainer's audits, 2026-11-20) gives Louhi its
 list: `../lir-develop-cluster/TODO/2026-11-20-cluster-stack-placement.md`,
@@ -27,8 +38,8 @@ and the maintainer's HTTP question (`api/client.cpp` moves then). Dannan's next 
 has not started: the maintainer told Dannan to stop until he has answered the other
 agents' issues (2026-11-20). Gateways and ingress
 go on any node with public reach, settled by a register, not on nodes the
-operator marks (settled by the goals; the design's Networking section is
-to say so when step 12 is designed).
+operator marks (settled by the goals; written into the design's
+Networking section).
 
 **Read first:** the design, [`2026-11-15-louhi-design.md`](2026-11-15-louhi-design.md);
 then this file's Decisions. the maintainer's standing instruction: work autonomously
@@ -49,8 +60,9 @@ step per session.
 - Which Pi: node-b or node-c. Not node-d until the maintainer says it is sound
   (under-voltage, 4 GB). node-a builds now (it has ninja) but hosts the
   board and reports under-voltage: last choice.
-- Sanitizers run only for a release or to hunt a named bug, never as a
-  step's gate (the maintainer; repeated to every session 2026-11-17).
+- Sanitizers (ASan, TSan) run once each when a feature or milestone is
+  complete, before it is squashed onto develop, or to hunt a bug nothing
+  else found (the maintainer, 2026-11-20, replacing the rule of 2026-11-17).
 - The claim board's hook counts any package install or `mkfs` over ssh as
   heavy: claim at least one core first. One board wait per session; a
   second `claim-board wait` replaces the first. When another session's
@@ -179,12 +191,13 @@ step per session.
      slots** (`Serving`), which goes to the maintainer with a recommendation when
      the store is there: the tests use the simulation's genesis set;
    - the Dagda store on the register map, when Dagda releases it.
-1. **Networking groundwork** (the maintainer, 2026-11-16), the parts of steps 9 and
-   10 that need no agreement: Subnet, RouteTable and SecurityGroup records
-   and codecs; a security group rendered to nftables rules as a pure
-   function, behind an interface, tested against fakes; a task's network
-   namespace on one node. Nothing that allocates addresses or places across
-   nodes; anything near that line goes to the maintainer first.
+1. **Networking groundwork** (the maintainer, 2026-11-16). Done: the network records
+   and security groups as nftables (COMPLETED.md). Left: a task's network
+   namespace on one node, with the `nft` driver behind `net::Firewall`.
+   On a Pi that creates namespaces and loads nftables rules, so it needs
+   the maintainer's go-ahead, a note on the board, and everything removed after
+   (`CLAUDE.local.md`). Nothing that allocates addresses or places across
+   nodes.
 2. **Steps 6 and 7, and the rest of step 9**, on Dannan's agreement
    registers (`Context::agreement()`, in the pinned Dannan): placement,
    then services, then address allocation, on the same Dagda

@@ -25,7 +25,9 @@ add_library(louhi SHARED
   model/image.cpp
   model/keys.cpp
   model/names.cpp
+  model/network.cpp
   model/records.cpp
+  net/firewall.cpp
   node/status.cpp
   runtime/docker/api.cpp
   runtime/docker/docker_driver.cpp

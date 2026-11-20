@@ -11,6 +11,7 @@
 #include <span>
 
 #include "dannan/net/codec.h"
+#include "louhi/model/network.h"
 #include "louhi/model/records.h"
 
 // Each record's bytes, in Dannan's encoding (big-endian integers, a string as
@@ -38,6 +39,10 @@ enum class Kind : uint8_t {
   task = 5,
   task_status = 6,
   node_status = 7,
+  vpc = 8,
+  subnet = 9,
+  route_table = 10,
+  security_group = 11,
 };
 
 // The format version every kind is written in by this build. 2: a task
@@ -56,6 +61,10 @@ Bytes encode(const Service& record);
 Bytes encode(const Task& record);
 Bytes encode(const TaskStatus& record);
 Bytes encode(const NodeStatus& record);
+Bytes encode(const Vpc& record);
+Bytes encode(const Subnet& record);
+Bytes encode(const RouteTable& record);
+Bytes encode(const SecurityGroup& record);
 
 Project decode_project(std::span<const uint8_t> bytes);
 Quota decode_quota(std::span<const uint8_t> bytes);
@@ -64,5 +73,9 @@ Service decode_service(std::span<const uint8_t> bytes);
 Task decode_task(std::span<const uint8_t> bytes);
 TaskStatus decode_task_status(std::span<const uint8_t> bytes);
 NodeStatus decode_node_status(std::span<const uint8_t> bytes);
+Vpc decode_vpc(std::span<const uint8_t> bytes);
+Subnet decode_subnet(std::span<const uint8_t> bytes);
+RouteTable decode_route_table(std::span<const uint8_t> bytes);
+SecurityGroup decode_security_group(std::span<const uint8_t> bytes);
 
 }  // namespace louhi::model

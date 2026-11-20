@@ -195,7 +195,7 @@ ContainerDefinition get_container(Reader& reader) {
 
 Kind peek_kind(std::span<const uint8_t> bytes) {
   if (bytes.size() < 2) throw DecodeError("record is too short to have a kind");
-  if (bytes[0] < static_cast<uint8_t>(Kind::project) || bytes[0] > static_cast<uint8_t>(Kind::node_status))
+  if (bytes[0] < static_cast<uint8_t>(Kind::project) || bytes[0] > static_cast<uint8_t>(Kind::security_group))
     throw DecodeError("record kind is not one this build knows");
   return static_cast<Kind>(bytes[0]);
 }
@@ -445,6 +445,146 @@ NodeStatus decode_node_status(std::span<const uint8_t> bytes) {
   record.ready = get_bool(reader);
   record.conditions = get_strings(reader, max_conditions, max_condition);
   record.observed_unix_ms = reader.u64();
+  return end_record(reader, std::move(record));
+}
+
+namespace {
+
+void put_rules(Writer& writer, const std::vector<SecurityRule>& rules) {
+  put_count(writer, rules.size());
+  for (const auto& r : rules) {
+    put_enum(writer, r.protocol);
+    writer.u16(r.port_from);
+    writer.u16(r.port_to);
+    writer.string(r.cidr);
+    writer.string(r.group);
+  }
+}
+
+std::vector<SecurityRule> get_rules(Reader& reader) {
+  const size_t count = get_count(reader, max_security_rules);
+  std::vector<SecurityRule> rules;
+  rules.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    SecurityRule r;
+    r.protocol = get_enum(reader, RuleProtocol::any, RuleProtocol::icmp);
+    r.port_from = reader.u16();
+    r.port_to = reader.u16();
+    r.cidr = reader.string(max_range_text);
+    r.group = reader.string(max_name);
+    rules.push_back(std::move(r));
+  }
+  return rules;
+}
+
+}  // namespace
+
+Bytes encode(const Vpc& record) {
+  record.validate();
+  Writer writer = begin_record(Kind::vpc);
+  writer.string(record.project);
+  writer.string(record.name);
+  writer.string(record.cidr);
+  writer.string(record.description);
+  writer.u64(record.created_unix_ms);
+  return writer.take();
+}
+
+Vpc decode_vpc(std::span<const uint8_t> bytes) {
+  Reader reader(bytes);
+  expect(reader, Kind::vpc);
+  Vpc record;
+  record.project = reader.string(max_name);
+  record.name = reader.string(max_name);
+  record.cidr = reader.string(max_range_text);
+  record.description = reader.string(max_description);
+  record.created_unix_ms = reader.u64();
+  return end_record(reader, std::move(record));
+}
+
+Bytes encode(const Subnet& record) {
+  record.validate();
+  Writer writer = begin_record(Kind::subnet);
+  writer.string(record.project);
+  writer.string(record.vpc);
+  writer.string(record.name);
+  writer.string(record.cidr);
+  writer.string(record.route_table);
+  writer.u64(record.created_unix_ms);
+  return writer.take();
+}
+
+Subnet decode_subnet(std::span<const uint8_t> bytes) {
+  Reader reader(bytes);
+  expect(reader, Kind::subnet);
+  Subnet record;
+  record.project = reader.string(max_name);
+  record.vpc = reader.string(max_name);
+  record.name = reader.string(max_name);
+  record.cidr = reader.string(max_range_text);
+  record.route_table = reader.string(max_name);
+  record.created_unix_ms = reader.u64();
+  return end_record(reader, std::move(record));
+}
+
+Bytes encode(const RouteTable& record) {
+  record.validate();
+  Writer writer = begin_record(Kind::route_table);
+  writer.string(record.project);
+  writer.string(record.vpc);
+  writer.string(record.name);
+  put_count(writer, record.routes.size());
+  for (const auto& r : record.routes) {
+    writer.string(r.destination);
+    writer.string(r.gateway);
+  }
+  writer.u64(record.updated_unix_ms);
+  return writer.take();
+}
+
+RouteTable decode_route_table(std::span<const uint8_t> bytes) {
+  Reader reader(bytes);
+  expect(reader, Kind::route_table);
+  RouteTable record;
+  record.project = reader.string(max_name);
+  record.vpc = reader.string(max_name);
+  record.name = reader.string(max_name);
+  const size_t count = get_count(reader, max_routes);
+  record.routes.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    Route r;
+    r.destination = reader.string(max_range_text);
+    r.gateway = reader.string(max_name);
+    record.routes.push_back(std::move(r));
+  }
+  record.updated_unix_ms = reader.u64();
+  return end_record(reader, std::move(record));
+}
+
+Bytes encode(const SecurityGroup& record) {
+  record.validate();
+  Writer writer = begin_record(Kind::security_group);
+  writer.string(record.project);
+  writer.string(record.vpc);
+  writer.string(record.name);
+  writer.string(record.description);
+  put_rules(writer, record.ingress);
+  put_rules(writer, record.egress);
+  writer.u64(record.updated_unix_ms);
+  return writer.take();
+}
+
+SecurityGroup decode_security_group(std::span<const uint8_t> bytes) {
+  Reader reader(bytes);
+  expect(reader, Kind::security_group);
+  SecurityGroup record;
+  record.project = reader.string(max_name);
+  record.vpc = reader.string(max_name);
+  record.name = reader.string(max_name);
+  record.description = reader.string(max_description);
+  record.ingress = get_rules(reader);
+  record.egress = get_rules(reader);
+  record.updated_unix_ms = reader.u64();
   return end_record(reader, std::move(record));
 }
 

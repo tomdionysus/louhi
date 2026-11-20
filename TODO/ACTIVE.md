@@ -364,7 +364,7 @@ history is in git.
   by its `ephemeral_storage_mib`, shared equally, through xfs project
   quotas. Scratch volumes come in two kinds: memory (tmpfs, counted in the
   task's memory) and disk (quota-bounded).
-- **Dannan pin (2026-11-16):** moved once from `0.8.3` to the 0.9 line,
+- **Dannan pin (2026-11-16):** moved once from `0.8.3` to `0.9.0` and its patches,
   with Lugh and Lir (done 2026-11-20, at 0.9.2).
 - **Retiring a node (2026-11-17):** `louhi-node --retire`, the same
   command as `lir-node`'s.

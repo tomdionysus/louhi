@@ -14,6 +14,7 @@
 #   tools/ci.sh asan       AddressSanitizer and UndefinedBehaviorSanitizer
 #   tools/ci.sh tsan       ThreadSanitizer, with Dannan's suppressions
 #   tools/ci.sh coverage   a coverage build's tests; lcov report build-ci/coverage.info
+#   tools/ci.sh fuzz       the four fuzz targets, LOUHI_FUZZ_SECONDS (60) each
 #
 # Builds go under build-ci/ (LOUHI_CI_OUT to move it), one job per CPU
 # (LOUHI_CI_JOBS to set it: 2 on the shared Pis). Dannan is fetched at the
@@ -121,8 +122,20 @@ case "$step" in
     rm "$out/all.info" "$out/library.info"
     lcov --summary "$out/coverage.info" --ignore-errors "$ignore"
     ;;
+  fuzz)
+    # Everything instrumented for libFuzzer, so the parsers guide it, not only
+    # the harnesses; each target run LOUHI_FUZZ_SECONDS (60) from its corpus.
+    # Needs clang with its runtime (libclang-rt-19-dev on Debian 13).
+    flags="-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer"
+    CXX=clang++ configure fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLOUHI_WARNINGS_AS_ERRORS=OFF -DLOUHI_BUILD_FUZZING=ON -DCMAKE_CXX_FLAGS="$flags" \
+      -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+    for target in record image_reference docker_reply api_body; do
+      mkdir -p "$out/fuzz/corpus/$target"
+      "$out/fuzz/${target}_fuzz" -max_total_time="${LOUHI_FUZZ_SECONDS:-60}" -print_final_stats=1 "$out/fuzz/corpus/$target"
+    done
+    ;;
   *)
-    echo "usage: tools/ci.sh check|release|clang|asan|tsan|coverage" >&2
+    echo "usage: tools/ci.sh check|release|clang|asan|tsan|coverage|fuzz" >&2
     exit 2
     ;;
 esac

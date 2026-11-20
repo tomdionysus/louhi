@@ -53,7 +53,10 @@ until Dagda and Lugh release on it (one Dannan a process). Its CHANGELOG's
   ruling (2026-11-20): YAML is the source of truth, and flags and
   environment variables override any key through `dannan::config`, named
   by one pattern: key `a.b` is `--a-b` and `LOUHI_A_B` (`log.level` is
-  `--log-level` and `LOUHI_LOG_LEVEL`). Check every existing flag of
+  `--log-level` and `LOUHI_LOG_LEVEL`). The reference is Dannan's
+  `docs/config.md` (develop `cb4598f`): layer order defaults, YAML,
+  `secrets.yaml`, environment, command line; the naming rule; the shared
+  keys. Check every existing flag of
   `louhi-node` and `louhi-ctl` against its YAML key by that pattern.
 - CI: asan and tsan steps set `DANNAN_SANITIZE`, and the symbol check
   (`nm -D --undefined-only`) runs in them.

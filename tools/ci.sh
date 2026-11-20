@@ -14,6 +14,7 @@
 #   tools/ci.sh asan       AddressSanitizer and UndefinedBehaviorSanitizer
 #   tools/ci.sh tsan       ThreadSanitizer, with Dannan's suppressions
 #   tools/ci.sh coverage   a coverage build's tests; lcov report build-ci/coverage.info
+#   tools/ci.sh tidy       clang-tidy's use-after-move over Louhi's sources
 #   tools/ci.sh fuzz       the four fuzz targets, LOUHI_FUZZ_SECONDS (60) each
 #
 # Builds go under build-ci/ (LOUHI_CI_OUT to move it), one job per CPU
@@ -122,6 +123,17 @@ case "$step" in
     rm "$out/all.info" "$out/library.info"
     lcov --summary "$out/coverage.info" --ignore-errors "$ignore"
     ;;
+  tidy)
+    # clang-tidy's use-after-move over Louhi's own sources, warnings as
+    # errors: GCC evaluates arguments right to left on x86-64, so a value used
+    # beside its own move in one call is empty on one platform and not on
+    # another (found in Lugh, 2026-11-20).
+    CXX=clang++ cmake -S "$top" -B "$out/tidy" -G Ninja -DLOUHI_BUILD_TESTING=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" \
+      -DLOUHI_LIR_REPOSITORY="$LOUHI_LIR_REPOSITORY" $siblings
+    # Configuring writes every generated header; nothing is compiled.
+    files=$(cd "$top" && git ls-files 'louhi/*.cpp' 'tools/*.cpp' | sed "s|^|$top/|")
+    clang-tidy -p "$out/tidy" --quiet -checks='-*,bugprone-use-after-move' -warnings-as-errors='*' $files
+    ;;
   fuzz)
     # Everything instrumented for libFuzzer, so the parsers guide it, not only
     # the harnesses; each target run LOUHI_FUZZ_SECONDS (60) from its corpus.
@@ -135,7 +147,7 @@ case "$step" in
     done
     ;;
   *)
-    echo "usage: tools/ci.sh check|release|clang|asan|tsan|coverage|fuzz" >&2
+    echo "usage: tools/ci.sh check|release|clang|asan|tsan|coverage|tidy|fuzz" >&2
     exit 2
     ;;
 esac

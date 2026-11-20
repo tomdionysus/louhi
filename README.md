@@ -4,6 +4,9 @@
 [![codecov](https://codecov.io/gh/tomdionysus/louhi/graph/badge.svg)](https://codecov.io/gh/tomdionysus/louhi)
 [![CodeQL](https://github.com/tomdionysus/louhi/actions/workflows/codeql.yml/badge.svg)](https://github.com/tomdionysus/louhi/actions/workflows/codeql.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![Platform: Linux](https://img.shields.io/badge/platform-Linux-lightgrey.svg)](#)
+[![Last commit](https://img.shields.io/github/last-commit/tomdionysus/louhi/develop.svg)](https://github.com/tomdionysus/louhi/commits/develop)
 
 Louhi is container compute for a cluster of machines you own, in the style of ECS and
 Fargate. It is a C++20 library and a node binary: describe a task (its containers, images,

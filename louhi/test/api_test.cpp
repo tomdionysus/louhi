@@ -33,6 +33,7 @@
 #include "louhi/store/memory_store.h"
 #include "louhi/test/fixtures/fake_driver.h"
 #include "louhi/test/fixtures/records.h"
+#include "louhi/version.h"
 
 using namespace louhi;
 namespace asio = boost::asio;
@@ -48,7 +49,8 @@ class HeldStore final : public store::Store {
  public:
   bool hold = false;
   bool fail = false;
-  bool ready() const override { return _inner.ready(); }
+  bool unready = false;
+  bool ready() const override { return !unready && _inner.ready(); }
   std::optional<store::Bytes> get(const std::string& key) const override { return _inner.get(key); }
   std::vector<std::pair<std::string, store::Bytes>> list(const std::string& prefix) const override { return _inner.list(prefix); }
   void put(const std::string& key, store::Bytes value, store::Deadline deadline, store::Executor executor, store::Completion<store::Done> done) override {
@@ -441,4 +443,82 @@ TEST_F(ApiTest, ABodyThatIsNotJsonIsInvalid) {
   auto r = call(admin, "PUT", "/v1/projects/web/quota", "{not json");
   EXPECT_EQ(r.status, 400u);
   EXPECT_EQ(code(r), "invalid");
+}
+
+// Every route's scope comes from the route table and is checked before its
+// handler runs: a token without it is refused with the scope named, and one
+// holding only another project's scopes learns nothing of this one.
+TEST_F(ApiTest, EveryRoutesScopeIsCheckedFromTheTable) {
+  const auto other = grant_of({"louhi:batch:*"});
+  for (const api::Route& route : api::routes()) {
+    std::string path(route.path);
+    for (const auto& [name, value] : std::vector<std::pair<std::string, std::string>>{
+             {"{project}", "web"}, {"{family}", "frontend"}, {"{revision}", "1"}, {"{task}", std::string(32, '0')}})
+      if (const auto at = path.find(name); at != std::string::npos) path.replace(at, name.size(), value);
+    const auto r = call(other, std::string(route.method), path, "{}");
+    if (route.scope == api::Scope::any) {
+      EXPECT_NE(r.status, 403u) << route.method << " " << path;
+      continue;
+    }
+    EXPECT_EQ(r.status, 403u) << route.method << " " << path;
+    EXPECT_EQ(code(r), "forbidden");
+    EXPECT_NE(std::string(r.body.at("message").as_string()).find(api::scope_text(route.scope, "web")), std::string::npos) << json::serialize(r.body);
+  }
+}
+
+// Dashboard design, "The API the dashboard reads": the OpenAPI document is
+// answered to any signed-in token, and to none without one (api_http_test).
+TEST_F(ApiTest, TheOpenApiDocumentIsAnsweredToAnySignedInToken) {
+  auto r = call(grant_of({"louhi:batch:read"}), "GET", "/v1/openapi.json");
+  ASSERT_EQ(r.status, 200u);
+  EXPECT_EQ(r.body.at("openapi"), "3.1.0");
+  EXPECT_TRUE(r.body.at("paths").as_object().contains("/v1/status"));
+  EXPECT_EQ(call(admin, "POST", "/v1/openapi.json").status, 405u);
+}
+
+// GET /v1/status: this node as it sees itself, to any signed-in token: its
+// id, Louhi's version, whether its last report said it was ready (not before
+// its first), and the store's state; louhi:admin also sees how many tasks it
+// runs and the report itself.
+TEST_F(ApiTest, StatusAnswersThisNodesViewOfItself) {
+  auto before = call(web, "GET", "/v1/status");
+  ASSERT_EQ(before.status, 200u);
+  EXPECT_EQ(std::string(before.body.at("node").as_string()), dannan::identity::to_string(self));
+  EXPECT_EQ(before.body.at("version"), louhi::kVersion);
+  EXPECT_FALSE(before.body.at("ready").as_bool()) << "no report yet";
+  EXPECT_TRUE(before.body.at("store").at("ready").as_bool());
+  auto admin_before = call(admin, "GET", "/v1/status");
+  EXPECT_EQ(admin_before.body.at("tasks"), 0);
+  EXPECT_TRUE(admin_before.body.at("report").is_null());
+
+  auto report = test::node_status();
+  report.node = self;
+  report.tasks = 3;
+  bool written = false;
+  store.put(model::key(report), model::encode(report), store::Deadline(1000), io.get_executor(), [&](auto r) { written = r.ok(); });
+  settle();
+  ASSERT_TRUE(written);
+
+  auto seen = call(web, "GET", "/v1/status");
+  EXPECT_TRUE(seen.body.at("ready").as_bool());
+  EXPECT_FALSE(seen.body.as_object().contains("tasks")) << "the detail is admin's";
+  EXPECT_FALSE(seen.body.as_object().contains("report"));
+  auto everything = call(admin, "GET", "/v1/status");
+  EXPECT_EQ(everything.body.at("tasks"), 3);
+  EXPECT_EQ(everything.body.at("report").at("conditions"), json::value(json::array{"disk 80% full"}));
+}
+
+TEST_F(ApiTest, StatusIsOfThisNodeAloneAndShowsTheStoresState) {
+  auto elsewhere = test::node_status();
+  ASSERT_FALSE(elsewhere.node == self);
+  bool written = false;
+  store.put(model::key(elsewhere), model::encode(elsewhere), store::Deadline(1000), io.get_executor(), [&](auto r) { written = r.ok(); });
+  settle();
+  ASSERT_TRUE(written);
+  auto r = call(admin, "GET", "/v1/status");
+  EXPECT_FALSE(r.body.at("ready").as_bool()) << "another node's report is not this node's";
+  EXPECT_TRUE(r.body.at("report").is_null());
+
+  store.unready = true;
+  EXPECT_FALSE(call(web, "GET", "/v1/status").body.at("store").at("ready").as_bool());
 }

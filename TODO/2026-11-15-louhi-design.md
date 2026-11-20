@@ -560,6 +560,8 @@ without one.
 | `GET /v1/projects/{project}/tasks/{task}` | DescribeTasks | `louhi:{project}:read` |
 | `POST /v1/projects/{project}/tasks/{task}/stop` | StopTask | `louhi:{project}:run` |
 | `GET /v1/nodes` | (none) | `louhi:admin` |
+| `GET /v1/status` | (none) | any; this node's view, its detail for `louhi:admin` only |
+| `GET /v1/openapi.json` | (none) | any; the OpenAPI 3.1 document, written from the route table |
 
 - The actions are `read`, `register` and `run` (the maintainer, 2026-11-15);
   `louhi:admin` grants everything and `louhi:{project}:*` every action in

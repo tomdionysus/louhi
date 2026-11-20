@@ -16,10 +16,12 @@
 #include <set>
 
 #include "louhi/api/json.h"
+#include "louhi/api/openapi.h"
 #include "louhi/events/events.h"
 #include "louhi/model/codec.h"
 #include "louhi/model/keys.h"
 #include "louhi/model/names.h"
+#include "louhi/version.h"
 
 namespace louhi::api {
 
@@ -58,8 +60,6 @@ Response forbidden(const std::string& scope) { return error_response(403, "forbi
 
 Response not_found(const std::string& what) { return error_response(404, "not_found", what + " does not exist"); }
 
-std::string scope_of(std::string_view project, Action action) { return "louhi:" + std::string(project) + ":" + action_name(action); }
-
 // A list's page: at most `limit` from after `next`.
 struct Page {
   size_t limit = Api::max_list;
@@ -80,13 +80,38 @@ Page page_of(const Request& request) {
   return out;
 }
 
+// Whether a path's segments fit a route's template: as many, and each
+// literal the same.
+bool fits(std::string_view route, const std::vector<std::string>& segments) {
+  const auto parts = segments_of(route);
+  if (parts.size() != segments.size()) return false;
+  for (size_t i = 0; i < parts.size(); ++i)
+    if (parts[i].front() != '{' && parts[i] != segments[i]) return false;
+  return true;
+}
+
+bool permitted(const Grant& grant, Scope scope, std::string_view project) {
+  switch (scope) {
+    case Scope::any:
+      return true;
+    case Scope::admin:
+      return grant.admin();
+    case Scope::read:
+      return grant.may(project, Action::read);
+    case Scope::register_definitions:
+      return grant.may(project, Action::register_definitions);
+    case Scope::run:
+      return grant.may(project, Action::run);
+  }
+  return false;
+}
+
 // The last segment of a key.
 std::string last_segment(const std::string& key) { return key.substr(key.rfind('/') + 1); }
 
 }  // namespace
 
 struct Api::Path {
-  std::vector<std::string> segments;
   std::string project;
   std::string family;
   uint32_t revision = 0;
@@ -112,7 +137,8 @@ Api::Api(store::Store& store, const dannan::contract::WallClock& wall, model::No
       _executor(std::move(executor)),
       _logger(std::move(logger)),
       _write_deadline(write_deadline),
-      _events(events) {}
+      _events(events),
+      _openapi(openapi_document()) {}
 
 void Api::answer(Done& done, Response response) {
   boost::asio::post(_executor, [done = std::move(done), response = std::move(response)]() mutable { done(std::move(response)); });
@@ -133,55 +159,77 @@ void Api::handle(const Grant& grant, const Request& request, Done done) {
   // only before it hands `done` on, so a request is answered once.
   Done refuse = done;
   try {
+    const auto segments = segments_of(request.path);
+    // The routes this path fits; routes of one path share their template.
+    const Route* fitted = nullptr;
+    const Route* route = nullptr;
+    for (const Route& candidate : routes()) {
+      if (!fits(candidate.path, segments)) continue;
+      if (!fitted) fitted = &candidate;
+      if (candidate.method == request.method) {
+        route = &candidate;
+        break;
+      }
+    }
+    if (!fitted) return answer(done, not_found("the path"));
+
     Path path;
-    path.segments = segments_of(request.path);
-    const auto& s = path.segments;
-    const auto& m = request.method;
-    const auto method_not_allowed = [&] { answer(done, error_response(405, "method_not_allowed", m + " is not allowed on " + request.path)); };
-    if (s.size() < 2 || s[0] != "v1") return answer(done, not_found("the path"));
-
-    if (s[1] == "nodes" && s.size() == 2) return m == "GET" ? list_nodes(grant, request, std::move(done)) : method_not_allowed();
-    if (s[1] != "projects") return answer(done, not_found("the path"));
-    if (s.size() == 2) return m == "GET" ? list_projects(grant, request, std::move(done)) : method_not_allowed();
-
-    path.project = s[2];
-    if (!model::is_name(path.project)) return answer(done, not_found("the project"));
-    if (s.size() == 3) {
-      if (m == "PUT") return put_project(grant, path, request, std::move(done));
-      if (m == "GET") return get_project(grant, path, std::move(done));
-      return method_not_allowed();
-    }
-    if (s[3] == "quota" && s.size() == 4) {
-      if (m == "PUT") return put_quota(grant, path, request, std::move(done));
-      if (m == "GET") return get_quota(grant, path, std::move(done));
-      return method_not_allowed();
-    }
-    if (s[3] == "task-definitions") {
-      if (s.size() == 4) {
-        if (m == "POST") return register_task_definition(grant, path, request, std::move(done));
-        if (m == "GET") return list_families(grant, path, request, std::move(done));
-        return method_not_allowed();
+    const auto parameters = segments_of(fitted->path);
+    for (size_t i = 0; i < parameters.size(); ++i) {
+      const std::string& name = parameters[i];
+      const std::string& value = segments[i];
+      if (name == "{project}") {
+        if (!model::is_name(value)) return answer(done, not_found("the project"));
+        path.project = value;
+      } else if (name == "{family}") {
+        if (!model::is_name(value)) return answer(done, not_found("the family"));
+        path.family = value;
+      } else if (name == "{revision}") {
+        const auto revision = revision_of(value);
+        if (!revision) return answer(done, not_found("the revision"));
+        path.revision = *revision;
+      } else if (name == "{task}") {
+        const auto task = model::TaskId::parse(value);
+        if (!task) return answer(done, not_found("the task"));
+        path.task = *task;
       }
-      path.family = s[4];
-      if (!model::is_name(path.family)) return answer(done, not_found("the family"));
-      if (s.size() == 5) return m == "GET" ? list_revisions(grant, path, request, std::move(done)) : method_not_allowed();
-      const auto revision = revision_of(s[5]);
-      if (!revision) return answer(done, not_found("the revision"));
-      path.revision = *revision;
-      if (s.size() == 6) return m == "GET" ? describe_task_definition(grant, path, std::move(done)) : method_not_allowed();
-      return answer(done, not_found("the path"));
     }
-    if (s[3] == "tasks") {
-      if (s.size() == 4) {
-        if (m == "POST") return run_task(grant, path, request, std::move(done));
-        if (m == "GET") return list_tasks(grant, path, request, std::move(done));
-        return method_not_allowed();
-      }
-      const auto task = model::TaskId::parse(s[4]);
-      if (!task) return answer(done, not_found("the task"));
-      path.task = *task;
-      if (s.size() == 5) return m == "GET" ? describe_task(grant, path, std::move(done)) : method_not_allowed();
-      if (s.size() == 6 && s[5] == "stop") return m == "POST" ? stop_task(grant, path, request, std::move(done)) : method_not_allowed();
+    if (!route) return answer(done, error_response(405, "method_not_allowed", request.method + " is not allowed on " + request.path));
+    if (!permitted(grant, route->scope, path.project)) return answer(done, forbidden(scope_text(route->scope, path.project)));
+
+    switch (route->operation) {
+      case Operation::put_project:
+        return put_project(path, request, std::move(done));
+      case Operation::list_projects:
+        return list_projects(grant, request, std::move(done));
+      case Operation::get_project:
+        return get_project(path, std::move(done));
+      case Operation::put_quota:
+        return put_quota(path, request, std::move(done));
+      case Operation::get_quota:
+        return get_quota(path, std::move(done));
+      case Operation::register_task_definition:
+        return register_task_definition(path, request, std::move(done));
+      case Operation::list_families:
+        return list_families(path, request, std::move(done));
+      case Operation::list_revisions:
+        return list_revisions(path, request, std::move(done));
+      case Operation::describe_task_definition:
+        return describe_task_definition(path, std::move(done));
+      case Operation::run_task:
+        return run_task(grant, path, request, std::move(done));
+      case Operation::list_tasks:
+        return list_tasks(path, request, std::move(done));
+      case Operation::describe_task:
+        return describe_task(path, std::move(done));
+      case Operation::stop_task:
+        return stop_task(grant, path, request, std::move(done));
+      case Operation::list_nodes:
+        return list_nodes(request, std::move(done));
+      case Operation::status:
+        return get_status(grant, std::move(done));
+      case Operation::openapi:
+        return answer(done, {200, _openapi});
     }
     return answer(done, not_found("the path"));
   } catch (const std::invalid_argument& error) {
@@ -193,8 +241,7 @@ void Api::handle(const Grant& grant, const Request& request, Done done) {
   }
 }
 
-void Api::put_project(const Grant& grant, const Path& path, const Request& request, Done done) {
-  if (!grant.admin()) return answer(done, forbidden("louhi:admin"));
+void Api::put_project(const Path& path, const Request& request, Done done) {
   const auto body = project_body(parse_body(request.body), path.project);
   model::Project project;
   project.name = path.project;
@@ -230,8 +277,7 @@ void Api::list_projects(const Grant& grant, const Request& request, Done done) {
   answer(done, {200, std::move(out)});
 }
 
-void Api::get_project(const Grant& grant, const Path& path, Done done) {
-  if (!grant.may(path.project, Action::read)) return answer(done, forbidden(scope_of(path.project, Action::read)));
+void Api::get_project(const Path& path, Done done) {
   model::Project probe;
   probe.name = path.project;
   const auto bytes = _store.get(model::key(probe));
@@ -239,8 +285,7 @@ void Api::get_project(const Grant& grant, const Path& path, Done done) {
   answer(done, {200, to_json(model::decode_project(*bytes))});
 }
 
-void Api::put_quota(const Grant& grant, const Path& path, const Request& request, Done done) {
-  if (!grant.admin()) return answer(done, forbidden("louhi:admin"));
+void Api::put_quota(const Path& path, const Request& request, Done done) {
   model::Project probe;
   probe.name = path.project;
   if (!_store.get(model::key(probe))) return answer(done, not_found("the project"));
@@ -249,8 +294,7 @@ void Api::put_quota(const Grant& grant, const Path& path, const Request& request
   write(model::key(quota), model::encode(quota), {200, to_json(quota)}, std::move(done));
 }
 
-void Api::get_quota(const Grant& grant, const Path& path, Done done) {
-  if (!grant.may(path.project, Action::read)) return answer(done, forbidden(scope_of(path.project, Action::read)));
+void Api::get_quota(const Path& path, Done done) {
   model::Quota probe;
   probe.project = path.project;
   const auto bytes = _store.get(model::key(probe));
@@ -267,8 +311,7 @@ uint32_t Api::highest_revision(const std::string& project, const std::string& fa
   return highest;
 }
 
-void Api::register_task_definition(const Grant& grant, const Path& path, const Request& request, Done done) {
-  if (!grant.may(path.project, Action::register_definitions)) return answer(done, forbidden(scope_of(path.project, Action::register_definitions)));
+void Api::register_task_definition(const Path& path, const Request& request, Done done) {
   auto definition = std::make_shared<model::TaskDefinition>(task_definition_body(parse_body(request.body), path.project));
   model::Project probe;
   probe.name = path.project;
@@ -328,8 +371,7 @@ void Api::admit_task_definition(model::TaskDefinition definition, Done done) {
   });
 }
 
-void Api::list_families(const Grant& grant, const Path& path, const Request& request, Done done) {
-  if (!grant.may(path.project, Action::read)) return answer(done, forbidden(scope_of(path.project, Action::read)));
+void Api::list_families(const Path& path, const Request& request, Done done) {
   const Page page = page_of(request);
   const std::string prefix = "taskdef/" + path.project + "/";
   json::array families;
@@ -346,8 +388,7 @@ void Api::list_families(const Grant& grant, const Path& path, const Request& req
   answer(done, {200, std::move(out)});
 }
 
-void Api::list_revisions(const Grant& grant, const Path& path, const Request& request, Done done) {
-  if (!grant.may(path.project, Action::read)) return answer(done, forbidden(scope_of(path.project, Action::read)));
+void Api::list_revisions(const Path& path, const Request& request, Done done) {
   const Page page = page_of(request);
   const uint32_t after = page.next.empty() ? 0 : revision_of(page.next).value_or(std::numeric_limits<uint32_t>::max());
   json::array revisions;
@@ -366,8 +407,7 @@ void Api::list_revisions(const Grant& grant, const Path& path, const Request& re
   answer(done, {200, std::move(out)});
 }
 
-void Api::describe_task_definition(const Grant& grant, const Path& path, Done done) {
-  if (!grant.may(path.project, Action::read)) return answer(done, forbidden(scope_of(path.project, Action::read)));
+void Api::describe_task_definition(const Path& path, Done done) {
   const auto bytes = _store.get(model::task_definition_key(path.project, path.family, path.revision));
   if (!bytes) return answer(done, not_found("the revision"));
   answer(done, {200, to_json(model::decode_task_definition(*bytes))});
@@ -406,7 +446,6 @@ void Api::forget_tokens(uint64_t now) {
 }
 
 void Api::run_task(const Grant& grant, const Path& path, const Request& request, Done done) {
-  if (!grant.may(path.project, Action::run)) return answer(done, forbidden(scope_of(path.project, Action::run)));
   const auto body = run_task_body(parse_body(request.body));
   model::Project probe;
   probe.name = path.project;
@@ -501,8 +540,7 @@ void Api::run_task(const Grant& grant, const Path& path, const Request& request,
   }
 }
 
-void Api::list_tasks(const Grant& grant, const Path& path, const Request& request, Done done) {
-  if (!grant.may(path.project, Action::read)) return answer(done, forbidden(scope_of(path.project, Action::read)));
+void Api::list_tasks(const Path& path, const Request& request, Done done) {
   const Page page = page_of(request);
   json::array tasks;
   std::string last;
@@ -522,8 +560,7 @@ void Api::list_tasks(const Grant& grant, const Path& path, const Request& reques
   answer(done, {200, std::move(out)});
 }
 
-void Api::describe_task(const Grant& grant, const Path& path, Done done) {
-  if (!grant.may(path.project, Action::read)) return answer(done, forbidden(scope_of(path.project, Action::read)));
+void Api::describe_task(const Path& path, Done done) {
   model::Task probe;
   probe.id = path.task;
   probe.project = path.project;
@@ -543,7 +580,6 @@ void Api::describe_task(const Grant& grant, const Path& path, Done done) {
 }
 
 void Api::stop_task(const Grant& grant, const Path& path, const Request& request, Done done) {
-  if (!grant.may(path.project, Action::run)) return answer(done, forbidden(scope_of(path.project, Action::run)));
   const auto body = stop_task_body(parse_body(request.body));
   model::Task probe;
   probe.id = path.task;
@@ -562,8 +598,7 @@ void Api::stop_task(const Grant& grant, const Path& path, const Request& request
   });
 }
 
-void Api::list_nodes(const Grant& grant, const Request& request, Done done) {
-  if (!grant.admin()) return answer(done, forbidden("louhi:admin"));
+void Api::list_nodes(const Request& request, Done done) {
   const Page page = page_of(request);
   json::array nodes;
   std::string last;
@@ -580,6 +615,28 @@ void Api::list_nodes(const Grant& grant, const Request& request, Done done) {
   }
   json::object out{{"nodes", nodes}};
   if (nodes.size() == page.limit) out["next"] = last;
+  answer(done, {200, std::move(out)});
+}
+
+void Api::get_status(const Grant& grant, Done done) {
+  model::NodeStatus probe;
+  probe.node = _self;
+  std::optional<model::NodeStatus> report;
+  if (const auto bytes = _store.get(model::key(probe))) {
+    try {
+      report = model::decode_node_status(*bytes);
+    } catch (const model::DecodeError& bad) {
+      _logger.warn("this node's status does not decode: " + std::string(bad.what()));
+    }
+  }
+  json::object out{{"node", dannan::identity::to_string(_self)},
+                   {"version", kVersion},
+                   {"ready", report && report->ready},
+                   {"store", json::object{{"ready", _store.ready()}}}};
+  if (grant.admin()) {
+    out["tasks"] = report ? report->tasks : 0u;
+    out["report"] = report ? json::value(to_json(*report)) : json::value(nullptr);
+  }
   answer(done, {200, std::move(out)});
 }
 

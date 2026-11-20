@@ -117,6 +117,15 @@ TEST_F(HttpTest, NoRequestIsAnsweredWithoutAToken) {
   }
 }
 
+// Dashboard design: the OpenAPI document is behind a token like every route.
+TEST_F(HttpTest, TheOpenApiDocumentNeedsAToken) {
+  start();
+  EXPECT_EQ(status_of(exchange(get("/v1/openapi.json", ""))), 401u);
+  const auto reply = exchange(get("/v1/openapi.json", "admin"));
+  EXPECT_EQ(status_of(reply), 200u) << reply;
+  EXPECT_EQ(body_of(reply).at("openapi"), "3.1.0");
+}
+
 TEST_F(HttpTest, ASignedInRequestIsTheApisToAnswerAndTheConnectionThenCloses) {
   start();
   const std::string body = R"({"description":"The public site"})";

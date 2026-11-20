@@ -19,6 +19,8 @@ add_library(louhi SHARED
   api/client.cpp
   api/http.cpp
   api/json.cpp
+  api/openapi.cpp
+  api/routes.cpp
   events/events.cpp
   model/codec.cpp
   model/ids.cpp

@@ -66,9 +66,21 @@ What exists (design, "The endpoints") plus, each behind its scope:
 
 ## Order
 
-1. The OpenAPI document and its drift test, for the API as it stands (no
-   dependency).
-2. `/v1/status`, `/v1/nodes/{node}`, task events, unpark (no dependency).
+1. Done (2026-11-20): the OpenAPI document and its drift test, for the API
+   as it stands. The routes are one table (`louhi/api/routes.h`: method,
+   path template, scope, operation, summary) that the Api dispatches from
+   and checks scopes from, and the document is written from it with
+   hand-written schemas (`louhi/api/openapi.cpp`), built once and answered
+   from memory. `GET /v1/openapi.json` needs a token like every route (the
+   design's rule, "none is answered without one"): any signed-in token, no
+   scope. A dashboard fetches it after signing in.
+2. `/v1/status` done (2026-11-20): this node's id, version, readiness (its
+   last report's; false before its first) and the store's `ready()` to any
+   token, and for `louhi:admin` also its task count and the report itself,
+   all from what the Api already reads (this node's `node/<id>` record);
+   the members, Lir's connection and the runtime's limits wait for an
+   interface the Api is given. Still to do: `/v1/nodes/{node}`, task
+   events, unpark (no dependency).
 3. Password sign-in and session tokens, on Dannan's credential helper and
    keyed limits (waits on Dannan 0.10.0's items).
 4. The screens, on the shared React shell once the group settles where it

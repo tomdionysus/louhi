@@ -22,6 +22,7 @@
 #include "dannan/contract/time_source.h"
 #include "dannan/status/log.h"
 #include "louhi/api/auth.h"
+#include "louhi/api/routes.h"
 #include "louhi/model/ids.h"
 #include "louhi/model/records.h"
 #include "louhi/runtime/driver.h"
@@ -31,6 +32,12 @@
 // from HTTP so tests drive them directly: a request already signed in (its
 // Grant) and parsed into a method, a path, a query and a body, answered with
 // a status and a JSON body.
+//
+// Which operation a request is, and the scope it needs, come from the route
+// table (routes.h): a path that fits no route is not found, a parameter that
+// is not good is not found, a method the path does not take is not allowed,
+// and then the route's scope is checked before anything about the project is
+// said.
 //
 // Reads are of this node's copy of the store. A write completes when the
 // store says it has, or with 503 when it fails or its deadline passes.
@@ -97,23 +104,27 @@ class Api {
   void answer(Done& done, Response response);
   void write(const std::string& key, store::Bytes value, Response success, Done done);
 
-  void put_project(const Grant& grant, const Path& path, const Request& request, Done done);
+  // Each route's handler; its scope was checked before it is called.
+  void put_project(const Path& path, const Request& request, Done done);
   void list_projects(const Grant& grant, const Request& request, Done done);
-  void get_project(const Grant& grant, const Path& path, Done done);
-  void put_quota(const Grant& grant, const Path& path, const Request& request, Done done);
-  void get_quota(const Grant& grant, const Path& path, Done done);
-  void register_task_definition(const Grant& grant, const Path& path, const Request& request, Done done);
+  void get_project(const Path& path, Done done);
+  void put_quota(const Path& path, const Request& request, Done done);
+  void get_quota(const Path& path, Done done);
+  void register_task_definition(const Path& path, const Request& request, Done done);
   // Resolves containers[next..] of `definition` in turn, then admits it.
   void resolve_images(std::shared_ptr<model::TaskDefinition> definition, size_t next, Done done);
   void admit_task_definition(model::TaskDefinition definition, Done done);
-  void list_families(const Grant& grant, const Path& path, const Request& request, Done done);
-  void list_revisions(const Grant& grant, const Path& path, const Request& request, Done done);
-  void describe_task_definition(const Grant& grant, const Path& path, Done done);
+  void list_families(const Path& path, const Request& request, Done done);
+  void list_revisions(const Path& path, const Request& request, Done done);
+  void describe_task_definition(const Path& path, Done done);
   void run_task(const Grant& grant, const Path& path, const Request& request, Done done);
-  void list_tasks(const Grant& grant, const Path& path, const Request& request, Done done);
-  void describe_task(const Grant& grant, const Path& path, Done done);
+  void list_tasks(const Path& path, const Request& request, Done done);
+  void describe_task(const Path& path, Done done);
   void stop_task(const Grant& grant, const Path& path, const Request& request, Done done);
-  void list_nodes(const Grant& grant, const Request& request, Done done);
+  void list_nodes(const Request& request, Done done);
+  // This node as it sees itself: its last report and the store's state, the
+  // report's detail for louhi:admin only.
+  void get_status(const Grant& grant, Done done);
 
   // The project's usage from the store and from what this node admitted that
   // the store does not show yet. Called with _admission held.
@@ -129,6 +140,8 @@ class Api {
   dannan::status::ScopedLogger _logger;
   const store::Deadline _write_deadline;
   events::Events* const _events;
+  // GET /v1/openapi.json's answer, built once.
+  const boost::json::value _openapi;
 
   mutable dannan::contract::Mutex _admission;
   // What this node admitted whose write has not completed, by key.

@@ -36,6 +36,32 @@ Gates on node-b: release **334 passed, 1 skipped**; ASan with UBSan
 and TSan **334 passed, 1 skipped** each (the skip is node-b's: Docker on
 ext4 cannot bound storage). 335 tests, 318 before.
 
+## The API's route table, its OpenAPI document, and /v1/status (2026-11-20)
+
+The dashboard's first step (`TODO/2026-11-20-dashboard.md`, "Order" 1 and
+part of 2), which waits on nothing.
+
+- `api/routes.h`: the API's routes as one table (method, path template,
+  scope, operation, operation id, summary). `Api::handle` matches the path,
+  checks the path's names, answers 405 for a method no route takes, checks
+  the route's scope once from the table, then runs the operation: the
+  handlers no longer check scopes themselves.
+- `GET /v1/openapi.json` (any valid token): OpenAPI 3.1, its paths from the
+  route table and its schemas written beside them, built once. A test checks
+  every route against the document and every documented path against the
+  routes, and that every reference resolves; Dannan's HTTP core will give
+  that check to every service (`check_openapi`), and Louhi moves onto it.
+- `GET /v1/status`: this node's id, version, readiness and the store's
+  state; `louhi:admin` also sees its task count and its last NodeStatus.
+- A few malformed paths now answer 404 "the path" rather than naming a
+  part; every status code is unchanged, and every earlier test passes as
+  written.
+
+Gates on node-b: release, ASan with UBSan and TSan **350 passed, 1
+skipped** each. 351 tests, 346 before. The first release run failed to
+link: `build/pi.sh` kept the Mac's file times, so ninja took an object
+built from another branch for current; it now syncs by content.
+
 ## louhi-ctl's settings in YAML through Dannan's config reader (2026-11-20)
 
 the maintainer: "All service config must be in yaml, using yaml-cpp", read through

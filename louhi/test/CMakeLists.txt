@@ -14,6 +14,7 @@ add_executable(louhi_tests
   api_auth_test.cpp
   api_http_test.cpp
   api_json_test.cpp
+  api_openapi_test.cpp
   api_test.cpp
   events_test.cpp
   model_codec_test.cpp

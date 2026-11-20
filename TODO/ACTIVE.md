@@ -13,7 +13,10 @@ under way: Dagda fetched; revision and admission registers (`louhi::admit`)
 built and tested on Dannan's simulation harness, not yet called by the API.
 Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `53a3280`, Lir `e40dd2e`
 (2026-11-20: Lugh's `dbb0573` and Lir's `6268fef` rewritten when the
-stack's history was scrubbed; the same trees).
+stack's history was scrubbed; the same trees). On the pin to Dannan 0.10.0,
+tools/ci.sh's asan and tsan steps also pass `-DDANNAN_SANITIZE=address` or
+`thread` (Dannan's docs/building.md), keeping the global flags: every stack
+library a sanitizer build links is built from source and instrumented.
 Last gate: **318 passed**, none skipped, on node-c (2026-11-20),
 Docker on xfs with user namespaces, on `feature/network-records` (the
 network records and security groups as nftables), which squashes onto

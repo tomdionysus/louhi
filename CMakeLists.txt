@@ -44,9 +44,8 @@ FetchContent_MakeAvailable(dannan)
 
 # Dagda, the storage layer, where Louhi's records live (design, "Records"),
 # at its tag, fetched like Dannan (the maintainer, 2026-11-20). Its tools are not
-# built: EXCLUDE_FROM_ALL builds only what Louhi links. Dagda is private, as
-# Lugh is, so hosted CI builds without it, and the records are then kept in
-# memory only.
+# built: EXCLUDE_FROM_ALL builds only what Louhi links. Off builds Louhi
+# without the Dagda store, its records then kept in memory only.
 option(LOUHI_BUILD_DAGDA "Build the store on Dagda's head spaces" ON)
 if(LOUHI_BUILD_DAGDA)
   set(LOUHI_DAGDA_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dagda" CACHE STRING "Dagda's repository: a directory or a URL")

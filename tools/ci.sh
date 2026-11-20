@@ -19,9 +19,9 @@
 # (LOUHI_CI_JOBS to set it: 2 on the shared Pis). Dannan is fetched at the
 # pinned tag from the sibling checkout when there is one, else from its public
 # repository (LOUHI_DANNAN_REPOSITORY to name another), and Lir likewise
-# (LOUHI_LIR_REPOSITORY); Lugh and Dagda, which are private, from
-# LOUHI_LUGH_REPOSITORY and LOUHI_DAGDA_REPOSITORY or the siblings, or not
-# at all. Needs g++ cmake
+# (LOUHI_LIR_REPOSITORY) and Dagda (LOUHI_DAGDA_REPOSITORY); Lugh, which is
+# private, from LOUHI_LUGH_REPOSITORY or the sibling, or not at all. Needs
+# g++ cmake
 # ninja-build libboost-dev libssl-dev libyaml-cpp-dev libgtest-dev, and for
 # its step clang, clang-format or lcov.
 
@@ -55,16 +55,16 @@ if [ -n "${LOUHI_LUGH_REPOSITORY:-}" ]; then
 else
   siblings="-DLOUHI_BUILD_LUGH=OFF"
 fi
-# Dagda is private too: from LOUHI_DAGDA_REPOSITORY or the sibling checkout,
-# else Louhi is built without the Dagda store.
-if [ -z "${LOUHI_DAGDA_REPOSITORY:-}" ] && [ -d "$top/../dagda/.git" ]; then
-  LOUHI_DAGDA_REPOSITORY=$top/../dagda
+# Dagda, public since 2026-11-20: from LOUHI_DAGDA_REPOSITORY, else the
+# sibling checkout, else its public repository, as Dannan.
+if [ -z "${LOUHI_DAGDA_REPOSITORY:-}" ]; then
+  if [ -d "$top/../dagda/.git" ]; then
+    LOUHI_DAGDA_REPOSITORY=$top/../dagda
+  else
+    LOUHI_DAGDA_REPOSITORY=https://github.com/tomdionysus/dagda.git
+  fi
 fi
-if [ -n "${LOUHI_DAGDA_REPOSITORY:-}" ]; then
-  siblings="$siblings -DLOUHI_BUILD_DAGDA=ON -DLOUHI_DAGDA_REPOSITORY=$LOUHI_DAGDA_REPOSITORY"
-else
-  siblings="$siblings -DLOUHI_BUILD_DAGDA=OFF"
-fi
+siblings="$siblings -DLOUHI_BUILD_DAGDA=ON -DLOUHI_DAGDA_REPOSITORY=$LOUHI_DAGDA_REPOSITORY"
 
 # Warnings are errors in every build but the sanitizers': instrumented, g++
 # warns inside libstdc++ and Asio, not in Louhi. The release and clang steps

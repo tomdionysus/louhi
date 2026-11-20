@@ -104,6 +104,7 @@ jobs:
       # Homebrew's own include directory, which Boost's path brings in, holds
       # OpenSSL 4 (the stack builds against 3, as Debian has it). A directory
       # with only OpenSSL 3's headers goes first, still read as system headers.
+      # Dagda is built on Linux only: it has no macOS build of its own yet.
       - name: Build
         run: |
           ssl="$(brew --prefix openssl@3)"

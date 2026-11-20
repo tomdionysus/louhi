@@ -11,7 +11,7 @@ the Docker driver, the agent, the in-memory store, `louhi-node` with
 `louhi::ctl`, events on Lir, images by digest, storage bounds). Step 4
 under way: Dagda fetched; revision and admission registers (`louhi::admit`)
 built and tested on Dannan's simulation harness, not yet called by the API.
-Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `53a3280`, Lir `e40dd2e`
+Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`, Lir `e40dd2e` (opt-in)
 (2026-11-20: Lugh's `dbb0573` and Lir's `6268fef` rewritten when the
 stack's history was scrubbed; the same trees). Events are off by default
 (`LOUHI_BUILD_LIR`, coordinator 2026-11-20): Lir 0.1.0 ships no client, and

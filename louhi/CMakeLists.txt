@@ -7,8 +7,10 @@
 
 # The compute layer. Public headers are louhi/include/louhi/*.h, included as
 # "louhi/x.h"; everything else is included from the repository root as
-# "louhi/<subsystem>/x.h".
-add_library(louhi SHARED
+# "louhi/<subsystem>/x.h". Static, as Manannan's core is: Louhi ships no
+# headers and no other program links it, so it is linked into louhi-node and
+# louhi-ctl and never installed (docs/packaging.md).
+add_library(louhi STATIC
   admit/agreement.cpp
   admit/registers.cpp
   agent/agent.cpp
@@ -70,4 +72,3 @@ if(LOUHI_BUILD_LIR)
   target_link_libraries(louhi PUBLIC lir::client)
   target_compile_definitions(louhi PUBLIC LOUHI_WITH_LIR=1)
 endif()
-set_target_properties(louhi PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})

@@ -68,8 +68,29 @@ step per session.
    - `dagda::test_fixtures` (`Cluster`, `ClusterNode`, stepped time; real
      loopback ports, so not fully deterministic);
    - consumed as an installed package with exact-version compatibility
-     (`find_package(dagda 0.3.2)`); whether FetchContent works beside
-     Louhi's fetched Dannan is asked of the Dagda session.
+     (`find_package(dagda 0.3.2)`, the tested route).
+
+   The Dagda session's answers (2026-11-20). It works on nothing but
+   Macha's cutover, so read-one, prefix and caught-up on the Context go to
+   the maintainer, and it will say when he rules.
+   - **Fetching Dagda:** untested. Dagda's CMake does
+     `find_package(dannan 0.9.2 CONFIG REQUIRED)` and ignores an existing
+     `dannan::dannan` target, so declare Dannan with
+     `FetchContent_Declare(dannan ... OVERRIDE_FIND_PACKAGE)` before Dagda
+     is made available. Its `install(EXPORT)` names `dannan::dannan`, which
+     may fail when Dannan is a subproject: skip Dagda's install. If the
+     fetch fails, tell the Dagda session the error; making Dagda
+     fetch-friendly is a change to Dagda, so the maintainer's.
+   - **Reads meanwhile:** `Node::spaces()->find(id)`, then `Space::local()`
+     or `converged()` for a view, and `Space::entries(tree, view, cursor,
+     budget)` for pages in key order; a prefix is a cursor at the prefix,
+     stopping at the first key past it.
+   - **Caught up:** none. A view can lag other nodes' commits, and on a
+     node with several heads its own too. `Space::covers(view, dot)`, the
+     dot from `CommitOutcome::dot`, says whether a view holds what this
+     node wrote. The signal Dagda would propose compares the view's clock
+     with the clocks peers advertise. Until then, never whole for removals.
+   - Only `every_node` and `node_local` open; `replicas: N` is not built.
    Design questions this raises (the merge per record kind, what a
    conflicting write of the same task means, the domain and key) go to
    the maintainer first, written into the design. Neither Lir nor Lugh is on Dagda

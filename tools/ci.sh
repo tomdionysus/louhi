@@ -75,7 +75,10 @@ siblings="$siblings -DLOUHI_BUILD_DAGDA=ON -DLOUHI_DAGDA_REPOSITORY=$LOUHI_DAGDA
 configure() {
   dir="$1"
   shift
-  cmake -S "$top" -B "$out/$dir" -G Ninja -DLOUHI_BUILD_TESTING=ON -DLOUHI_WARNINGS_AS_ERRORS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" -DLOUHI_LIR_REPOSITORY="$LOUHI_LIR_REPOSITORY" $siblings "$@"
+  # LOUHI_BUILD_LIR named, not left to its default: a build tree kept from
+  # before the default moved would hold the old value in its cache. The
+  # events step passes ON after it.
+  cmake -S "$top" -B "$out/$dir" -G Ninja -DLOUHI_BUILD_TESTING=ON -DLOUHI_WARNINGS_AS_ERRORS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" -DLOUHI_LIR_REPOSITORY="$LOUHI_LIR_REPOSITORY" -DLOUHI_BUILD_LIR=OFF $siblings "$@"
   cmake --build "$out/$dir" -j "$jobs"
 }
 

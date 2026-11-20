@@ -26,6 +26,9 @@ option(LOUHI_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 find_package(Boost 1.83 CONFIG REQUIRED COMPONENTS headers)
 find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto SSL)
 find_package(Threads REQUIRED)
+# louhi-ctl's configuration and credentials files are YAML (the maintainer, 2026-11-20).
+# Dannan reads YAML with it too, but links it privately.
+find_package(yaml-cpp 0.7 CONFIG REQUIRED)
 
 # Dannan, the network layer, at its tag, cloned from the sibling checkout
 # into the build tree, so building Louhi never touches ../dannan.

@@ -36,6 +36,29 @@ Gates on node-b: release **334 passed, 1 skipped**; ASan with UBSan
 and TSan **334 passed, 1 skipped** each (the skip is node-b's: Docker on
 ext4 cannot bound storage). 335 tests, 318 before.
 
+## louhi-ctl's settings in YAML through Dannan's config reader (2026-11-20)
+
+the maintainer: "All service config must be in yaml, using yaml-cpp", read through
+Dannan's `config::Reader` under the no-duplication rule.
+
+- louhi-ctl's own argument and environment parsing is gone: `read_args`
+  declares its settings to Dannan's Reader (a config file, then `LOUHI_*`
+  variables, then flags; `--config`, `$LOUHI_CONFIG`, or
+  `~/.config/louhi/config.yaml`). A config error is a usage error.
+- Login writes its settings (issuer, client id, endpoints, scopes, CA) to
+  `config.yaml` with yaml-cpp's emitter (nothing else in the stack writes
+  YAML, so writing stays Louhi's), and the tokens to an owner-only
+  `credentials.yaml`, both through `durable_replace_file`.
+- An old `credentials.json` at the default path is moved once, so nobody
+  logs in again; logout removes it too.
+- Three gaps in Dannan's Reader are worked around here and go into Dannan's
+  second minor (its item 27): a value flag given twice, a lone "-" operand,
+  and an empty variable read as unset. The workarounds go when it ships.
+- Louhi finds and links yaml-cpp itself (Dannan links it privately).
+
+Gates on node-b: release, ASan with UBSan and TSan **345 passed, 1
+skipped** each. 346 tests, 335 before.
+
 ## Networking groundwork: the network records, security groups as nftables (2026-11-20)
 
 The design first ("The network records and security groups in detail"),

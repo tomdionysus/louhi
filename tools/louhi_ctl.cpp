@@ -6,8 +6,9 @@
 //
 
 // louhi-ctl: the API from a terminal (design, "API and sign-on"). It signs in
-// to a Lugh by the device flow (RFC 8628), keeps the tokens in a credentials
-// file only its owner can read, refreshes the access token when less than a
+// to a Lugh by the device flow (RFC 8628), keeps the settings it signed in
+// with in its configuration and the tokens in a credentials file only its
+// owner can read, both YAML, refreshes the access token when less than a
 // minute of it is left, and prints each answer's JSON on stdout. It exits 0
 // for a 2xx answer, 1 for any other answer or failure, 2 for a usage error.
 //
@@ -30,10 +31,16 @@
 //   louhi-ctl --version
 //
 // Before any command: --endpoint URL, repeatable (else $LOUHI_ENDPOINT, a
-// list, else those saved at login), each node's API tried in turn until one
+// list, else the configuration's), each node's API tried in turn until one
 // answers (ctl.h, run()), --ca FILE (the roots an https endpoint and the issuer
 // chain to; the system's when absent), --credentials FILE (else
-// $LOUHI_CREDENTIALS, else ~/.config/louhi/credentials.json).
+// $LOUHI_CREDENTIALS, else ~/.config/louhi/credentials.yaml), --config FILE
+// (else $LOUHI_CONFIG, else ~/.config/louhi/config.yaml when it exists).
+//
+// Settings are read by the stack's one reader (dannan/config/config.h): the
+// configuration file, then the environment, then the flags. Its keys are
+// issuer, client_id, endpoints (a list), scopes (a list), ca and credentials;
+// login writes the first four, and ca when given, replacing the file whole.
 //
 // Everything but binding it to the world is louhi/ctl/ctl.h, where it is
 // tested.
@@ -89,7 +96,7 @@ int main(int argc, char** argv) {
     if (endpoint.tls) trust = std::make_shared<dannan::listen::ClientTrust>(ca);
     return std::make_shared<louhi::api::Client>(io.io, endpoint, trust);
   };
-  env.credentials = [](const std::filesystem::path& path) { return std::make_unique<louhi::ctl::DiskCredentialFile>(path); };
+  env.file = [](const std::filesystem::path& path) { return std::make_unique<louhi::ctl::DiskCredentialFile>(path); };
   env.read = read_file;
   env.getenv = [](const std::string& name) -> std::optional<std::string> {
     const char* value = std::getenv(name.c_str());

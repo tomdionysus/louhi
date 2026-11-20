@@ -35,6 +35,8 @@ add_executable(louhi_tests
 )
 if(LOUHI_BUILD_LUGH)
   target_sources(louhi_tests PRIVATE auth_lugh_test.cpp auth_service_token_test.cpp ctl_test.cpp)
+  # ctl_test.cpp reads the YAML louhi-ctl writes.
+  target_link_libraries(louhi_tests PRIVATE yaml-cpp::yaml-cpp)
 endif()
 # Dannan's simulation harness: its header-only fixtures and its checkers,
 # which a fetched Dannan names without the dannan:: alias of an installed one.

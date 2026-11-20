@@ -208,13 +208,20 @@ environment, then the flags. `--api-http` is `api: {http: ...}` and `LOUHI_API_H
 
 ### Use it
 
-Sign in once; the tokens are kept in `~/.config/louhi/credentials.json`, readable only by
-you:
+Sign in once; the settings are kept in `~/.config/louhi/config.yaml` and the tokens in
+`~/.config/louhi/credentials.yaml`, readable only by you:
 
 ```
 ./build/louhi-ctl login --issuer https://lugh.example --client-id louhi-ctl \
   --endpoint http://10.0.0.10:7480 --scope louhi:admin
 ```
+
+The configuration is read by the same settings reader as the node's: the file
+(`--config PATH`, `$LOUHI_CONFIG`, or `~/.config/louhi/config.yaml`), then the environment
+(`LOUHI_ENDPOINT`, a list; `LOUHI_CREDENTIALS`), then the flags. Its keys are `issuer`,
+`client_id`, `endpoints` and `scopes` (lists), `ca` and `credentials`; login replaces it
+whole. Credentials an older `louhi-ctl` kept in `~/.config/louhi/credentials.json` are
+moved to the YAML files at the first call.
 
 An administrator makes a project and its quota; a project's members register definitions
 and run tasks:

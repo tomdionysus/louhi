@@ -54,7 +54,7 @@ target_link_libraries(louhi
 # the Lugh plugin is built (it compiles them itself), Louhi's otherwise.
 if(LOUHI_BUILD_LUGH)
   target_sources(louhi PRIVATE auth/lugh.cpp auth/service_token.cpp ctl/ctl.cpp)
-  target_link_libraries(louhi PUBLIC lugh::client)
+  target_link_libraries(louhi PUBLIC lugh::client PRIVATE yaml-cpp::yaml-cpp)
   target_compile_definitions(louhi PUBLIC LOUHI_WITH_LUGH=1)
 else()
   target_sources(louhi PRIVATE runtime/docker/boost_json.cpp)

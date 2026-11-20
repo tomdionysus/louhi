@@ -11,6 +11,18 @@ the Docker driver, the agent, the in-memory store, `louhi-node` with
 `louhi::ctl`, events on Lir, images by digest, storage bounds). Step 4
 under way: Dagda fetched; revision and admission registers (`louhi::admit`)
 built and tested on Dannan's simulation harness, not yet called by the API.
+Lugh `0.2.0` (repinned 2026-11-20; its commits since `53a3280` read, as it
+keeps no changelog) moves into `lugh_client` what Louhi wrote for itself:
+`discover()`, `bearer_token()` (16 KiB, Louhi's bound), `RelyingParty`,
+`TokenSource` with failover across issuers, and a thread-safe
+`testing::FakeHttps`; its HTTPS now goes through Dannan's StreamConnector,
+with the same face. Chosen not to change in 0.1.0, whose final gate was
+running: Louhi's own `louhi/auth/lugh.*` (RelyingParty),
+`louhi/auth/service_token.*` (TokenSource), the API's bearer parsing and
+`louhi/test/fixtures/fake_https.h` (FakeHttps) still work on 0.2.0 and are
+the same API Louhi had. They are duplicates by the stack's rule, so the
+first work after 0.1.0 (feature/lugh-relying-party, a patch release) moves
+Louhi onto Lugh's and deletes them, with the tests moved, not dropped.
 Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`, Lir `e40dd2e` (opt-in)
 (2026-11-20: Lugh's `dbb0573` and Lir's `6268fef` rewritten when the
 stack's history was scrubbed; the same trees). Events are off by default

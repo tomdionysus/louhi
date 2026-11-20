@@ -13,7 +13,11 @@ under way: Dagda fetched; revision and admission registers (`louhi::admit`)
 built and tested on Dannan's simulation harness, not yet called by the API.
 Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `53a3280`, Lir `e40dd2e`
 (2026-11-20: Lugh's `dbb0573` and Lir's `6268fef` rewritten when the
-stack's history was scrubbed; the same trees). On the pin to Dannan 0.10.0,
+stack's history was scrubbed; the same trees). Events are off by default
+(`LOUHI_BUILD_LIR`, coordinator 2026-11-20): Lir 0.1.0 ships no client, and
+`liblir-client0.1` is owed with no date; the `events` CI step still builds and
+tests them on `e40dd2e`, and they return in the release after Lir's client
+does (Lir has Louhi's calls as its first requirements). On the pin to Dannan 0.10.0,
 tools/ci.sh's asan and tsan steps also pass `-DDANNAN_SANITIZE=address` or
 `thread` (Dannan's docs/building.md), keeping the global flags: every stack
 library a sanitizer build links is built from source and instrumented.

@@ -16,6 +16,9 @@
 #   tools/ci.sh coverage   a coverage build's tests; lcov report build-ci/coverage.info
 #   tools/ci.sh tidy       clang-tidy's use-after-move over Louhi's sources
 #   tools/ci.sh fuzz       the four fuzz targets, LOUHI_FUZZ_SECONDS (60) each
+#   tools/ci.sh events     the release step with the events publisher on Lir's
+#                          client (LOUHI_BUILD_LIR, off in every other step:
+#                          no Lir release ships a client yet)
 #
 # Builds go under build-ci/ (LOUHI_CI_OUT to move it), one job per CPU
 # (LOUHI_CI_JOBS to set it: 2 on the shared Pis). Dannan is fetched at the
@@ -93,6 +96,10 @@ case "$step" in
     configure release -DCMAKE_BUILD_TYPE=Release
     "$out/release/louhi_tests"
     "$out/release/louhi-node" --version
+    ;;
+  events)
+    configure events -DCMAKE_BUILD_TYPE=Release -DLOUHI_BUILD_LIR=ON
+    "$out/events/louhi_tests"
     ;;
   clang)
     CXX=clang++ configure clang -DCMAKE_BUILD_TYPE=Release

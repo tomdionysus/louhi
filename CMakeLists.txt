@@ -78,8 +78,11 @@ endif()
 
 # Lir's client, for publishing Louhi's events (design, "Events"), at a commit
 # of its develop on Louhi's Dannan, which it takes rather than fetching its
-# own. Only lir::mqtt and lir::client are built. Off: no events.
-option(LOUHI_BUILD_LIR "Build the events publisher on Lir's client" ON)
+# own. Only lir::mqtt and lir::client are built. Off by default, so a release
+# carries no events: Lir's releases ship no client until liblir-client0.1, and
+# this pin is the withdrawn one (2026-11-20). On builds and tests the events
+# code against it (tools/ci.sh events).
+option(LOUHI_BUILD_LIR "Build the events publisher on Lir's client (unreleased; see above)" OFF)
 if(LOUHI_BUILD_LIR)
   set(LOUHI_LIR_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../lir" CACHE STRING "Lir's repository: a directory or a URL")
   set(LOUHI_LIR_REF "e40dd2e4fda06b24546b3f68df11fcc9344e7cab")

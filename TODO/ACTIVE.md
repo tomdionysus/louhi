@@ -11,8 +11,9 @@ the Docker driver, the agent, the in-memory store, `louhi-node` with
 `louhi::ctl`, events on Lir, images by digest, storage bounds). Step 4
 under way: Dagda fetched; revision and admission registers (`louhi::admit`)
 built and tested on Dannan's simulation harness, not yet called by the API.
-Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `dbb0573`, Lir `6268fef`
-(2026-11-20).
+Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `dbb0573` (to be repinned to
+its rewritten hash), Lir `e40dd2e` (2026-11-20: `6268fef` rewritten when
+the stack's history was scrubbed; the same tree).
 Last gate: **318 passed**, none skipped, on node-c (2026-11-20),
 Docker on xfs with user namespaces, on `feature/network-records` (the
 network records and security groups as nftables), which squashes onto

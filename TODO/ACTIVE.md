@@ -39,7 +39,12 @@ until Dagda and Lugh release on it (one Dannan a process). Its CHANGELOG's
   refuses them too (it should: say so in the API errors).
 - The admit simulation tests' teardown (the weak_ptr and owned attempts
   added for the ASan leak) is re-read: the Agreement lifetime faults are
-  fixed, so ordering kept only for them goes.
+  fixed, and 0.10.1 makes a node's stop wait for a scheduled step already
+  under way (the simulation's schedule), so ordering kept only for either
+  goes.
+- Target `0.10.1` (tagged 2026-11-20, `92d857a`, 0.10.0's ABI), not
+  `0.10.0`. Its `MemoryStore::each_held` lists what a slot holds, should
+  Louhi's tests list register slots.
 - `agree::MemoryStore` replaces any in-memory acceptor store in tests;
   `status::SwappableSink` and `test::RecordingSink` replace log capture
   written here (fixtures); base64/hex/UTF-8 code of Louhi's own goes to

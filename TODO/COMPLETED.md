@@ -169,7 +169,7 @@ now errors only where Louhi's are (develop `6971f64`).
 ## The stack's audits: what Louhi moved first (2026-11-20)
 
 the maintainer's two audits (no duplicated functionality; no special node) were
-negotiated among the sessions through the Lir Development Cluster session,
+negotiated among the sessions through the coordinating session,
 which keeps the converged plan
 (`../lir-develop-cluster/TODO/2026-11-20-cluster-stack-placement.md`,
 "Louhi"). Louhi agreed it, correcting item 3. What it released to Louhi
@@ -528,7 +528,7 @@ checks pass. Not yet run: `louhi-ctl login` against a real Lugh.
   (root in a container is uid 165536 on the node), one reboot; no daemon.json
   before (`/root/louhi-work/daemon.json.before`, `cmdline.txt.before`).
 - node-b: Docker installed, `cgroup_enable=memory`, rebooted with
-  the Lir Development Cluster session's checks passed (lir-node and the
+  the coordinating session's checks passed (lir-node and the
   scheduler active, standing by for node-a, the board answering alike). Its
   userns-remap is still to do (a Docker restart).
 - node-c: `cgroup_enable=memory` and `userns-remap: default`, one

@@ -297,7 +297,7 @@ retires only from a Louhi node's own state).
 ## Waiting on the maintainer
 
 0. **the maintainer's two stack audits (2026-11-20)**, no duplicated functionality and
-   no special node, are reported to the Lir Development Cluster session,
+   no special node, are reported to the coordinating session,
    which correlates all eight projects
    (`../lir-develop-cluster/TODO/2026-11-20-cluster-stack-placement.md`).
    Louhi's findings: the Lugh relying-party plugin copied from Lir's, the

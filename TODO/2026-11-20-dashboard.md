@@ -8,7 +8,7 @@ routes serve the SPA), this must also be configurable. You will expose OpenAPI
 for the API. Styling and structure should be taken from Lugh's admin interface.
 You will allow both a username/password and Lugh for authentication for this."
 
-Where each part lives (the stack's rule, through the Lir Development Cluster
+Where each part lives (the stack's rule, through the coordinating
 session): the static files and the SPA fallback are Dannan's HTTP core (the maintainer's
 Q1); the password check is Dannan's credential helper (its item 11); Lugh
 sign-in is lugh_client's relying-party class; the React shell and its styling,

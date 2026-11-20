@@ -344,6 +344,9 @@ TEST_F(LirPublisherTest, PublishesAtLeastOnceAndCountsWhatLirRefusesWithoutRetry
   ASSERT_TRUE(lir.accept());
   ASSERT_TRUE(lir.receive_a<mqtt::Connect>());
   lir.send(mqtt::Connack{});
+  // Connected again before it is stopped: a stop before the CONNACK is read
+  // closes with no DISCONNECT, which is right, but not what this asks.
+  ASSERT_TRUE(sink->saw("connected to Lir", 2));
   // Shared with the callback: set_value readies the future before it is done
   // with the promise, so a promise on this stack could die under it.
   auto stopped = std::make_shared<std::promise<void>>();

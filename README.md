@@ -306,6 +306,10 @@ moments while Lir spread the subscription across its nodes; Lir on Dannan 0.9 ho
 acknowledgement until the other nodes have the subscription, for up to a second, which
 closes the gap except past that bound. The retained statuses were never affected.
 
+## Code of conduct
+
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
+
 ## Licence
 
 Copyright (C) 2026 Tom Cully. Licensed under the GNU GPLv3; see `LICENSE`.

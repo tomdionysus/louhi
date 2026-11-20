@@ -66,6 +66,10 @@ if(LOUHI_BUILD_LUGH)
   set(LOUHI_LUGH_REF "dbb0573420952336ede86d8db3e86640e48dddb3")
   FetchContent_Declare(lugh GIT_REPOSITORY "${LOUHI_LUGH_REPOSITORY}" GIT_TAG "${LOUHI_LUGH_REF}")
   set(LUGH_BUILD_NODE OFF CACHE BOOL "" FORCE)
+  # Lugh's warnings are errors as Louhi's are: in the release and clang gates,
+  # not under a sanitizer, where g++ warns inside Asio (Lugh's own CI holds
+  # its warning gate).
+  set(LUGH_WARNINGS_AS_ERRORS ${LOUHI_WARNINGS_AS_ERRORS} CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(lugh)
 endif()
 

@@ -168,8 +168,9 @@ store is its implementation and `MemoryStore` stays for tests.
   projects that use Dagda can use it). The records wait for it. If the
   map gets no per-record merge hook, a task's stop is kept under a key of
   its own, only ever written as stopped, so it absorbs under plain
-  last-writer-wins; and if it orders by its own counter rather than
-  Dannan's hybrid clock, the record carries its stamp inside.
+  last-writer-wins. The map orders by Dannan's hybrid clock and node id
+  (the maintainer, 2026-11-20, the stack's Q2), as the maintainer's merge ruling for Louhi
+  wanted, so a record carries no stamp of its own.
 - **How two heads merge, by kind.** Every kind but Task merges
   last-writer-wins on Dannan's hybrid clock (`Context::hlc()`), the stamp
   carried beside each record; an observed record has one writer, so for
@@ -230,8 +231,10 @@ agreement waits for it, with nothing standing in meanwhile.
   `test::sim::Store`, and nothing in real use proposes.
 
 Nothing that places tasks across nodes (step 6) or allocates addresses
-(step 9) is built before Dannan 0.9.0. A single node places on itself, which
-needs no agreement. Placement sits behind an interface, `sched::Placer`, so
+(step 9) is built before Dannan 0.9.0. There is no special case for one
+node (the maintainer, 2026-11-20: leaderless, multimaster, soft; no single-node code):
+a cluster of one places through the same register as a cluster of many,
+its majority being itself. Placement sits behind an interface, `sched::Placer`, so
 the agent and the records do not change with it.
 
 ### Projects and quotas
@@ -323,6 +326,39 @@ Nothing here gives out an address or places anything.
   behind `net::Firewall`; the driver that runs `nft` comes with the task
   namespaces (step 9), which change a node and need the maintainer's go-ahead on the
   Pis.
+
+#### A task's network namespace (step 9, its node half; 2026-11-20)
+
+A task's containers share one network namespace, as ECS's awsvpc tasks do,
+so they reach each other on localhost and the task has one interface and
+one address. Docker cannot join a namespace made outside it, so:
+
+- **A sandbox container per task** holds the namespace: made first, with
+  Docker's networking off (`NetworkMode: none`), the hardened profile, and
+  a command that only waits; every container of the task then joins it
+  (`NetworkMode: container:<sandbox>`). The sandbox outlives a container's
+  restart, so a restart keeps the task's address. Its image is the
+  operator's (`--sandbox-image`, by digest, from an allowed registry),
+  pulled like any task's; a node without it launches nothing, and says
+  why.
+- **The host side**, behind `net::Host` so tests use fakes: a veth pair
+  per task, its host end `lh<twelve hex digits of the task id>` (15
+  characters at most, as the kernel wants) in the VPC's routing domain, its
+  far end moved into the sandbox's namespace (by the sandbox's process),
+  named `eth0` there, given the task's address and a default route to the
+  host end. The task's security groups are then rendered and applied on the
+  host end (`net::Firewall`). Removing the task removes the sandbox, and the
+  veth pair goes with its namespace; the firewall table is removed by name.
+- **Re-derivable** (discipline 3): which veth and table belong to which
+  task is in their names, so a restarted agent finds and removes what no
+  task wants, as it does containers.
+- **The real drivers** run `ip` and `nft` with a fixed argument list (never
+  a shell), every name checked first. They change a node, so testing them on
+  a Pi needs the maintainer's go-ahead, a note on the board, and everything removed
+  after (`CLAUDE.local.md`).
+- The task's address comes from its subnet, which needs agreement (step
+  9's allocation). Until then the host side takes the address as given,
+  and nothing calls it from the agent.
 
 **The carrier**, two paths per pair of nodes (the maintainer: kernel when direct,
 Dannan otherwise), behind one interface, `net::Carrier`:

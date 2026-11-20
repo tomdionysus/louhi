@@ -22,7 +22,9 @@ add_executable(louhi_tests
   model_names_test.cpp
   model_network_test.cpp
   model_records_test.cpp
+  net_command_test.cpp
   net_firewall_test.cpp
+  net_host_test.cpp
   node_status_test.cpp
   runtime_docker_api_test.cpp
   runtime_docker_driver_test.cpp

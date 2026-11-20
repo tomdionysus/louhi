@@ -34,7 +34,15 @@ louhi-ctl's endpoints (COMPLETED.md). The rest waits on Lugh's client
 (relying party, discovery, token source, fake Https), Dannan's next minor
 (the node-tool helper, the random id type, the callback vocabulary, the
 in-memory AcceptorStore, replica sets that follow membership, readiness)
-and the maintainer's HTTP question (`api/client.cpp` moves then). Dannan's next minor
+and the maintainer's HTTP question (`api/client.cpp` moves then). the maintainer's answers
+(2026-11-20): HTTP and JSON move into Dannan, and `api/client.cpp` moves
+onto Dannan's client when it ships; the register map orders by the hybrid
+clock; DNS answered by every node, yes; retiring a node stays an operator
+command. Q6 (the maintainer): where two projects need a thing and one depends on the
+other, the lower one keeps it, so the relying-party class, discovery, the
+token source and the fake HTTPS are lugh_client's; Lugh is building them,
+and Louhi moves onto each as it ships (`auth/lugh.*`, `auth/service_token.*`,
+the discovery in `ctl/ctl.cpp`, `test/fixtures/fake_https.h`). Dannan's next minor
 has not started: the maintainer told Dannan to stop until he has answered the other
 agents' issues (2026-11-20). Gateways and ingress
 go on any node with public reach, settled by a register, not on nodes the
@@ -190,7 +198,17 @@ step per session.
      Dagda's `AcceptorStore`, and on **which replica set serves Louhi's
      slots** (`Serving`), which goes to the maintainer with a recommendation when
      the store is there: the tests use the simulation's genesis set;
-   - the Dagda store on the register map, when Dagda releases it.
+   - the Dagda store on the register map, when Dagda releases it. Dagda's
+     D6 design (`../dagda/TODO/2026-11-20-register-map.md`), with Louhi's
+     review taken (2026-11-20): `changed(view_before, view_after, prefix)`
+     for the store's watches; a commit's outcome names each key's new
+     (stamp, node id); **64 KiB per value**, refused at put, anything larger
+     a Dagda object named in the register's refs (Dagda keeps and frees
+     it); tombstones per space, a 30-day window by default, past which a
+     node long away can revive a removed key, or "never". For Louhi: bound
+     every record under 64 KiB but a task definition, which goes to an
+     object when over it; open the space with "never" tombstones, as task
+     and project removals must not come back.
 1. **Networking groundwork** (the maintainer, 2026-11-16). Done: the network records
    and security groups as nftables (COMPLETED.md). Left: a task's network
    namespace on one node, with the `nft` driver behind `net::Firewall`.

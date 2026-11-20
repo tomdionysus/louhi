@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "louhi/model/network.h"
+#include "louhi/net/command.h"
 #include "louhi/runtime/driver.h"
 
 // A task's security groups as nftables rules (design, "The network records
@@ -66,6 +67,21 @@ class Firewall {
   virtual void apply(std::string script, runtime::Deadline deadline, runtime::Executor executor, runtime::Completion<runtime::Done> done) = 0;
   // Removes the table; one not there is no error.
   virtual void remove(std::string table, runtime::Deadline deadline, runtime::Executor executor, runtime::Completion<runtime::Done> done) = 0;
+};
+
+// Firewall by `nft -f -`, the script on its stdin, so one script is one
+// transaction. A removal is "add table" then "delete table", which succeeds
+// whether or not the table was there. `commands` outlives it.
+class NftFirewall final : public Firewall {
+ public:
+  explicit NftFirewall(Commands& commands) : _commands(commands) {}
+  void apply(std::string script, runtime::Deadline deadline, runtime::Executor executor, runtime::Completion<runtime::Done> done) override;
+  // Throws std::invalid_argument for a table name not of table_name()'s
+  // making.
+  void remove(std::string table, runtime::Deadline deadline, runtime::Executor executor, runtime::Completion<runtime::Done> done) override;
+
+ private:
+  Commands& _commands;
 };
 
 }  // namespace louhi::net

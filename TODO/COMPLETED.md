@@ -4,6 +4,38 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## A task's interface on its node: the command runner, the veth plan, nft (2026-11-20)
+
+Designed first ("A task's network namespace"): a sandbox container per task
+holds the network namespace its containers join; the host end of a veth pair
+is named from the task id, so a restarted agent re-derives whose it is.
+
+- `net/command.h`: `Commands`, and `ProcessCommands` on posix_spawn: a fixed
+  argument list, never a shell, the program found on a fixed system PATH,
+  input on stdin and output (bounded at 64 KiB, cutting said) over Unix
+  socket pairs so a child that exits early raises no SIGPIPE, SIGKILL at the
+  deadline, the child reaped without blocking, one posted completion.
+  Interim: Louhi and Macha both need it, so it moves into Dannan (item 23),
+  which starts from this one.
+- `net/host.h`: `attach_plan` and `detach_plan` as argument lists (a veth
+  pair, its far end moved into the sandbox's namespace as eth0 with the
+  task's address and a default route, proxy ARP on the host end so the task
+  needs no gateway address, the address routed to the host end in the VPC's
+  routing domain); `IpHost` runs a plan step by step, undoes the pair on a
+  failure and names the step; a pair not there is no error to remove.
+  Names, addresses and process ids are checked first.
+- `NftFirewall`: `Firewall` by `nft -f -`; a removal is add-then-delete, so
+  it succeeds whether or not the table was there.
+- Nothing calls them from the agent yet, and the real drivers have not
+  touched a node: that needs the maintainer's go-ahead on a Pi (`CLAUDE.local.md`).
+- The design's "a single node places on itself" is struck (the maintainer: no
+  single-node code); the maintainer's answers to the stack's questions and his Q6
+  ruling are recorded in ACTIVE.md.
+
+Gates on node-b: release **334 passed, 1 skipped**; ASan with UBSan
+and TSan **334 passed, 1 skipped** each (the skip is node-b's: Docker on
+ext4 cannot bound storage). 335 tests, 318 before.
+
 ## Networking groundwork: the network records, security groups as nftables (2026-11-20)
 
 The design first ("The network records and security groups in detail"),

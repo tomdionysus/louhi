@@ -8,6 +8,8 @@
 #include "louhi/net/firewall.h"
 
 #include <boost/asio/ip/address_v4.hpp>
+#include <boost/asio/post.hpp>
+#include <optional>
 #include <stdexcept>
 
 namespace louhi::net {
@@ -97,6 +99,37 @@ std::string table_name(const std::string& interface) {
   for (auto& c : name)
     if (c == '-') c = '_';
   return name;
+}
+
+namespace {
+
+void run_nft(Commands& commands, std::string script, runtime::Deadline deadline, runtime::Executor executor, runtime::Completion<runtime::Done> done) {
+  commands.run(Invocation{{"nft", "-f", "-"}, std::move(script)}, deadline, executor,
+               [executor, done = std::move(done)](runtime::Result<CommandResult> got) mutable {
+                 std::optional<runtime::Error> error;
+                 if (!got.ok()) {
+                   error = got.error();
+                 } else if (got.value().exit_code != 0) {
+                   error = runtime::Error{runtime::Error::Kind::refused, "nft refused the ruleset: " + got.value().output};
+                 }
+                 boost::asio::post(executor, [done = std::move(done), error = std::move(error)]() mutable {
+                   if (error) return done(runtime::Result<runtime::Done>(std::move(*error)));
+                   done(runtime::Result<runtime::Done>(runtime::Done{}));
+                 });
+               });
+}
+
+}  // namespace
+
+void NftFirewall::apply(std::string script, runtime::Deadline deadline, runtime::Executor executor, runtime::Completion<runtime::Done> done) {
+  run_nft(_commands, std::move(script), deadline, std::move(executor), std::move(done));
+}
+
+void NftFirewall::remove(std::string table, runtime::Deadline deadline, runtime::Executor executor, runtime::Completion<runtime::Done> done) {
+  bool ok = table.rfind("louhi_", 0) == 0 && table.size() <= 6 + 15;
+  for (const char c : table) ok = ok && ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_');
+  if (!ok) throw std::invalid_argument("a table to remove is one of table_name()'s making");
+  run_nft(_commands, "add table inet " + table + "\ndelete table inet " + table + "\n", deadline, std::move(executor), std::move(done));
 }
 
 std::string render(const InterfacePolicy& policy) {

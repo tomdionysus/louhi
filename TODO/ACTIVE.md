@@ -23,6 +23,31 @@ running: Louhi's own `louhi/auth/lugh.*` (RelyingParty),
 the same API Louhi had. They are duplicates by the stack's rule, so the
 first work after 0.1.0 (feature/lugh-relying-party, a patch release) moves
 Louhi onto Lugh's and deletes them, with the tests moved, not dropped.
+Dannan `0.10.0` (tagged 2026-11-20, `f70cb52`, SONAME libdannan0.10) waits
+until Dagda and Lugh release on it (one Dannan a process). Its CHANGELOG's
+"Adopting 0.10.0", against Louhi, for that move:
+- `admit::RequestId` (sixteen random bytes) becomes `identity::RandomId<Tag>`;
+  look for other hand-made random ids.
+- The four fuzz targets register with `dannan::testing` and run under
+  `dannan::fuzz::smoke` in `louhi_tests`; Louhi's own drivers and corpus
+  replay go.
+- `RetryPolicy::unbounded` is already used (agent launches, service token);
+  check nothing else loops by hand.
+- `model::parse_range` and the security-group and allow-list prefixes go
+  through `listen::Prefix::parse`, which now refuses host bits set: check
+  the records' tests and the README's examples, and decide whether Louhi
+  refuses them too (it should: say so in the API errors).
+- The admit simulation tests' teardown (the weak_ptr and owned attempts
+  added for the ASan leak) is re-read: the Agreement lifetime faults are
+  fixed, so ordering kept only for them goes.
+- `agree::MemoryStore` replaces any in-memory acceptor store in tests;
+  `status::SwappableSink` and `test::RecordingSink` replace log capture
+  written here (fixtures); base64/hex/UTF-8 code of Louhi's own goes to
+  `encoding/base.h`; hand-written mkdir-and-fsync to the durable helpers.
+- `Completion<T>`/`Outcome<T>` replace Louhi's own callback result types
+  where they match (the store, the drivers' completions).
+- CI: asan and tsan steps set `DANNAN_SANITIZE`, and the symbol check
+  (`nm -D --undefined-only`) runs in them.
 Pins: Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`, Lir `e40dd2e` (opt-in)
 (2026-11-20: Lugh's `dbb0573` and Lir's `6268fef` rewritten when the
 stack's history was scrubbed; the same trees). Events are off by default

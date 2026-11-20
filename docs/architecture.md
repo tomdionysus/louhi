@@ -133,6 +133,6 @@ TODO/                 now and next (ACTIVE.md), the designs, and what shipped (C
 - A principal disabled in Lugh keeps access until its token expires (five minutes by
   default), until Lugh publishes principal changes over Lir.
 - A reader that has just subscribed to a project's events could miss those of its first
-  moments while Lir spreads the subscription across its nodes. Lir on Dannan 0.9 holds its
+  moments while Lir spreads the subscription across its nodes. Lir on Dannan 0.9.2 holds its
   acknowledgement until the other nodes have the subscription, for up to a second, which
   closes the gap except past that bound. The retained statuses are not affected.

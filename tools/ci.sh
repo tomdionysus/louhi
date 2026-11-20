@@ -19,10 +19,8 @@
 # (LOUHI_CI_JOBS to set it: 2 on the shared Pis). Dannan is fetched at the
 # pinned tag from the sibling checkout when there is one, else from its public
 # repository (LOUHI_DANNAN_REPOSITORY to name another), and Lir likewise
-# (LOUHI_LIR_REPOSITORY) and Dagda (LOUHI_DAGDA_REPOSITORY); Lugh, which is
-# private, from LOUHI_LUGH_REPOSITORY or the sibling, or not at all. Needs
-# g++ cmake
-# ninja-build libboost-dev libssl-dev libyaml-cpp-dev libgtest-dev, and for
+# (LOUHI_LIR_REPOSITORY), Dagda (LOUHI_DAGDA_REPOSITORY) and Lugh
+# (LOUHI_LUGH_REPOSITORY). Needs g++ cmake ninja-build libboost-dev libssl-dev libyaml-cpp-dev libgtest-dev, and for
 # its step clang, clang-format or lcov.
 
 set -eu
@@ -45,16 +43,16 @@ if [ -z "${LOUHI_LIR_REPOSITORY:-}" ]; then
     LOUHI_LIR_REPOSITORY=https://github.com/tomdionysus/lir.git
   fi
 fi
-# Lugh is private: from LOUHI_LUGH_REPOSITORY or the sibling checkout, else
-# Louhi is built without the Lugh plugin (and so with no API).
-if [ -z "${LOUHI_LUGH_REPOSITORY:-}" ] && [ -d "$top/../lugh/.git" ]; then
-  LOUHI_LUGH_REPOSITORY=$top/../lugh
+# Lugh, public since 2026-11-20, likewise, so every step builds the Lugh
+# plugin and the API.
+if [ -z "${LOUHI_LUGH_REPOSITORY:-}" ]; then
+  if [ -d "$top/../lugh/.git" ]; then
+    LOUHI_LUGH_REPOSITORY=$top/../lugh
+  else
+    LOUHI_LUGH_REPOSITORY=https://github.com/tomdionysus/lugh.git
+  fi
 fi
-if [ -n "${LOUHI_LUGH_REPOSITORY:-}" ]; then
-  siblings="-DLOUHI_BUILD_LUGH=ON -DLOUHI_LUGH_REPOSITORY=$LOUHI_LUGH_REPOSITORY"
-else
-  siblings="-DLOUHI_BUILD_LUGH=OFF"
-fi
+siblings="-DLOUHI_BUILD_LUGH=ON -DLOUHI_LUGH_REPOSITORY=$LOUHI_LUGH_REPOSITORY"
 # Dagda, public since 2026-11-20: from LOUHI_DAGDA_REPOSITORY, else the
 # sibling checkout, else its public repository, as Dannan.
 if [ -z "${LOUHI_DAGDA_REPOSITORY:-}" ]; then

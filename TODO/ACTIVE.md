@@ -91,10 +91,43 @@ step per session.
      node wrote. The signal Dagda would propose compares the view's clock
      with the clocks peers advertise. Until then, never whole for removals.
    - Only `every_node` and `node_local` open; `replicas: N` is not built.
-   Design questions this raises (the merge per record kind, what a
-   conflicting write of the same task means, the domain and key) go to
-   the maintainer first, written into the design. Neither Lir nor Lugh is on Dagda
-   yet: Louhi is the first hosted system on its head spaces after Macha.
+   the maintainer's rulings (2026-11-20), to be written into the design first:
+   - **A task record merges** with "wanted stopped" absorbing (no merge
+     undoes a stop) and every other field group last-writer-wins on
+     Dannan's hybrid clock (`Context::hlc()`).
+   - **Revision numbers** come from Dannan's agreement: a register per
+     definition family holding the next revision, so N is unique. The
+     revision's content then goes to Dagda under N.
+   - **Quota admission** comes from agreement: a register per project
+     holding what is admitted (tasks, CPU, memory); RunTask commits "add
+     if within quota", a stop commits the subtraction.
+   - **The acceptor state** for both lives in Dagda's durable
+     `AcceptorStore`, asked of the Dagda session on the maintainer's word for its
+     release after 0.3.2 (for Lir, Lugh, Kvasir and Louhi alike; rule 3).
+     Louhi writes none. Meanwhile Louhi builds the registers' callers and
+     tests them on Dannan's simulation harness with `test::sim::Store`
+     (`dannan/test/fixtures/sim/agreement.h:33`, linked through
+     `dannan::sim_checkers`). Registering and RunTask wait on the store
+     for real use; the order inside step 4 is the next session's to plan.
+   - **Domain and build:** a domain "louhi", its key derived from the
+     cluster key by HKDF under "louhi/storage/v1", spaces under "louhi/";
+     Dagda fetched from `../dagda` like the others (Dannan declared with
+     `OVERRIDE_FIND_PACKAGE`, Dagda's install skipped). A failed fetch
+     goes to the Dagda session and to the maintainer.
+
+   Dagda's next release (the maintainer's ruling in the Dagda session, 2026-11-20:
+   no longer held by Macha's cutover) is to bring, test first: Context v2
+   read-one and prefix listing with paging; the caught-up signal, a node's
+   view covering the clocks its active peers advertise for the space;
+   FetchContent beside a fetched Dannan; and the AcceptorStore. Louhi
+   asked for: an absent key read as empty; this node's view by default,
+   a choice per call; pages of a few hundred with a resumable cursor, each
+   listing from one view; caught-up per space, as a query and a watch
+   notice. Louhi may start on 0.3.2 with the layer below and move when
+   it lands.
+
+   Neither Lir nor Lugh is on Dagda yet: Louhi is the first hosted system
+   on its head spaces after Macha.
 1. **`louhi-ctl login --scope openid` fails** (found 2026-11-16): the
    issuer then returns an ID token, which Lugh's client verifies against a
    `Verifier` holding no keys (`ctl/ctl.cpp`, `login`). Either load the
@@ -108,9 +141,9 @@ step per session.
    nodes; anything near that line goes to the maintainer first.
 3. **Steps 6 and 7, and the rest of step 9**, on Dannan's agreement
    registers (`Context::agreement()`, in the pinned Dannan): placement,
-   then services, then address allocation. They wait for Dagda's acceptor
-   store (its slice 4, paused until Macha's cutover); Louhi writes no
-   `AcceptorStore` of its own (the maintainer, 2026-11-20), as Lir does not.
+   then services, then address allocation, on the same Dagda
+   `AcceptorStore` as revisions and quota; Louhi writes none of its own
+   (the maintainer, 2026-11-20), as Lir does not.
 4. **Owed, end to end**, when a Lugh issuer is at hand:
    - `louhi-ctl login` and `ServiceToken` against a real Lugh;
    - task events (not only a node's status) published live to Lir, which
@@ -209,9 +242,9 @@ history is in git.
 - **Placement:** a register per task in Dannan's agreement: any node
   proposes, agreement settles one node, no scheduler. `changed_at` is the
   fencing token for run_once tasks. The same primitive serves address
-  allocation and quota admission across nodes. Nothing that places tasks
-  across nodes, allocates addresses or keeps a service's count is built
-  without it; no stand-in.
+  allocation, quota admission and (2026-11-20) revision numbers. Nothing
+  that places tasks across nodes, allocates addresses or keeps a
+  service's count is built without it; no stand-in.
 - **Tenants:** our own projects, each with enforced quotas from the start,
   created and set through the API by `louhi:admin` only.
 - **API:** Louhi's own, declarative, AWS's vocabulary; no Kubernetes or EC2
@@ -239,9 +272,14 @@ history is in git.
 - **Retiring a node (2026-11-17):** `louhi-node --retire`, the same
   command as `lir-node`'s.
 - **Dagda (2026-11-20):** records now, on Dagda `0.3.2`'s head spaces,
-  pinned at the tag though contract v2 freezes only at slice 4;
-  placement later, on Dagda's acceptor store. No acceptor store of
-  Louhi's own.
+  pinned at the tag though contract v2 freezes only at slice 4, in a
+  domain "louhi" keyed from the cluster key; Dagda fetched like the
+  other siblings. A task record merges with a stop absorbing, else
+  last-writer-wins on the hybrid clock.
+- **Agreement (2026-11-20):** revision numbers, quota admission and
+  placement are Dannan agreement registers, their acceptor state in
+  Dagda's durable `AcceptorStore` (asked for, one for every hosted
+  system). No acceptor store of Louhi's own.
 - **Workload identity:** deferred.
 - **Overlay carrier:** both: WireGuard (with a VPC tag inside) where two
   nodes reach each other directly, Dannan frames otherwise.

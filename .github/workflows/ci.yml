@@ -58,11 +58,6 @@ jobs:
   coverage:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    # The upload proves the repository by GitHub's OIDC token, so no secret
-    # is needed (a public repository's tokenless upload is refused).
-    permissions:
-      contents: read
-      id-token: write
     container:
       image: debian:trixie
     steps:
@@ -87,8 +82,9 @@ jobs:
         with:
           files: build-ci/coverage.info
           disable_search: true
-          use_oidc: true
-          fail_ci_if_error: false
+          # A public repository's tokenless upload is refused.
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
 
   macos:
     runs-on: macos-15

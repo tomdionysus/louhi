@@ -141,6 +141,20 @@ TEST(AgentOnDocker, RunsAndStopsARealTask) {
       driver, desired, reports, self, clock, io.get_executor(),
       dannan::status::ScopedLogger(dannan::status::console_sink(dannan::status::LogFormat::text, dannan::status::LogLevel::info), "agent"), policy);
   agent->start();
+  // On every way out, a failed ASSERT's early return included: the io stops
+  // and its thread is joined before the agent and the driver go, so a
+  // failure fails this test alone rather than terminating the binary on a
+  // joinable thread.
+  struct Joined {
+    asio::executor_work_guard<asio::io_context::executor_type>& work;
+    asio::io_context& io;
+    std::thread& runner;
+    ~Joined() {
+      work.reset();
+      io.stop();
+      if (runner.joinable()) runner.join();
+    }
+  } joined{work, io, runner};
 
   const auto running =
       reports.wait_for([&](const model::TaskStatus& s) { return s.task == a.task.id && s.state == model::TaskState::running; }, std::chrono::seconds(240));
@@ -197,7 +211,4 @@ TEST(AgentOnDocker, RunsAndStopsARealTask) {
     cv.wait_for(lock, std::chrono::seconds(30), [&] { return stopped_agent; });
   }
   agent.reset();
-  work.reset();
-  io.stop();
-  runner.join();
 }

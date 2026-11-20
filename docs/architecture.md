@@ -121,8 +121,10 @@ louhi/ctl/            louhi-ctl's commands, configuration, credentials and sign-
 louhi/events/         the events and their publisher on Lir
 louhi/test/           GoogleTest, one binary (louhi_tests); fixtures in louhi/test/fixtures/
 louhi/fuzz/           libFuzzer targets for untrusted bytes
-tools/                louhi-node, louhi-ctl, ci.sh
-docs/                 this file, and the principles and laws shared with the stack
+tools/                louhi-node, louhi-ctl, ci.sh, build-deb.sh
+config/, packaging/   the example configuration and the systemd unit, as installed
+debian/               the Debian package (docs/packaging.md)
+docs/                 this file, packaging, the manual pages, and the principles and laws shared with the stack
 TODO/                 now and next (ACTIVE.md), the designs, and what shipped (COMPLETED.md)
 ```
 

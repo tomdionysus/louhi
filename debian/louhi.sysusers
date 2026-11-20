@@ -1,0 +1,4 @@
+# louhi.service's user. It joins the docker group because louhi-node drives
+# the Docker Engine through its socket, which is as good as root on the node.
+u louhi - "Louhi compute node" /var/lib/louhi
+m louhi docker

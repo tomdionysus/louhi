@@ -1,0 +1,6 @@
+etc/louhi/config.yaml
+usr/bin/louhi-ctl
+usr/bin/louhi-node
+usr/lib/systemd/system/louhi.service
+usr/share/man/man1/louhi-ctl.1
+usr/share/man/man1/louhi-node.1

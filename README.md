@@ -24,10 +24,30 @@ is to keep its records, [Lugh](https://github.com/tomdionysus/lugh) signs caller
 
 ### From the Debian package
 
-> **Not settled yet.** The package layout is being settled across the stack (Dannan,
-> Dagda, Lugh, Lir and Louhi alike), so there is no Louhi package to install yet. When
-> there is, it installs two binaries, `louhi-node` and `louhi-ctl`, and this section will
-> say where the node's configuration lives. Until then, build from source.
+On Debian 13, with Dannan's and Dagda's packages (`libdannan0.9`, `libdagda0.3.2`)
+where apt can find them, as the stack's apt repository has them:
+
+```
+sudo apt install ./louhi_0.1.0_arm64.deb
+```
+
+The package installs `louhi-node` and `louhi-ctl` in `/usr/bin`, the node's example
+configuration as `/etc/louhi/config.yaml`, an empty `/etc/louhi/secrets.yaml` readable by
+the node alone, and `louhi.service`, which runs the node as the `louhi` system user with
+its state in `/var/lib/louhi`. The `louhi` user is in the `docker` group, since the node
+drives Docker through its socket. The service is installed disabled. To start a node:
+
+```
+sudo sh -c 'umask 077; head -c 64 /dev/urandom > /etc/louhi/cluster.key'   # once; copy it to every node
+sudo chown louhi:louhi /etc/louhi/cluster.key
+sudoedit /etc/louhi/config.yaml        # see "Running louhi-node" below
+sudo systemctl enable --now louhi
+```
+
+The 0.1.0 package publishes no events (it is built without Lir's client, which returns
+with Lir's rewrite), and keeps records in memory (see Status).
+[docs/packaging.md](docs/packaging.md) says what it installs where, its dependencies, and
+how to build it.
 
 ### From source
 
@@ -69,6 +89,7 @@ cmake --build build
 | `LOUHI_BUILD_LUGH` | `ON` | The Lugh plugin, the API's sign-in and `louhi-ctl`; off, the node serves no API |
 | `LOUHI_BUILD_LIR` | `ON` | The events publisher on Lir's client; off, no events |
 | `LOUHI_BUILD_DAGDA` | `ON` | Fetch and build against Dagda |
+| `LOUHI_FETCH_DEPENDENCIES` | `ON` | Fetch Dannan and Dagda at their tags; off, find the installed `libdannan-dev` and `libdagda-dev` (the package's build) |
 | `LOUHI_BUILD_TESTING` | `OFF` | Build `louhi_tests` |
 | `LOUHI_BUILD_FUZZING` | `OFF` | Build the libFuzzer targets (clang) |
 | `LOUHI_WARNINGS_AS_ERRORS` | `OFF` | Treat compiler warnings as errors |
@@ -77,8 +98,11 @@ cmake --build build
 | `LOUHI_LUGH_REPOSITORY` | `../lugh` | Where Lugh is fetched from |
 | `LOUHI_LIR_REPOSITORY` | `../lir` | Where Lir is fetched from |
 
-Nodes are Linux only. The build has no install step yet: copy `louhi-node` and `louhi-ctl`
-where you want them.
+Nodes are Linux only. With `LOUHI_FETCH_DEPENDENCIES=OFF`, built against the installed
+`libdannan-dev` and `libdagda-dev` as the package is, `cmake --install build` installs the
+binaries, the manual pages, the example configuration (never over an existing one) and the
+systemd unit under the prefix, `/usr/local` by default. It creates no user, so the package
+is the simpler way onto a node.
 
 ## Preparing a node
 
@@ -105,15 +129,16 @@ node) and a state directory of its own.
 Every setting is a flag, a key in `config.yaml`, and a `LOUHI_*` variable (the key in
 capitals, dots as underscores: `api.http` is `--api-http` and `LOUHI_API_HTTP`). The layers
 are read in order, each overriding the one before: the file (`--config PATH`,
-`$LOUHI_CONFIG`, or `/usr/local/etc/louhi/config.yaml` when it exists), `secrets.yaml`
-beside it, the environment, then the flags. A key no setting reads is warned about.
+`$LOUHI_CONFIG`, or `/etc/louhi/config.yaml` when it exists; `/usr/local/etc/louhi` for a
+source install), `secrets.yaml` beside it, the environment, then the flags. A key no
+setting reads is warned about.
 
-A first node, serving the API over plain HTTP:
+A first node, serving the API over plain HTTP (the package's example configuration):
 
 ```yaml
-# /usr/local/etc/louhi/config.yaml
+# /etc/louhi/config.yaml
 cluster:
-  key: /usr/local/etc/louhi/cluster.key
+  key: /etc/louhi/cluster.key
 node:
   state: /var/lib/louhi
   advertise: 10.0.0.10        # the address other nodes reach this one at
@@ -127,14 +152,14 @@ lugh:
 ```
 
 ```yaml
-# /usr/local/etc/louhi/secrets.yaml, readable by the node's user alone
+# /etc/louhi/secrets.yaml, readable by the node's user alone
 registries:
   credentials:
     - ghcr.io=someone:a-personal-access-token   # DOMAIN=USER:PASSWORD, or DOMAIN=:IDENTITY_TOKEN
 ```
 
 ```
-louhi-node
+louhi-node                             # or: sudo systemctl start louhi
 #   {"event":"listening","id":"...","port":7437}
 #   {"event":"api","http":7480,"https":0}
 #   {"event":"status","ready":true,"tasks":0,"passes":1,"conditions":0}
@@ -176,7 +201,7 @@ Every node shares the cluster key. A new node joins by naming one or more runnin
 
 ```yaml
 cluster:
-  key: /usr/local/etc/louhi/cluster.key
+  key: /etc/louhi/cluster.key
   bootstrap: [10.0.0.10:7437]
 ```
 
@@ -193,7 +218,9 @@ audiences.
 
 ### Events on Lir
 
-With `lir.enabled`, the node publishes to the Lir nodes it finds in its Dannan cluster.
+Not in the 0.1.0 package, which is built without Lir's client. In a build with it
+(`LOUHI_BUILD_LIR`), with `lir.enabled` the node publishes to the Lir nodes it finds in its
+Dannan cluster.
 It signs in with a token of its own from the first Lugh issuer, as a Lugh service
 principal: `lir.client_id` with either `lir.client_key` and `lir.client_kid`, or
 `lir.client_secret`. Without a client it connects with no password, for a Lir that allows
@@ -347,6 +374,8 @@ The plan, in order, is [`TODO/ACTIVE.md`](TODO/ACTIVE.md).
 
 - [docs/architecture.md](docs/architecture.md): why Louhi is built as it is, its parts,
   the stack and the repository's layout.
+- [docs/packaging.md](docs/packaging.md): the Debian package, what it installs, and how
+  to build it.
 - [docs/principles-and-laws.md](docs/principles-and-laws.md): the laws and disciplines
   every change follows.
 - [CONTRIBUTING.md](CONTRIBUTING.md): conventions, branches, tests.

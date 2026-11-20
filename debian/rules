@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+#
+# Louhi - The Distributed Compute Layer
+#
+# Copyright (C) 2026 Tom Cully <mail@tomcully.com>
+# Licensed under the GNU GPLv3 - see <https://www.gnu.org/licenses/gpl-3.0.html>
+#
+# The CMake install rules say where everything goes; debian/louhi.install
+# names it. Dannan and Dagda are the installed packages (libdannan-dev,
+# libdagda-dev), so the binaries link their shared libraries. Lugh's client
+# has no package: it is fetched at its pinned commit and linked in statically,
+# from LOUHI_LUGH_REPOSITORY (tools/build-deb.sh sets it). Lir's client is
+# left out (LOUHI_BUILD_LIR off): the package publishes no events.
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+LOUHI_LUGH_REPOSITORY ?= https://github.com/tomdionysus/lugh.git
+
+%:
+	dh $@ --buildsystem=cmake --builddirectory=debian/build
+
+# FETCHCONTENT_FULLY_DISCONNECTED off, after dh_auto_configure's own, since
+# Lugh's client is fetched; nothing else is.
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DLOUHI_FETCH_DEPENDENCIES=OFF \
+		-DLOUHI_BUILD_DAGDA=ON \
+		-DLOUHI_BUILD_LUGH=ON \
+		-DLOUHI_BUILD_LIR=OFF \
+		-DLOUHI_BUILD_TESTING=OFF \
+		-DLOUHI_LUGH_REPOSITORY=$(LOUHI_LUGH_REPOSITORY) \
+		-DFETCHCONTENT_FULLY_DISCONNECTED=OFF
+
+# No tests in the package build: the gate (tools/ci.sh release) runs them on
+# the same sources.
+override_dh_auto_test:
+
+# The packaged configuration is an example, so the service is installed
+# disabled and not started. An upgrade restarts it if it is enabled or running.
+override_dh_installsystemd:
+	dh_installsystemd --no-enable

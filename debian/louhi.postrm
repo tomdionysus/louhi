@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# Louhi - The Distributed Compute Layer
+#
+# Copyright (C) 2026 Tom Cully <mail@tomcully.com>
+# Licensed under the GNU GPLv3 - see <https://www.gnu.org/licenses/gpl-3.0.html>
+#
+# louhi postrm: remove keeps the configuration, the cluster key and the
+# secrets; purge deletes them, as Debian expects of a purge. The node's state
+# in /var/lib/louhi (its identity in the cluster) is kept even by a purge:
+# deleting it would make the machine a new node, and the old one would count
+# against the majority until retired.
+
+set -e
+
+case "$1" in
+    purge)
+        rm -rf /etc/louhi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

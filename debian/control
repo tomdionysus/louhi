@@ -1,0 +1,44 @@
+Source: louhi
+Section: admin
+Priority: optional
+Maintainer: tomdionysus <tomdionysus@users.noreply.github.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake,
+ git,
+ ca-certificates,
+ libdannan-dev (>= 0.9.2),
+ libdannan-dev (<< 0.10~),
+ libdagda-dev (>= 0.3.2),
+ libdagda-dev (<< 0.3.3~),
+ libboost-dev (>= 1.83),
+ libssl-dev,
+ libyaml-cpp-dev,
+Standards-Version: 4.7.0
+Homepage: https://github.com/tomdionysus/louhi
+Vcs-Git: https://github.com/tomdionysus/louhi.git
+Vcs-Browser: https://github.com/tomdionysus/louhi
+Rules-Requires-Root: no
+
+Package: louhi
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+Recommends:
+ docker.io | docker-ce,
+ systemd,
+Description: container compute for a cluster of trusted machines
+ Louhi runs containers on the nodes of a cluster the operator owns, in the
+ style of ECS and Fargate: a caller describes a task and how many should run,
+ never which machine, and Louhi places it, runs it in a hardened Docker
+ container, restarts it by its policy, and reports what it sees. It is a
+ hosted system on Dannan, the network layer, and signs callers in with Lugh.
+ .
+ This package holds louhi-node, one node of the cluster, run by louhi.service
+ as the louhi system user (a member of the docker group), and louhi-ctl, the
+ API from a terminal.
+ .
+ The service is installed disabled: write the cluster key and configure
+ /etc/louhi/config.yaml and /etc/louhi/secrets.yaml, then enable
+ louhi.service.

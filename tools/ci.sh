@@ -135,8 +135,10 @@ case "$step" in
     # errors: GCC evaluates arguments right to left on x86-64, so a value used
     # beside its own move in one call is empty on one platform and not on
     # another (found in Lugh, 2026-11-20).
+    # Lir on, as tools/ci.sh events: every tracked source is checked, the
+    # events publisher's included.
     CXX=clang++ cmake -S "$top" -B "$out/tidy" -G Ninja -DLOUHI_BUILD_TESTING=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DLOUHI_DANNAN_REPOSITORY="$LOUHI_DANNAN_REPOSITORY" \
-      -DLOUHI_LIR_REPOSITORY="$LOUHI_LIR_REPOSITORY" $siblings
+      -DLOUHI_BUILD_LIR=ON -DLOUHI_LIR_REPOSITORY="$LOUHI_LIR_REPOSITORY" $siblings
     # Configuring writes every generated header; nothing is compiled.
     files=$(cd "$top" && git ls-files 'louhi/*.cpp' 'tools/*.cpp' | sed "s|^|$top/|")
     clang-tidy -p "$out/tidy" --quiet -checks='-*,bugprone-use-after-move' -warnings-as-errors='*' $files

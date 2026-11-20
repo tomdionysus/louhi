@@ -48,7 +48,7 @@ jobs:
             g++ clang clang-format clang-tidy libclang-rt-19-dev cmake ninja-build git ca-certificates openssl \
             libboost-dev libssl-dev libyaml-cpp-dev libgtest-dev
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -70,7 +70,7 @@ jobs:
             libboost-dev libssl-dev libyaml-cpp-dev libgtest-dev lcov \
             curl gnupg  # Codecov's uploader verifies its own signature
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -101,7 +101,7 @@ jobs:
       - name: Install packages
         run: brew install boost openssl@3 yaml-cpp googletest ninja
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Homebrew's own include directory, which Boost's path brings in, holds
       # OpenSSL 4 (the stack builds against 3, as Debian has it). A directory

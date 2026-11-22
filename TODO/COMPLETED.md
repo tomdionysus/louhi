@@ -40,7 +40,11 @@ wiped that day.
   guard, which matched "clang" among the command's arguments; the
   coordinating session found the defect and gave the sanctioned form, a
   direct ssh line under the claim (the fix is put to the maintainer).
-- **The deb** on node-c from `ce80724`: built, lintian clean.
+- **The deb** on node-c from `ce80724`: built, lintian clean; and from the
+  tag: `louhi_0.2.0_arm64.deb` and its dbgsym, lintian clean.
+- **Cut:** squashed onto `main` as `d81c5f3` "Release 0.2.0", tag `0.2.0`
+  annotated on it; `main` merged back into `develop` (`f4f70a1`), trees
+  identical.
 - **Decided on the way:** host mounts with four controls (the
   maintainer, after "volumes only" and a question on the risk); logs wait
   for Dannan 0.10.x; Docker stays on all four Pis (already installed); the

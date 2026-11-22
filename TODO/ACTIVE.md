@@ -110,6 +110,17 @@ Dannan and Dagda packages, which need not be built again.
      `--a-b` and `LOUHI_A_B`; the shared keys `log.level` and
      `log.format`. Check every flag of `louhi-node` and `louhi-ctl`
      against that rule.
+   - Dannan 0.11.0 (announced 2026-11-22, the maintainer's ruling on the
+     section): the node's own settings come from
+     `dannan::config::add_node_settings(reader, "LOUHI")` and
+     `node_config(settings)` (`dannan/config/node_settings.h`), all under
+     `cluster.*`. `tools/louhi_node.cpp` drops its copy: `node.state`,
+     `node.name`, `node.domain`, `node.listen`, `node.port`,
+     `node.advertise` and `timing.heartbeat_ms` become `cluster.state`,
+     `cluster.name`, `cluster.domain`, `cluster.listen.address`,
+     `cluster.listen.port`, `cluster.listen.advertise` and
+     `cluster.heartbeat_ms`; Louhi keeps its rule that a state and a key
+     are required, and the README gets a renaming note.
 3. **The Dagda store** (the rest of step 4), on Dagda's register map (its
    D6 design, `../dagda/TODO/2026-11-20-register-map.md`, with Louhi's
    review taken), when Dagda releases it with the `AcceptorStore` and the

@@ -7,9 +7,9 @@ of this file.
 
 **State.** **0.1.1 is released** (2026-11-22): tag `0.1.1` on `main` at
 `ddd285d`; `develop` is `main` merged back, plus the notes since. No
-feature branch is open (COMPLETED.md, "0.1.1 released"). Every item below
-waits on another project's release, or (item 4) on the maintainer's
-go-ahead.
+feature branch is open (COMPLETED.md, "0.1.1 released"). Item 1 is
+Louhi's own; every other waits on another project's release, or (item 4)
+on the maintainer's go-ahead.
 
 - **Pins:** Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`; Lir `e40dd2e`
   only when `LOUHI_BUILD_LIR` is on (off by default: no Lir release ships a
@@ -31,6 +31,39 @@ Dannan and Dagda packages, which need not be built again.
 
 ## Next, in order
 
+1. **Louhi 0.2.0: what the build cluster needs to run on Louhi.** The
+   maintainer said yes in principle (2026-11-22, by the coordinating
+   session) to moving the build cluster onto Louhi: a trial on node-c
+   alone, one project's test runs (not builds), Louhi's nodes their own
+   Dannan cluster (never the standing one), its cores one claim on the
+   board; HIL and TSan stay on the board. Installing `louhi-node` on node-c
+   is the trial itself: tell the coordinating session first. Each step on
+   its own `feature/<name>`, tests first:
+   - (a) **A finished task frees what it held.** A task run on its own
+     whose node reports it stopped no longer counts against its project's
+     quota or its node's allocation; today it counts until someone stops
+     it. `Assignment` carries this node's stored status of the task.
+   - (b) **Node-capacity admission.** RunTask refuses (409, "capacity") a
+     task this node cannot hold beside what it has admitted (its last
+     report's total less what is allocated and pending), and answers 503
+     while the node has not reported. A refusal, not yet a queue.
+   - (c) **`louhi-ctl` client-credentials login**, for a Lugh service
+     principal per project (scope `louhi:<project>:run` and `:read`), on
+     `lugh::client::TokenSource`.
+   - (d) **Retention of exited containers.** A finished task's containers
+     and volumes are removed a set time after it stopped (the node's
+     `--retain-finished`, a day by default); the agent never launches
+     again a task run on its own whose stored status is stopped, so a
+     restarted agent does not rerun a finished job whose containers are
+     gone.
+   - (e) **GetTaskLogs**, bounded and paged, from the retained containers
+     through the driver (Docker's multiplexed log stream, a fuzzed
+     parser). Log text is bytes from a workload: it reaches JSON only as
+     valid UTF-8, which needs Dannan 0.10.x's `encoding::utf8_length`
+     (not in 0.9.2), so this step follows item 2 unless the maintainer
+     rules otherwise.
+   - Host-directory mounts: the maintainer is weighing them against
+     volumes only (2026-11-22); nothing is built until that choice is made.
 2. **Dannan 0.10.x**, once Dagda has released on it (one Dannan a
    process; Dagda's 0.4.0 is under way). Lugh has: 0.4.0 (2026-11-22) is
    on Dannan 0.10.2 and lir::mqtt 0.1.0, carries the five TokenSource cases,

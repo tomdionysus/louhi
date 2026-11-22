@@ -133,7 +133,9 @@ Dannan and Dagda packages, which need not be built again.
      `cluster.name`, `cluster.domain`, `cluster.listen.address`,
      `cluster.listen.port`, `cluster.listen.advertise` and
      `cluster.heartbeat_ms`; Louhi keeps its rule that a state and a key
-     are required, and the README gets a renaming note.
+     are required, and the README gets a renaming note. On Dannan's
+     develop since 2026-11-22. 0.11.0 also adds `Fault::cancelled` after
+     `failed`: nothing in Louhi switches over `Fault` (checked).
 3. **The Dagda store** (the rest of step 4), on Dagda's register map (its
    D6 design, `../dagda/TODO/2026-11-20-register-map.md`, with Louhi's
    review taken), when Dagda releases it with the `AcceptorStore` and the

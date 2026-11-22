@@ -1,0 +1,113 @@
+.\" Louhi - The Distributed Compute Layer
+.\" Copyright (C) 2026 Tom Cully <mail@tomcully.com>
+.\" Licensed under the GNU GPLv3 - see <https://www.gnu.org/licenses/gpl-3.0.html>
+.TH LOUHI-NODE 1 2026-11-20 Louhi "Louhi"
+.SH NAME
+louhi-node \- one node of a Louhi compute cluster
+.SH SYNOPSIS
+.B louhi-node
+.RB [ \-\-config
+.IR FILE ]
+.RI [ OPTION ...]
+.br
+.B louhi-node
+.B \-\-retire
+.IR NODE_ID ...
+.br
+.B louhi-node \-\-version
+.SH DESCRIPTION
+.B louhi-node
+is one node of Louhi: a Dannan node that advertises
+.B louhi
+and runs the tasks placed on it as Docker containers, restarts them by their
+policy, and serves Louhi's HTTP API when a Lugh issuer and a listener are
+given. It reports what it does as one JSON object per line on standard output,
+a status line every
+.B \-\-status-ms
+milliseconds, and runs until SIGTERM or SIGINT. Stopping it leaves the tasks
+running; started again, it adopts them.
+.PP
+Every setting is a flag, a key in the configuration file and a
+.B LOUHI_*
+environment variable (the key in capitals, dots as underscores:
+.B api.http
+is
+.B \-\-api-http
+and
+.BR LOUHI_API_HTTP ).
+The file is
+.B \-\-config
+.IR FILE ,
+.BR $LOUHI_CONFIG ,
+or
+.I /etc/louhi/config.yaml
+when it exists; then
+.I secrets.yaml
+beside it, the environment, and the flags, each overriding the one before.
+.SH OPTIONS
+.TP
+.BI \-\-key " FILE"
+The cluster key file, the same on every node (required).
+.TP
+.BI \-\-state " DIR"
+The node's state directory (required).
+.TP
+.BI \-\-bootstrap " HOST:PORT"
+A running node to join by; may be repeated.
+.TP
+.BR \-\-listen ", " \-\-port ", " \-\-advertise
+Dannan's listener (default 0.0.0.0:7437) and the host other nodes reach this
+one at.
+.TP
+.BR \-\-name ", " \-\-domain
+A name, and a failure domain.
+.TP
+.BR \-\-heartbeat-ms ", " \-\-status-ms ", " \-\-seconds
+The heartbeat (5000), the status interval (10000), and seconds to run (0, until
+stopped).
+.TP
+.BR \-\-log-level ", " \-\-log-format " text|json"
+Logging.
+.TP
+.BI \-\-docker-socket " PATH"
+Docker's socket (default /var/run/docker.sock).
+.TP
+.BR \-\-allow-without-user-namespaces ", " \-\-allow-unenforced-memory ", " \-\-allow-unbounded-storage
+Launch tasks although the node lacks that protection; the status says so.
+.TP
+.BI \-\-registry " DOMAIN"
+A registry images may come from; none listed allows none.
+.TP
+.BI \-\-registry-credential " DOMAIN=USER:PASSWORD"
+A registry's credentials; keep them in
+.IR secrets.yaml .
+.TP
+.BR \-\-api-http ", " \-\-api-https " HOST:PORT"
+The API's listeners, with
+.B \-\-api-tls-chain
+and
+.B \-\-api-tls-key
+for HTTPS.
+.TP
+.BI \-\-lugh-issuer " URL"
+A trusted Lugh issuer; may be repeated.
+.B \-\-lugh-ca
+names the roots its HTTPS chains to.
+.TP
+.BI \-\-retire " NODE_ID"
+Take a node that has left for good out of this node's agreed roster, with this
+node stopped, then stop.
+.SH FILES
+.TP
+.I /etc/louhi/config.yaml
+The configuration.
+.TP
+.I /etc/louhi/secrets.yaml
+Secrets, readable by the node's user alone.
+.TP
+.I /var/lib/louhi
+The node's state, as the packaged service has it.
+.SH EXIT STATUS
+0 when it stops cleanly, 1 when it fails, 2 for a usage error.
+.SH SEE ALSO
+.BR louhi-ctl (1)

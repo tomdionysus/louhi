@@ -1,0 +1,18 @@
+# louhi-node's configuration: an example, to be edited before the service is
+# enabled. Every key is also a flag and a LOUHI_* variable (README, "Running
+# louhi-node"). Secrets (registry credentials) go in secrets.yaml beside this
+# file, readable by the node's user alone.
+cluster:
+  # The cluster key: a long random secret, the same file on every node.
+  key: @CMAKE_INSTALL_FULL_SYSCONFDIR@/louhi/cluster.key
+  # bootstrap: [10.0.0.10:7437]   # a running node to join by; a list
+node:
+  state: @CMAKE_INSTALL_FULL_LOCALSTATEDIR@/lib/louhi
+  advertise: 10.0.0.10        # the address other nodes reach this one at
+  port: 7437                  # Dannan's port (the default)
+registries:
+  allow: [docker.io]          # where images may come from; none listed allows none
+api:
+  http: 0.0.0.0:7480
+lugh:
+  issuer: [https://lugh.example]

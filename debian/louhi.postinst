@@ -1,0 +1,30 @@
+#!/bin/sh
+#
+# Louhi - The Distributed Compute Layer
+#
+# Copyright (C) 2026 Tom Cully <mail@tomcully.com>
+# Licensed under the GNU GPLv3 - see <https://www.gnu.org/licenses/gpl-3.0.html>
+#
+# louhi postinst: the secrets file beside the configuration (registry
+# credentials), readable by the louhi user alone, since louhi-node reads it
+# itself. It is not a conffile: it is the site's, never the package's. It is
+# made after the debhelper snippets, which create the user.
+
+set -e
+
+SECRETS=/etc/louhi/secrets.yaml
+
+#DEBHELPER#
+
+if [ "$1" = "configure" ] && [ ! -e "$SECRETS" ]; then
+    (umask 077 && : >"$SECRETS")
+    chown louhi:louhi "$SECRETS"
+fi
+
+if [ "$1" = "configure" ] && [ -z "${2:-}" ]; then
+    echo "louhi is installed and disabled. Write the cluster key to /etc/louhi/cluster.key"
+    echo "(owner louhi, mode 0600), set the node in /etc/louhi/config.yaml and any registry"
+    echo "credentials in $SECRETS, then: systemctl enable --now louhi"
+fi
+
+exit 0

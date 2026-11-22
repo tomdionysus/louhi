@@ -46,6 +46,7 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -53,8 +54,9 @@
 
 #include "dannan/test/fixtures/stepped_time.h"
 #include "dannan/test/fixtures/temp_dir.h"
-#include "louhi/test/fixtures/fake_https.h"
+#include "louhi/test/fixtures/issuer.h"
 #include "louhi/version.h"
+#include "lugh/client/testing.h"
 
 using namespace louhi;
 namespace asio = boost::asio;
@@ -220,7 +222,10 @@ struct CtlTest : ::testing::Test {
   asio::executor_work_guard<asio::io_context::executor_type> work = asio::make_work_guard(io);
   std::thread thread{[this] { io.run(); }};
 
-  std::shared_ptr<test::FakeHttps> https = std::make_shared<test::FakeHttps>();
+  std::shared_ptr<lugh::client::testing::FakeHttps> https = std::make_shared<lugh::client::testing::FakeHttps>();
+  const std::string discovery_url = std::string(issuer) + "/.well-known/openid-configuration";
+  const std::string token_url = std::string(issuer) + "/token";
+  const std::string device_url = std::string(issuer) + "/device";
   std::shared_ptr<FakeApi> server = std::make_shared<FakeApi>();
   Files files;
   // The files louhi-ctl writes go to `files`, or to disk when this is set.
@@ -272,28 +277,27 @@ struct CtlTest : ::testing::Test {
     write_file(home_config, endpoints_yaml(endpoints));
   }
 
-  // The issuer: its discovery, and its token endpoint answered by `token`.
-  void issuer_answers(std::function<lugh::Outcome<lugh::client::HttpsResponse>(const std::map<std::string, std::string>& form)> token,
-                      std::function<lugh::Outcome<lugh::client::HttpsResponse>(const std::map<std::string, std::string>& form)> device = nullptr) {
-    https->answer_by([token = std::move(token), device = std::move(device)](const lugh::client::HttpsRequest& request) {
-      const std::string base = issuer;
-      if (request.url == base + "/.well-known/openid-configuration") return test::json_answer(200, test::discovery(issuer));
-      if (request.url == base + "/token") return token(test::form_fields(request.body));
-      if (request.url == base + "/device" && device) return device(test::form_fields(request.body));
-      return test::json_answer(404, {{"error", "not_found"}});
-    });
+  // The issuer: its discovery, its token endpoint answering `token` and, when
+  // given, its device endpoint answering `device`. A URL it does not serve
+  // fails as an unreachable one does.
+  void issuer_answers(unsigned status, const json::object& token, const std::optional<json::object>& device = std::nullopt) {
+    https->answer(discovery_url, 200, test::discovery(issuer));
+    https->answer(token_url, status, token);
+    if (device) https->answer(device_url, 200, *device);
   }
 
   // The issuer signs the person in at the first poll.
   void issuer_signs_in() {
-    issuer_answers(
-        [](const std::map<std::string, std::string>&) {
-          return test::json_answer(200, {{"access_token", "a1"}, {"token_type", "Bearer"}, {"expires_in", 3600}, {"refresh_token", "r1"}});
-        },
-        [](const std::map<std::string, std::string>&) {
-          return test::json_answer(
-              200, {{"device_code", "d1"}, {"user_code", "ABCD-EFGH"}, {"verification_uri", "https://lugh.example/activate"}, {"expires_in", 600}});
-        });
+    issuer_answers(200, {{"access_token", "a1"}, {"token_type", "Bearer"}, {"expires_in", 3600}, {"refresh_token", "r1"}},
+                   json::object{{"device_code", "d1"}, {"user_code", "ABCD-EFGH"}, {"verification_uri", "https://lugh.example/activate"}, {"expires_in", 600}});
+  }
+
+  // The forms sent to `url`, in order.
+  std::vector<std::map<std::string, std::string>> forms_to(const std::string& url) const {
+    std::vector<std::map<std::string, std::string>> forms;
+    for (const auto& request : https->sent())
+      if (request.url == url) forms.push_back(test::form_fields(request.body));
+    return forms;
   }
 
   // The configuration login left in memory.
@@ -687,12 +691,11 @@ TEST_F(CtlTest, ATokenWithAMinuteOrLessLeftIsRefreshedAndTheNewTokensKept) {
   auto c = fresh();
   c.expires_unix = now_unix + 60;
   signed_in(c);
-  std::map<std::string, std::string> asked;
-  issuer_answers([&](const std::map<std::string, std::string>& form) {
-    asked = form;
-    return test::json_answer(200, {{"access_token", "a2"}, {"token_type", "Bearer"}, {"expires_in", 600}, {"refresh_token", "r2"}});
-  });
+  issuer_answers(200, {{"access_token", "a2"}, {"token_type", "Bearer"}, {"expires_in", 600}, {"refresh_token", "r2"}});
   EXPECT_EQ(run({"list-projects", "--ca", "roots.pem"}), 0) << err.str();
+  const auto forms = forms_to(token_url);
+  ASSERT_EQ(forms.size(), 1u);
+  auto asked = forms[0];
   EXPECT_EQ(asked["grant_type"], "refresh_token");
   EXPECT_EQ(asked["refresh_token"], "r1");
   EXPECT_EQ(asked["client_id"], "louhi-ctl");
@@ -719,7 +722,7 @@ TEST_F(CtlTest, ARefreshRefusedSaysToLogInAndChangesNothing) {
   auto c = fresh();
   c.expires_unix = now_unix - 1;
   signed_in(c);
-  issuer_answers([](const std::map<std::string, std::string>&) { return test::json_answer(400, {{"error", "invalid_grant"}}); });
+  issuer_answers(400, {{"error", "invalid_grant"}});
   EXPECT_EQ(run({"list-projects"}), 1);
   EXPECT_NE(err.str().find("invalid_grant"), std::string::npos) << err.str();
   EXPECT_NE(err.str().find("run louhi-ctl login"), std::string::npos) << err.str();
@@ -739,28 +742,24 @@ TEST_F(CtlTest, AnExpiredTokenWithNoRefreshTokenSaysToLogIn) {
 }
 
 TEST_F(CtlTest, LoginSignsInByTheDeviceFlowAndKeepsTheSettingsAndTheTokens) {
-  std::map<std::string, std::string> device_form;
-  std::vector<std::map<std::string, std::string>> polls;
-  issuer_answers(
-      [&](const std::map<std::string, std::string>& form) {
-        polls.push_back(form);
-        if (polls.size() == 1) return test::json_answer(400, {{"error", "authorization_pending"}});
-        return test::json_answer(200, {{"access_token", "a1"}, {"token_type", "Bearer"}, {"expires_in", 3600}, {"refresh_token", "r1"}});
-      },
-      [&](const std::map<std::string, std::string>& form) {
-        device_form = form;
-        return test::json_answer(200, {{"device_code", "d1"},
-                                       {"user_code", "ABCD-EFGH"},
-                                       {"verification_uri", "https://lugh.example/activate"},
-                                       {"verification_uri_complete", "https://lugh.example/activate?code=ABCD-EFGH"},
-                                       {"expires_in", 600},
-                                       {"interval", 5}});
-      });
+  issuer_answers(200, {{"access_token", "a1"}, {"token_type", "Bearer"}, {"expires_in", 3600}, {"refresh_token", "r1"}},
+                 json::object{{"device_code", "d1"},
+                              {"user_code", "ABCD-EFGH"},
+                              {"verification_uri", "https://lugh.example/activate"},
+                              {"verification_uri_complete", "https://lugh.example/activate?code=ABCD-EFGH"},
+                              {"expires_in", 600},
+                              {"interval", 5}});
+  // The first poll finds the person has not answered yet.
+  https->queue(token_url, 400, json::object{{"error", "authorization_pending"}});
   EXPECT_EQ(run({"login", "--issuer", issuer, "--client-id", "louhi-ctl", "--endpoint", "http://louhi.example:8080", "--scope", "louhi:web:read",
                  "--credentials", "/c/credentials.yaml"}),
             0)
       << err.str();
 
+  const auto device_forms = forms_to(device_url);
+  ASSERT_EQ(device_forms.size(), 1u);
+  auto device_form = device_forms[0];
+  auto polls = forms_to(token_url);
   EXPECT_EQ(device_form["client_id"], "louhi-ctl");
   EXPECT_EQ(device_form["scope"], "louhi:web:read");
   EXPECT_NE(err.str().find("https://lugh.example/activate"), std::string::npos) << err.str();
@@ -829,11 +828,8 @@ TEST_F(CtlTest, LoginOnDiskWritesBothFilesOwnerOnlyAndACallNeedsNothingMore) {
 }
 
 TEST_F(CtlTest, ALoginRefusedKeepsNothing) {
-  issuer_answers([](const std::map<std::string, std::string>&) { return test::json_answer(400, {{"error", "access_denied"}}); },
-                 [](const std::map<std::string, std::string>&) {
-                   return test::json_answer(
-                       200, {{"device_code", "d1"}, {"user_code", "ABCD-EFGH"}, {"verification_uri", "https://lugh.example/activate"}, {"expires_in", 600}});
-                 });
+  issuer_answers(400, {{"error", "access_denied"}},
+                 json::object{{"device_code", "d1"}, {"user_code", "ABCD-EFGH"}, {"verification_uri", "https://lugh.example/activate"}, {"expires_in", 600}});
   EXPECT_EQ(run({"login", "--issuer", issuer, "--client-id", "louhi-ctl", "--endpoint", "http://louhi.example:8080"}), 1);
   EXPECT_NE(err.str().find("access_denied"), std::string::npos) << err.str();
   EXPECT_FALSE(files.at(home_credentials));

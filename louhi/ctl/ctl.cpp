@@ -21,6 +21,7 @@
 #include "dannan/identity/secure_memory.h"
 #include "louhi/version.h"
 #include "lugh/client/oauth_client.h"
+#include "lugh/client/relying_party.h"
 #include "lugh/client/verifier.h"
 
 namespace louhi::ctl {
@@ -213,19 +214,13 @@ OldCredentials decode_json(std::string_view text) {
   return out;
 }
 
-// The issuer's endpoints from its discovery document.
+// The issuer's endpoints from its discovery document, refused when it names
+// another issuer.
 lugh::client::Endpoints discover(const Environment& env, lugh::client::Https& https, const std::string& issuer) {
-  lugh::client::HttpsRequest request;
-  request.url = issuer + "/.well-known/openid-configuration";
-  const auto r = ask<lugh::Outcome<lugh::client::HttpsResponse>>([&](auto done) { https.send(request, step, env.executor, std::move(done)); }, patience);
-  if (!r.ok()) throw std::runtime_error("reading the issuer's discovery: " + r.message);
-  if (r.value.status != 200) throw std::runtime_error("the issuer's discovery answered " + std::to_string(r.value.status));
-  boost::system::error_code failed;
-  const auto document = json::parse(r.value.body, failed);
-  if (failed || !document.is_object()) throw std::runtime_error("the issuer's discovery is not a JSON object");
-  auto endpoints = lugh::client::Endpoints::from_discovery(document.as_object(), issuer);
-  if (auto* why = std::get_if<std::string>(&endpoints)) throw std::runtime_error("the issuer's discovery: " + *why);
-  return std::get<lugh::client::Endpoints>(endpoints);
+  auto found =
+      ask<lugh::Outcome<lugh::client::Endpoints>>([&](auto done) { lugh::client::discover(https, issuer, step, env.executor, std::move(done)); }, patience);
+  if (!found.ok()) throw std::runtime_error(found.message);
+  return std::move(found.value);
 }
 
 // louhi-ctl is a public client: it proves nothing but its client_id.

@@ -14,15 +14,15 @@
 
 #include "dannan/contract/time_source.h"
 #include "louhi/api/auth.h"
-#include "lugh/client/https.h"
 #include "lugh/client/key_source.h"
+#include "lugh/client/relying_party.h"
 #include "lugh/client/verifier.h"
 
 // The Lugh plugin (design, "API and sign-on"; the maintainer, 2026-11-15: sign-in by the
-// Lugh plugin only): access tokens checked offline by lugh_client against
-// the keys it fetches from each trusted issuer. Whether a token is genuine is
-// Lugh's code; what it grants is Louhi's (api/auth.h). Lir's Lugh plugin is
-// the shape. Built only with LOUHI_BUILD_LUGH.
+// Lugh plugin only): access tokens checked offline by lugh_client's
+// RelyingParty against the keys it fetches from each trusted issuer. Whether
+// a token is genuine is Lugh's code; what it grants is Louhi's (api/auth.h).
+// Built only with LOUHI_BUILD_LUGH.
 namespace louhi::auth {
 
 // api::TokenVerifier over lugh_client's Verifier, asking for Louhi's
@@ -46,8 +46,8 @@ struct LughConfig {
   lugh::client::HttpsKeySource::Settings keys;
 };
 
-// The plugin whole: the HTTPS client, the Verifier, the key source that keeps
-// its keys fresh, and the api::TokenVerifier over them.
+// The plugin whole: Lugh's RelyingParty for Louhi's audience, and the
+// api::TokenVerifier over its Verifier.
 class LughPlugin {
  public:
   // The io context and the clocks outlive this. Throws std::invalid_argument
@@ -62,12 +62,10 @@ class LughPlugin {
   void start();
   void stop();
   const api::TokenVerifier& verifier() const noexcept { return _adapter; }
-  std::vector<lugh::client::HttpsKeySource::IssuerStatus> status() const { return _keys->status(); }
+  std::vector<lugh::client::HttpsKeySource::IssuerStatus> status() const { return _party.status(); }
 
  private:
-  lugh::client::HttpsClient _https;
-  lugh::client::Verifier _verifier;
-  std::shared_ptr<lugh::client::HttpsKeySource> _keys;
+  lugh::client::RelyingParty _party;
   LughVerifier _adapter;
 };
 

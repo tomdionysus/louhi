@@ -50,8 +50,8 @@
 //
 // With --lir, events are published to Lir (design, "Events"), its nodes found
 // in Dannan's roster. With --lir-client-id, the node signs in to Lir with a
-// token from the first Lugh issuer, by the client-credentials grant; without
-// it, with no password.
+// token from the Lugh issuers, by the client-credentials grant, trying each in
+// turn (Lugh's TokenSource); without it, with no password.
 //
 // The API (design, "API and sign-on") is served when at least one Lugh
 // issuer and at least one of --api-http and --api-https are given; sign-in
@@ -106,7 +106,7 @@
 #include "louhi/version.h"
 #ifdef LOUHI_WITH_LUGH
 #include "louhi/auth/lugh.h"
-#include "louhi/auth/service_token.h"
+#include "lugh/client/relying_party.h"
 #endif
 #ifdef LOUHI_WITH_LIR
 #include "louhi/events/lir.h"
@@ -420,7 +420,7 @@ int main(int argc, char** argv) {
 #ifdef LOUHI_WITH_LUGH
     // The token's own HTTPS to its issuer, outliving the token.
     std::unique_ptr<lugh::client::HttpsClient> token_https;
-    std::shared_ptr<louhi::auth::ServiceToken> service_token;
+    std::shared_ptr<lugh::client::TokenSource> service_token;
 #endif
 #ifdef LOUHI_WITH_LIR
     std::unique_ptr<louhi::events::LirPublisher> lir;
@@ -439,8 +439,9 @@ int main(int argc, char** argv) {
       lir_config.client_id = "louhi-" + dannan::identity::to_string(self);
       if (!options.lir_client_id.empty()) {
 #ifdef LOUHI_WITH_LUGH
-        louhi::auth::ServiceTokenConfig token;
-        token.issuer = options.lugh_issuers.front();
+        // Lugh's TokenSource: every trusted issuer, in order, failing over.
+        lugh::client::TokenSource::Settings token;
+        token.issuers = options.lugh_issuers;
         token.identity.client_id = options.lir_client_id;
         if (!options.lir_client_key.empty()) {
           const std::string der = read_file(options.lir_client_key);
@@ -454,8 +455,8 @@ int main(int argc, char** argv) {
               std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(options.lir_client_secret.data()), options.lir_client_secret.size()));
         }
         token_https = std::make_unique<lugh::client::HttpsClient>(io, options.lugh_ca);
-        service_token = louhi::auth::ServiceToken::make(*token_https, io.get_executor(), after, std::move(token), dannan::contract::system_wall_clock(),
-                                                        context.logger("louhi.token"));
+        service_token = lugh::client::TokenSource::make(*token_https, io.get_executor(), std::move(token), dannan::contract::steady_time_source(),
+                                                        dannan::contract::system_wall_clock());
         lir_config.password = [service_token] { return service_token->current(); };
 #else
         throw std::runtime_error("this build has no Lugh plugin, so it cannot get a token for Lir");

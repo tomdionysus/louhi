@@ -183,7 +183,17 @@ Dannan and Dagda packages, which need not be built again.
    private registry signed in to for real.
 8. **The image store on Dagda** (step 13's second half), after item 3.
 9. **The dashboard** (`2026-11-20-dashboard.md`), on Lugh's
-   `@lugh/admin-ui` and Dannan's HTTP core.
+   `@lugh/admin-ui` and Dannan's HTTP core. `@lugh/admin-ui` is on Lugh's
+   develop (`05ebbaf`, 2026-11-22) and ships in Lugh's next tag: source in
+   `lugh/ui`, built by Louhi's own Vite, depended on by file path at a
+   Lugh tag (`"@lugh/admin-ui": "file:<lugh>/lugh/ui"`); import
+   `styles/reset.css` then `styles/admin.css` once at the root; peers
+   react 19, react-dom, react-router 7. It gives `ApiClient` (a base path),
+   `StatusPill` (a state-to-colour map), `SignIn` (own password, Lugh's
+   code flow with PKCE, or both), `AdminShell`, `NavBar`, `Messages`,
+   `Confirm`, `DataTable`, `DetailPanel`, `useEvents`, `useLoad`, `useAct`.
+   The read-only JSON view stays Louhi's own. Lugh's CHANGELOG
+   "Unreleased" has the rest.
 
 ## Waiting on others
 

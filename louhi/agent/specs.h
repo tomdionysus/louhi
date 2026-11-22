@@ -47,6 +47,10 @@ struct SpecPolicy {
   // such a node), containers and disk volumes carry no storage bound, since
   // the runtime would refuse one.
   bool bound_storage = true;
+  // Who root in a container is on this node (RuntimeInfo): the owner of the
+  // output directories made for its tasks.
+  uint32_t root_uid = 0;
+  uint32_t root_gid = 0;
 };
 
 // The image a container runs: pinned to its digest when the revision has one.

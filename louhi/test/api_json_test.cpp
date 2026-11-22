@@ -83,6 +83,28 @@ TEST(ApiJson, VolumesAreMemoryUnlessTheySayDisk) {
   EXPECT_NE(refusal([&] { api::task_definition_body(body, "web"); }), "") << "more memory volume than the task's 128 MiB";
 }
 
+TEST(ApiJson, HostAndOutputVolumesReadAndWriteBack) {
+  auto body = minimal_definition();
+  body["volumes"] = json::array{json::object{{"name", "src"}, {"kind", "host"}, {"host_directory", "work"}, {"host_path", "web/src"}},
+                                json::object{{"name", "out"}, {"kind", "output"}, {"size_mib", 512}}};
+  body["containers"].as_array()[0].as_object()["mounts"] = json::array{json::object{{"volume", "src"}, {"container_path", "/src"}, {"read_only", true}},
+                                                                       json::object{{"volume", "out"}, {"container_path", "/out"}}};
+  const auto d = api::task_definition_body(body, "web");
+  ASSERT_EQ(d.volumes.size(), 2u);
+  EXPECT_EQ(d.volumes[0].kind, model::VolumeKind::host);
+  EXPECT_EQ(d.volumes[0].host_directory, "work");
+  EXPECT_EQ(d.volumes[0].host_path, "web/src");
+  EXPECT_EQ(d.volumes[1].kind, model::VolumeKind::output);
+  const auto shown = api::to_json(d);
+  EXPECT_EQ(shown.at("volumes").at(0).at("kind"), "host");
+  EXPECT_FALSE(shown.at("volumes").at(0).as_object().contains("size_mib"));
+  EXPECT_EQ(shown.at("volumes").at(1).at("kind"), "output");
+  EXPECT_EQ(api::task_definition_body(shown, "web").volumes, d.volumes) << "a described definition registers again as is";
+
+  body["containers"].as_array()[0].as_object()["mounts"].as_array()[0].as_object()["read_only"] = false;
+  EXPECT_NE(refusal([&] { api::task_definition_body(body, "web"); }), "") << "a host directory is never writable";
+}
+
 TEST(ApiJson, EphemeralStorageIsBounded) {
   auto body = minimal_definition();
   body["ephemeral_storage_mib"] = 20480;

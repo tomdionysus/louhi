@@ -39,6 +39,7 @@ add_library(louhi STATIC
   runtime/docker/docker_driver.cpp
   runtime/docker/local_http.cpp
   runtime/driver.cpp
+  runtime/host_files.cpp
   runtime/labels.cpp
   runtime/registries.cpp
   store/memory_store.cpp

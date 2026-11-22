@@ -18,6 +18,7 @@
 #include "dannan/contract/thread_safety.h"
 #include "louhi/runtime/docker/local_http.h"
 #include "louhi/runtime/driver.h"
+#include "louhi/runtime/host_files.h"
 #include "louhi/runtime/registries.h"
 
 // The Driver over the Docker Engine API (design, "The runtime"; the maintainer,
@@ -30,13 +31,23 @@
 // change which endpoint is asked.
 namespace louhi::runtime::docker {
 
+// The node's directories a task may see (host_files.h): the host directories
+// the operator lists, by the name a task definition uses, and the output
+// area. `files` outlives the driver; with none, host and output volumes are
+// refused.
+struct HostDirectories {
+  std::map<std::string, std::string> sources;
+  std::string output_root;
+  HostFiles* files = nullptr;
+};
+
 class DockerDriver final : public Driver {
  public:
   // `io` runs the connections. `socket_path` is the daemon's socket,
   // /var/run/docker.sock on a node. `registries` says which registries images
   // come from and how to sign in to each; a reference to any other is refused
   // before the daemon is asked.
-  DockerDriver(boost::asio::any_io_executor io, std::string socket_path, Registries registries);
+  DockerDriver(boost::asio::any_io_executor io, std::string socket_path, Registries registries, HostDirectories host = {});
 
   void describe(Deadline deadline, Executor executor, Completion<RuntimeInfo> done) override;
   void resolve(const std::string& image, Deadline deadline, Executor executor, Completion<std::string> done) override;
@@ -66,6 +77,7 @@ class DockerDriver final : public Driver {
   boost::asio::any_io_executor _io;
   std::shared_ptr<LocalHttp> _http;
   const Registries _registries;
+  const HostDirectories _host;
   dannan::contract::Mutex _mutex;
   uint64_t _next_watch DANNAN_GUARDED_BY(_mutex) = 1;
   std::map<uint64_t, Watch> _watches DANNAN_GUARDED_BY(_mutex);

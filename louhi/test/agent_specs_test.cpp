@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <string>
 
 #include "louhi/agent/specs.h"
@@ -92,6 +93,40 @@ TEST(Specs, VolumesAreTheTasksOwnAndSized) {
   EXPECT_EQ(runtime::task_of(volumes[0].labels), a.task.id);
   EXPECT_EQ(volumes[1].kind, runtime::VolumeKind::disk);
   EXPECT_EQ(volumes[1].size_bytes, 4096ull << 20);
+}
+
+// Host mounts: a host volume carries the operator's directory name and the
+// path in it, unsized, and is mounted read-only whatever the mount said; an
+// output volume is sized like disk and owned by the runtime's root.
+TEST(Specs, HostAndOutputVolumesCarryWhatTheDriverBinds) {
+  Assignment a = assignment();
+  a.definition.volumes.push_back({"src", model::VolumeKind::host, 0, "work", "web/src"});
+  a.definition.volumes.push_back({"out", model::VolumeKind::output, 512});
+  a.definition.containers[0].mounts.push_back({"src", "/src", false});
+  a.definition.containers[0].mounts.push_back({"out", "/out", false});
+  SpecPolicy policy;
+  policy.root_uid = 100000;
+  policy.root_gid = 100001;
+  const auto volumes = volume_specs(a, policy);
+  ASSERT_EQ(volumes.size(), 3u);
+  EXPECT_EQ(volumes[1].kind, runtime::VolumeKind::host);
+  EXPECT_EQ(volumes[1].host_directory, "work");
+  EXPECT_EQ(volumes[1].host_path, "web/src");
+  EXPECT_EQ(volumes[1].size_bytes, 0u);
+  EXPECT_EQ(volumes[2].kind, runtime::VolumeKind::output);
+  EXPECT_EQ(volumes[2].size_bytes, 512ull << 20);
+  EXPECT_EQ(volumes[2].owner_uid, 100000u);
+  EXPECT_EQ(volumes[2].owner_gid, 100001u);
+  EXPECT_EQ(runtime::task_of(volumes[2].labels), a.task.id);
+
+  const auto specs = container_specs(a, policy);
+  const auto& mounts = specs[0].mounts;
+  const auto at = [&](const std::string& target) { return *std::find_if(mounts.begin(), mounts.end(), [&](const auto& m) { return m.target == target; }); };
+  EXPECT_TRUE(at("/src").read_only) << "a host directory is never writable";
+  EXPECT_FALSE(at("/out").read_only);
+
+  policy.bound_storage = false;
+  EXPECT_EQ(volume_specs(a, policy)[2].size_bytes, 0u) << "unbounded only where the operator allows it";
 }
 
 // Design, "Ephemeral storage in detail": the task's ephemeral storage is

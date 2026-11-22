@@ -183,6 +183,8 @@ The settings, by key and flag:
 | `runtime.docker_socket` | `--docker-socket` | Docker's socket (default `/var/run/docker.sock`) |
 | `runtime.allow_*` | `--allow-*` | The three overrides above |
 | `runtime.retain_finished_hours` | `--retain-finished-hours` | Hours a finished task's containers and volumes are kept after it stopped (24) |
+| `runtime.host_directories` | `--host-directory` | `NAME=PATH`: a host directory tasks may mount read-only by `NAME`; a list |
+| `runtime.output_directory` | `--output-directory` | Where each output volume is made, a directory of its own (xfs with project quotas to bound them) |
 | `registries.allow` | `--registry` | A registry images may come from, by domain (`docker.io` for Docker Hub) |
 | `registries.credentials` | `--registry-credential` | `DOMAIN=USER:PASSWORD` or `DOMAIN=:IDENTITY_TOKEN`; keep in `secrets.yaml` |
 | `api.http`, `api.https` | `--api-http`, `--api-https` | `HOST:PORT` for the API over HTTP and over HTTPS |
@@ -326,6 +328,25 @@ echo '{"max_tasks":10,"max_cpu_millis":4000,"max_memory_mib":4096}' | louhi-ctl 
   ]
 }
 ```
+
+**Host directories and output.** A task sees no host path of its own choosing. The node's
+operator lists host directories by name (`--host-directory work=/srv/louhi/work`) and an
+output area (`--output-directory /srv/louhi/output`); a definition mounts them as volumes:
+
+```json
+"volumes": [
+  {"name": "src", "kind": "host", "host_directory": "work", "host_path": "web/src"},
+  {"name": "out", "kind": "output", "size_mib": 512}
+]
+```
+
+A `host` volume is a path inside a listed directory, resolved on the node and refused if it
+leads out (through `..` or a link); it is always mounted read-only. An `output` volume is a
+directory made for the task in the output area, named as the volume is on the node
+(`louhi-<task>-<volume>`), owned by the container's root, bounded by an xfs project quota
+to its `size_mib`, and mounted `nosuid,nodev`. It is kept with the task's containers and
+removed with them. Whatever reads it reads a workload's files: follow no link in it and run
+nothing from it.
 
 **Endpoint failover.** Any node serves the API, so each call goes to the endpoints in
 turn until one answers: past one that cannot be connected to, and for a read past one that

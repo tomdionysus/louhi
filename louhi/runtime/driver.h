@@ -112,6 +112,10 @@ struct RuntimeInfo {
   bool limits_storage = false;
   uint32_t cpus = 0;
   uint64_t memory_bytes = 0;
+  // Who root in a container is on the node: with user namespaces, the user
+  // and group the runtime remaps it to; zero without.
+  uint32_t root_uid = 0;
+  uint32_t root_gid = 0;
 };
 
 struct Mount {
@@ -155,16 +159,31 @@ struct ContainerSpec {
   bool operator==(const ContainerSpec&) const = default;
 };
 
-enum class VolumeKind { memory, disk };
+enum class VolumeKind { memory, disk, host, output };
 
 struct VolumeSpec {
+  VolumeSpec() = default;
+  VolumeSpec(std::string name_, VolumeKind kind_, uint64_t size_bytes_ = 0, Labels labels_ = {})
+      : name(std::move(name_)), kind(kind_), size_bytes(size_bytes_), labels(std::move(labels_)) {}
+
   std::string name;
-  // Scratch, gone with the volume: in memory, or on the node's disk.
+  // Scratch, gone with the volume: in memory, or on the node's disk. Or a
+  // host directory bound into it: read-only (host), or the task's own output
+  // directory (output), both mounted nosuid and nodev.
   VolumeKind kind = VolumeKind::memory;
-  // Always set for memory; zero for disk only where the operator allows a
-  // runtime that cannot bound it.
+  // Always set for memory; zero for disk or output only where the operator
+  // allows a runtime that cannot bound it; zero for host.
   uint64_t size_bytes = 0;
   Labels labels;
+  // host: the operator's name for a directory it lists on this node, and a
+  // relative path in it, which the driver resolves and refuses outside it.
+  // An output volume is the directory of its own name in the node's output
+  // area.
+  std::string host_directory;
+  std::string host_path;
+  // output: the directory's owner, the runtime's root user in a container.
+  uint32_t owner_uid = 0;
+  uint32_t owner_gid = 0;
   bool operator==(const VolumeSpec&) const = default;
 };
 
@@ -229,8 +248,12 @@ class Driver {
   // Refused for a registry the operator does not allow.
   virtual void pull(const std::string& image, Deadline deadline, Executor executor, Completion<ImageInfo> done) = 0;
 
+  // A host volume naming a directory this node does not list, or a path that
+  // leads out of it, and an output volume on a node with no output area, are
+  // refused.
   virtual void create_volume(const VolumeSpec& spec, Deadline deadline, Executor executor, Completion<Done> done) = 0;
-  // Removing a volume that is not there succeeds.
+  // Removing a volume that is not there succeeds. An output volume's
+  // directory goes with it.
   virtual void remove_volume(const std::string& name, Deadline deadline, Executor executor, Completion<Done> done) = 0;
   // Louhi's volumes only.
   virtual void list_volumes(Deadline deadline, Executor executor, Completion<std::vector<VolumeInfo>> done) = 0;

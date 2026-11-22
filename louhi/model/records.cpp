@@ -104,14 +104,27 @@ void TaskDefinition::validate() const {
   require(volumes.size() <= max_volumes, "task definition has more than " + std::to_string(max_volumes) + " volumes");
   std::set<std::string> volume_names;
   uint64_t in_memory = 0;
+  std::set<std::string> read_only;
   for (const auto& volume : volumes) {
     require_name("volume name", volume.name);
-    require(volume.kind == VolumeKind::memory || volume.kind == VolumeKind::disk, "volume " + volume.name + " kind is not memory or disk");
-    require(volume.size_mib >= 1 && volume.size_mib <= max_scratch_mib,
-            "volume " + volume.name + " size is not 1 to " + std::to_string(max_scratch_mib) + " MiB");
+    const std::string what = "volume " + volume.name;
+    require(volume.kind >= VolumeKind::memory && volume.kind <= VolumeKind::output, what + " kind is not memory, disk, host or output");
+    if (volume.kind == VolumeKind::host) {
+      require(volume.size_mib == 0, what + " is a host directory, which takes no size");
+      require_name(what + " host directory", volume.host_directory);
+      // Relative: its segments are those of an absolute container path's.
+      require(volume.host_path.empty() || is_container_path("/" + volume.host_path), what + " host path is not a relative path with no '.' or '..'");
+      read_only.insert(volume.name);
+    } else {
+      require(volume.size_mib >= 1 && volume.size_mib <= max_scratch_mib, what + " size is not 1 to " + std::to_string(max_scratch_mib) + " MiB");
+      require(volume.host_directory.empty() && volume.host_path.empty(), what + " names a host directory but is not a host volume");
+    }
     require(volume_names.insert(volume.name).second, "task definition declares a volume twice");
     if (volume.kind == VolumeKind::memory) in_memory += volume.size_mib;
   }
+  for (const auto& container : containers)
+    for (const auto& mount : container.mounts)
+      require(read_only.count(mount.volume) == 0 || mount.read_only, "container " + container.name + " mounts a host directory writable");
   // A memory volume's pages are charged to the task's memory.
   require(in_memory <= memory_mib, "task definition's memory volumes are larger than its memory");
 

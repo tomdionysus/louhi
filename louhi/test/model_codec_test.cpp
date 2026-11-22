@@ -97,6 +97,25 @@ TEST(Codec, VolumeKindsAndEphemeralStorageRoundTrip) {
   EXPECT_EQ(decode_task_definition(encode(d)).volumes[1].kind, VolumeKind::disk);
 }
 
+TEST(Codec, HostAndOutputVolumesRoundTripAndScratchKeepsItsLayout) {
+  auto d = fixture::task_definition();
+  d.volumes.push_back({"source", VolumeKind::host, 0, "work", "web/src"});
+  d.volumes.push_back({"out", VolumeKind::output, 512});
+  d.containers[0].mounts.push_back({"source", "/src", true});
+  d.containers[0].mounts.push_back({"out", "/out", false});
+  expect_round_trip(d, decode_task_definition);
+  const auto back = decode_task_definition(encode(d));
+  EXPECT_EQ(back.volumes[1].host_directory, "work");
+  EXPECT_EQ(back.volumes[1].host_path, "web/src");
+  EXPECT_EQ(back.volumes[2].kind, VolumeKind::output);
+
+  // A scratch volume's bytes are what 0.1.x wrote: no host fields.
+  auto scratch = fixture::task_definition();
+  auto bigger = scratch;
+  bigger.volumes[0].kind = VolumeKind::disk;
+  EXPECT_EQ(encode(scratch).size(), encode(bigger).size());
+}
+
 TEST(Codec, AVolumeKindTheFormatDoesNotDefineIsRefused) {
   auto d = fixture::task_definition();
   d.containers.resize(1);
@@ -107,7 +126,8 @@ TEST(Codec, AVolumeKindTheFormatDoesNotDefineIsRefused) {
   // registered (u64).
   const size_t kind = bytes.size() - 8 - 1 - 4 - 1;
   ASSERT_EQ(bytes[kind], static_cast<uint8_t>(VolumeKind::disk));
-  for (const uint8_t bad : std::initializer_list<uint8_t>{0, 3, 255}) {
+  // 3 and 4 are host and output since 0.2.0.
+  for (const uint8_t bad : std::initializer_list<uint8_t>{0, 5, 255}) {
     bytes[kind] = bad;
     EXPECT_THROW(decode_task_definition(bytes), DecodeError) << int(bad);
   }

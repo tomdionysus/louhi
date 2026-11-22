@@ -99,8 +99,10 @@
 #include "louhi/events/events.h"
 #include "louhi/model/codec.h"
 #include "louhi/model/keys.h"
+#include "louhi/model/names.h"
 #include "louhi/node/status.h"
 #include "louhi/runtime/docker/docker_driver.h"
+#include "louhi/runtime/host_files.h"
 #include "louhi/runtime/registries.h"
 #include "louhi/store/memory_store.h"
 #include "louhi/version.h"
@@ -146,6 +148,8 @@ struct Options {
   bool allow_without_user_namespaces = false;
   bool allow_unbounded_storage = false;
   std::chrono::hours retain_finished{24};
+  std::map<std::string, std::string> host_directories;
+  std::string output_directory;
   std::vector<std::string> registries;
   std::map<std::string, louhi::runtime::RegistryCredential> registry_credentials;
   std::optional<dannan::net::Endpoint> api_http;
@@ -204,6 +208,10 @@ dannan::config::Reader reader() {
       "launch tasks even where the runtime cannot bound their storage (Docker needs overlay2 on xfs with project quotas)");
   add("runtime.retain_finished_hours", Kind::value, "--retain-finished-hours",
       "hours a finished task's containers and volumes are kept, for its logs, after it stopped; 24 when absent");
+  add("runtime.host_directories", Kind::list, "--host-directory",
+      "NAME=PATH: a host directory tasks may mount read-only, by NAME, at a path inside it; a list");
+  add("runtime.output_directory", Kind::value, "--output-directory",
+      "where each task's output volumes are made, one directory each, bounded by xfs project quotas");
   add("registries.allow", Kind::list, "--registry", "a registry images may come from, by domain (docker.io for Docker Hub); none allows none");
   add("registries.credentials", Kind::list, "--registry-credential",
       "DOMAIN=USER:PASSWORD, or DOMAIN=:IDENTITY_TOKEN, for an allowed registry; keep them in secrets.yaml");
@@ -257,6 +265,14 @@ Options parse(int argc, char** argv) {
   out.allow_without_user_namespaces = settings.toggle("runtime.allow_without_user_namespaces").value_or(false);
   out.allow_unbounded_storage = settings.toggle("runtime.allow_unbounded_storage").value_or(false);
   out.retain_finished = std::chrono::hours(settings.number("runtime.retain_finished_hours", 0, 8760).value_or(24));
+  for (const auto& entry : settings.list("runtime.host_directories")) {
+    const auto equals = entry.find('=');
+    if (equals == std::string::npos || !louhi::model::is_name(entry.substr(0, equals)) || equals + 1 >= entry.size() || entry[equals + 1] != '/')
+      throw settings.refuse("runtime.host_directories", "NAME=PATH, NAME a name and PATH absolute");
+    if (!out.host_directories.emplace(entry.substr(0, equals), entry.substr(equals + 1)).second)
+      throw settings.refuse("runtime.host_directories", "each NAME once");
+  }
+  out.output_directory = settings.path_of("runtime.output_directory").value_or("");
   out.registries = settings.list("registries.allow");
   for (const auto& entry : settings.list("registries.credentials")) {
     // A user name never holds ':' (RFC 7617), so the first ':' ends it; an
@@ -409,8 +425,10 @@ int main(int argc, char** argv) {
     louhi::store::MemoryStore store(louhi::store::MemoryStore::Whole::never);
     louhi::agent::StoreDesired desired(store, self, context.logger("louhi.desired"));
     louhi::agent::StoreReports reports(store, io.get_executor(), context.logger("louhi.reports"));
+    louhi::runtime::LinuxHostFiles host_files;
     louhi::runtime::docker::DockerDriver driver(io.get_executor(), options.docker_socket,
-                                                louhi::runtime::Registries(options.registries, options.registry_credentials));
+                                                louhi::runtime::Registries(options.registries, options.registry_credentials),
+                                                {options.host_directories, options.output_directory, &host_files});
     // A timer on the io context, for the agent and the service token.
     const auto after = [&io](std::chrono::milliseconds delay, std::function<void()> fn) {
       auto timer = std::make_shared<asio::steady_timer>(io, delay);

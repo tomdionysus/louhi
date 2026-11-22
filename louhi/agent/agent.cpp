@@ -411,6 +411,10 @@ Agent::Step Agent::launch(const Assignment& a) {
     // it cannot is the operator's allowance.
     SpecPolicy here = self->_policy.spec;
     here.bound_storage = self->_runtime && self->_runtime->limits_storage;
+    if (self->_runtime) {
+      here.root_uid = self->_runtime->root_uid;
+      here.root_gid = self->_runtime->root_gid;
+    }
     plan->containers = container_specs(a, here);
     plan->volumes = volume_specs(a, here);
     for (const auto& c : plan->containers) {
@@ -441,8 +445,12 @@ Agent::Step Agent::launch(const Assignment& a) {
     }
     for (const auto& volume : plan->volumes) {
       steps.push_back([self, volume, fail](std::function<void()> go) {
-        self->_driver.create_volume(volume, self->_policy.call_deadline, self->_strand, [fail, go](Result<runtime::Done> got) {
-          if (!got.ok() && got.error().kind != runtime::Error::Kind::refused) return fail(got.error());
+        // A bind refused (a directory this node does not list, a path out of
+        // it, no output area) fails the launch: left to go on, the runtime
+        // would make an empty volume of that name in its place.
+        const bool binds = volume.kind == runtime::VolumeKind::host || volume.kind == runtime::VolumeKind::output;
+        self->_driver.create_volume(volume, self->_policy.call_deadline, self->_strand, [fail, go, binds](Result<runtime::Done> got) {
+          if (!got.ok() && (binds || got.error().kind != runtime::Error::Kind::refused)) return fail(got.error());
           go();
         });
       });

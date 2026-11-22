@@ -78,11 +78,13 @@ Dannan and Dagda packages, which need not be built again.
    and leaves lugh_client's API as 0.2.0's; its `lugh-node` flags are
    renamed (`--server-address`, `--server-port`, `--oauth-issuer`,
    `--oauth-mtls-port`), which touches nothing of Louhi's, as nothing of
-   Louhi's starts `lugh-node`. Lugh 0.5.0 (Lugh's `feature/callback-vocabulary`,
-   2026-11-22) makes lugh_client's `Fault`, `Outcome`, `Completion`, `Done`,
+   Louhi's starts `lugh-node`. Lugh 0.5.0 (released 2026-11-22, on Dannan
+   0.10.2, with the five TokenSource cases; take it at this step) makes
+   lugh_client's `Fault`, `Outcome`, `Completion`, `Done`,
    `Executor` and `Deadline` aliases of Dannan's `contract/completion.h`,
    with two new fault kinds (`unavailable`, `timed_out`) where it said
-   `failed`, and `lugh::undecided(fault)`. Checked: nothing in Louhi
+   `failed`, and `lugh::undecided(fault)`; a reply lugh_client cannot read
+   now answers `invalid`, not `failed`. Checked: nothing in Louhi
    switches over a fault kind (its only uses are `ok()` and the message, in
    `ctl/ctl.cpp`), so Louhi needs no change for it. Read Dagda's and Lugh's changelogs' "Adopting" notes again then.
    Found so far against Louhi:

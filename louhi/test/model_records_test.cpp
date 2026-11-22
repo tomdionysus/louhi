@@ -17,6 +17,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "louhi/model/ids.h"
 #include "louhi/model/records.h"
@@ -151,6 +152,56 @@ TEST(TaskDefinitions, MountsNameDeclaredVolumesAtDistinctPaths) {
   d = fixture::task_definition();
   d.containers[0].mounts.push_back({"scratch", "relative", false});
   EXPECT_THROW(d.validate(), std::invalid_argument);
+}
+
+// Host mounts (the maintainer, 2026-11-22): a host volume is a read-only view
+// of a path inside a host directory the operator names, never a host path of
+// the caller's; an output volume is the task's own directory on the node's
+// output area, sized. Only an output volume may be mounted writable.
+TEST(TaskDefinitions, AHostVolumeNamesTheOperatorsDirectoryAndARelativePathAndIsReadOnly) {
+  auto d = fixture::task_definition();
+  d.volumes.push_back({"source", VolumeKind::host, 0, "work", "web/src"});
+  d.containers[0].mounts.push_back({"source", "/src", true});
+  EXPECT_NO_THROW(d.validate());
+
+  auto writable = d;
+  writable.containers[0].mounts.back().read_only = false;
+  EXPECT_THROW(writable.validate(), std::invalid_argument);
+
+  for (const std::string& path : std::vector<std::string>{"/web/src", "web/../etc", "./web", "web//src", "..", std::string("web\0x", 5)}) {
+    auto bad = d;
+    bad.volumes.back().host_path = path;
+    EXPECT_THROW(bad.validate(), std::invalid_argument) << path;
+  }
+  auto whole = d;
+  whole.volumes.back().host_path.clear();
+  EXPECT_NO_THROW(whole.validate()) << "the directory itself";
+  auto trailing = d;
+  trailing.volumes.back().host_path = "web/src/";
+  EXPECT_NO_THROW(trailing.validate());
+
+  auto unnamed = d;
+  unnamed.volumes.back().host_directory = "Work";
+  EXPECT_THROW(unnamed.validate(), std::invalid_argument);
+  auto sized = d;
+  sized.volumes.back().size_mib = 10;
+  EXPECT_THROW(sized.validate(), std::invalid_argument) << "a host volume takes no size";
+}
+
+TEST(TaskDefinitions, AnOutputVolumeIsSizedAndNamesNoHostDirectory) {
+  auto d = fixture::task_definition();
+  d.volumes.push_back({"out", VolumeKind::output, 512, "", ""});
+  d.containers[0].mounts.push_back({"out", "/out", false});
+  EXPECT_NO_THROW(d.validate());
+  auto unsized = d;
+  unsized.volumes.back().size_mib = 0;
+  EXPECT_THROW(unsized.validate(), std::invalid_argument);
+  auto named = d;
+  named.volumes.back().host_directory = "work";
+  EXPECT_THROW(named.validate(), std::invalid_argument);
+  auto scratch = fixture::task_definition();
+  scratch.volumes[0].host_path = "x";
+  EXPECT_THROW(scratch.validate(), std::invalid_argument) << "scratch names no host path";
 }
 
 TEST(TaskDefinitions, VolumesAreNamedOnceAndSized) {

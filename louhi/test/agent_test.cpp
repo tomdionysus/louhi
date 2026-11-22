@@ -316,6 +316,23 @@ TEST_F(AgentTest, AServicesTaskIsNotFinishedByAStoppedReport) {
   EXPECT_EQ(driver.containers().size(), 2u) << "launched";
 }
 
+// A host or output volume the runtime refuses (a directory this node does not
+// list, a path out of it) fails the launch: no container is made, or the
+// runtime would put an empty volume of that name in its place. A scratch
+// volume refused is one already there, as before.
+TEST_F(AgentTest, ABindTheRuntimeRefusesFailsTheLaunch) {
+  Assignment a = assignment(1);
+  // First, so the refusal is the host volume's.
+  a.definition.volumes.insert(a.definition.volumes.begin(), {"src", model::VolumeKind::host, 0, "work", "web/src"});
+  a.definition.containers[0].mounts.push_back({"src", "/src", true});
+  desired.set({a});
+  driver.fail_next("create_volume", runtime::Error{runtime::Error::Kind::refused, "this node lists no host directory work"});
+  start();
+  EXPECT_TRUE(driver.containers().empty());
+  EXPECT_EQ(reports.last().state, model::TaskState::pending);
+  EXPECT_NE(reports.last().reason.find("no host directory work"), std::string::npos) << reports.last().reason;
+}
+
 TEST_F(AgentTest, ANonEssentialExitIsLeftAlone) {
   desired.set({assignment(1)});
   start();

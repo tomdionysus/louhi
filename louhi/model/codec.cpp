@@ -264,6 +264,13 @@ Bytes encode(const TaskDefinition& record) {
     writer.string(volume.name);
     put_enum(writer, volume.kind);
     writer.u32(volume.size_mib);
+    // Only a host volume carries a directory: the scratch kinds keep the
+    // layout they always had, and a decoder that does not know host refuses
+    // its kind before it would misread the rest.
+    if (volume.kind == VolumeKind::host) {
+      writer.string(volume.host_directory);
+      writer.string(volume.host_path);
+    }
   }
   put_bool(writer, record.run_once);
   writer.u64(record.registered_unix_ms);
@@ -288,8 +295,12 @@ TaskDefinition decode_task_definition(std::span<const uint8_t> bytes) {
   for (size_t i = 0; i < volumes; ++i) {
     VolumeDefinition volume;
     volume.name = reader.string(max_name);
-    volume.kind = get_enum(reader, VolumeKind::memory, VolumeKind::disk);
+    volume.kind = get_enum(reader, VolumeKind::memory, VolumeKind::output);
     volume.size_mib = reader.u32();
+    if (volume.kind == VolumeKind::host) {
+      volume.host_directory = reader.string(max_name);
+      volume.host_path = reader.string(max_path);
+    }
     record.volumes.push_back(std::move(volume));
   }
   record.run_once = get_bool(reader);

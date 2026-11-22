@@ -5,20 +5,10 @@ of this file.
 
 ## Resume here
 
-**State.** `develop` is pushed, clean and green on hosted CI. `main` does
-not exist yet: it is made by the 0.1.0 merge.
+**State.** **0.1.0 is released** (2026-11-22): tag `0.1.0` on `main` at
+`81b9b22`; `develop` is `main` plus the notes since. The release branch is
+deleted (COMPLETED.md, "0.1.0 released").
 
-- **0.1.0** is on `feature/release-0.1.0` (pushed; the gate ran at `8534fc9`, and only TODO notes have changed since; worktree
-  `build/wt-rel`). Gated on node-b (COMPLETED.md, "0.1.0 readied"). Left:
-  1. On node-c, whose Docker can bound storage: `tools/ci.sh release` on
-     the final tree (it runs the one test node-b skips,
-     `DockerDriverTest.ADiskVolumesSizeIsKeptWhereStorageIsBounded`), then
-     Louhi's deb and lintian (below). About an hour at 2 cores. It was
-     stopped part-way on the maintainer's word (2026-11-21).
-  2. Merge the branch to `main` (squash), tag `0.1.0` (annotated, no `v`)
-     on `main`, push `main` and the tag, merge `main` back to `develop`.
-  3. Report the version, tag hash, gates and link check to the
-     coordinating session.
 - **`feature/lugh-relying-party`** (`1c83198`, pushed, WIP, unbuilt;
   worktree `build/wt-lugh`): next after 0.1.0 (item 1 below).
 - **Pins:** Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`; Lir `e40dd2e`
@@ -30,8 +20,10 @@ not exist yet: it is made by the 0.1.0 merge.
 **The deb on node-c.** Dannan 0.9.2's and Dagda 0.3.2's packages and
 lintian are installed there (the maintainer's go-ahead, 2026-11-20, kept
 for every project). The mirrors are `/root/louhi-pkg/*.git`; refresh
-`louhi.git` and `lugh.git` with rsync first. Then, in `/root/louhi-pkg`:
-clone `louhi.git`, check out the release branch, and run
+`louhi.git` and `lugh.git` with rsync first, then `chown -R root:root`
+them (rsync keeps the Mac's owner, and git refuses a clone from a
+repository another user owns). Then, in `/root/louhi-pkg`:
+clone `louhi.git`, check out the release, and run
 `DEB_BUILD_OPTIONS="nocheck parallel=2" LOUHI_LUGH_REPOSITORY=/root/louhi-pkg/lugh.git nice -n 19 tools/build-deb.sh`,
 then `lintian --fail-on error,warning build-deb/*.changes`.
 `build/pkg.sh` (untracked) is the whole script, including the
@@ -39,7 +31,6 @@ Dannan and Dagda packages, which need not be built again.
 
 ## Next, in order
 
-0. **Cut 0.1.0** (above).
 1. **Louhi onto Lugh 0.2.0's relying-party pieces**
    (`feature/lugh-relying-party`, a patch release). Lugh 0.2.0 moved into
    `lugh_client` what Louhi wrote for itself (the maintainer's Q6: the
@@ -112,9 +103,18 @@ Dannan and Dagda packages, which need not be built again.
    `AcceptorStore`. Nothing that places across nodes, allocates addresses
    or keeps a service's count is built without it.
 6. **Events back on**, when Lir ships `liblir-client0.1` (Lir has Louhi's
-   calls as its first requirements; it will send the names and commit).
-   Pin its release, turn `LOUHI_BUILD_LIR` on by default, update the
-   README's "Events on Lir".
+   calls as its first requirements; it will send the names and commit)
+   **and** its rewritten broker accepts retained messages and wills. Until
+   Dagda's nouns ship, that broker grants QoS 0 only (until D9), no retain
+   (until D6), and refuses every will at CONNECT (until D5): the maintainer's
+   ruling, 2026-11-22, sent by Lir. Louhi's publisher sets a retained QoS 1
+   will, so every CONNECT would be refused. Decided with Lir (2026-11-22):
+   the pin stays on `e40dd2e` and events stay off until D5 and D6 ship, as
+   the retained statuses and the will are how a consumer recovers and how a
+   dead node's status clears (design, "Events"); no QoS 0, unretained,
+   will-less mode. Then: pin the release, QoS 1 if D9 has shipped and
+   otherwise QoS 0 for every topic, keep retain and the will, turn
+   `LOUHI_BUILD_LIR` on by default, update the README's "Events on Lir".
 7. **Owed end to end**, when a Lugh issuer is at hand: `louhi-ctl login`
    and the node's token against a real Lugh; task events live on Lir; a
    private registry signed in to for real.
@@ -128,11 +128,12 @@ Dannan and Dagda packages, which need not be built again.
   `AcceptorStore` and caught-up (item 3).
 - **Lugh:** a release on Dannan 0.10.x (item 2); the five TokenSource cases
   (item 1).
-- **Lir:** `liblir-client0.1` (item 6).
+- **Lir:** `liblir-client0.1` (on its feature/client branch; it sends the
+  develop commit), and its broker taking retain and wills once Dagda's D5
+  and D6 ship (item 6).
 - **Dannan:** the HTTP core (`api/client.cpp` moves onto its client) and
   the process runner (`net/command.*` moves to it).
-- **The maintainer:** node-d (4 GB, under-voltage) is not used for Louhi's
-  builds until he says it is sound; a join to the standing Lir cluster
+- **The maintainer:** a join to the standing Lir cluster
   needs his word each time.
 
 ## How work is done
@@ -182,7 +183,12 @@ namespaces. Each runs other projects' services: not Louhi's to touch.
 | node-c | 15 GB | yes (xfs, `/var/lib/docker-xfs.img`) | gates; the deb |
 | node-b | 15 GB | no (ext4) | gates (1 test skipped) |
 | node-a | 15 GB, no memory controller | no | hosts the board; last |
-| node-d | 4 GB | no | not for Louhi's builds |
+| node-d | 4 GB | no | gates; a heavy link at `-j1` |
+
+All four take any load, node-d included (the maintainer, 2026-11-20,
+confirmed by the coordinating session 2026-11-22); a Pi lost mid-job is
+normal, and the job is run again elsewhere. Questions about using them go
+to the board and the coordinating session.
 
 node-c's xfs undo is `/root/louhi-work/UNDO-xfs.txt`. Before-wipe records
 are in `build/pi-records/` (untracked).

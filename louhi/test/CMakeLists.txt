@@ -36,7 +36,7 @@ add_executable(louhi_tests
   version_test.cpp
 )
 if(LOUHI_BUILD_LUGH)
-  target_sources(louhi_tests PRIVATE auth_lugh_test.cpp auth_service_token_test.cpp ctl_test.cpp)
+  target_sources(louhi_tests PRIVATE auth_lugh_test.cpp ctl_test.cpp)
   # ctl_test.cpp reads the YAML louhi-ctl writes.
   target_link_libraries(louhi_tests PRIVATE yaml-cpp::yaml-cpp)
 endif()

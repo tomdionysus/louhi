@@ -66,10 +66,10 @@ journalctl -u louhi -f
 `louhi-node --retire` runs as the service's user, with the service stopped:
 `sudo -u louhi louhi-node --retire <node id>`.
 
-## The 0.1.0 package's limits
+## The package's limits
 
 - **No events.** No Lir release ships a client library yet (it returns as
-  `liblir-client0.1`), so Louhi 0.1.0 is built without Lir, as every default
+  `liblir-client0.1`), so the package is built without Lir, as every default
   build is (`LOUHI_BUILD_LIR=OFF`), and publishes nothing to Lir.
 - **Records in memory.** A node holds only what was declared to it since it
   started, and nodes do not share records, until Dagda's register map ships.

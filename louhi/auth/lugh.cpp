@@ -24,16 +24,26 @@ std::variant<api::Claims, std::string> LughVerifier::verify(std::string_view tok
   return claims;
 }
 
+namespace {
+
+lugh::client::RelyingParty::Settings settings(LughConfig config) {
+  lugh::client::RelyingParty::Settings out;
+  out.issuers = std::move(config.issuers);
+  out.audience = "louhi";
+  out.ca_path = std::move(config.ca_path);
+  out.keys = config.keys;
+  return out;
+}
+
+}  // namespace
+
 LughPlugin::LughPlugin(boost::asio::io_context& io, LughConfig config, const dannan::contract::TimeSource& time, const dannan::contract::WallClock& wall)
-    : _https(io, config.ca_path),
-      _verifier(std::move(config.issuers), wall),
-      _keys(lugh::client::HttpsKeySource::make(_verifier, _https, io.get_executor(), time, config.keys)),
-      _adapter(_verifier) {}
+    : _party(io, settings(std::move(config)), time, wall), _adapter(_party.verifier()) {}
 
 LughPlugin::~LughPlugin() { stop(); }
 
-void LughPlugin::start() { _keys->start(); }
+void LughPlugin::start() { _party.start(); }
 
-void LughPlugin::stop() { _keys->stop(); }
+void LughPlugin::stop() { _party.stop(); }
 
 }  // namespace louhi::auth

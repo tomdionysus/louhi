@@ -28,7 +28,7 @@ On Debian 13, with Dannan's and Dagda's packages (`libdannan0.9`, `libdagda0.3.2
 where apt can find them, as the stack's apt repository has them:
 
 ```
-sudo apt install ./louhi_0.1.0_arm64.deb
+sudo apt install ./louhi_0.1.1_arm64.deb
 ```
 
 The package installs `louhi-node` and `louhi-ctl` in `/usr/bin`, the node's example
@@ -44,7 +44,7 @@ sudoedit /etc/louhi/config.yaml        # see "Running louhi-node" below
 sudo systemctl enable --now louhi
 ```
 
-Louhi 0.1.0 publishes no events: no Lir release ships a client yet, so Louhi is built
+Louhi publishes no events: no Lir release ships a client yet, so Louhi is built
 without Lir by default (see "Events on Lir"). It keeps records in memory (see Status).
 [docs/packaging.md](docs/packaging.md) says what it installs where, its dependencies, and
 how to build it.
@@ -217,14 +217,14 @@ audiences.
 
 ### Events on Lir
 
-Not in 0.1.0. The publisher is written and tested, but
+Not yet in a release. The publisher is written and tested, but
 [Lir](https://github.com/tomdionysus/lir)'s releases ship no client yet: its client
 library returns as `liblir-client0.1`, and the events come to a Louhi release after it.
 Until then they build only on request (`-DLOUHI_BUILD_LIR=ON`, or `tools/ci.sh events`),
 against a commit of Lir from before its rewrite. In such a build, with `lir.enabled` the
 node publishes to the Lir nodes it finds in its Dannan cluster.
-It signs in with a token of its own from the first Lugh issuer, as a Lugh service
-principal: `lir.client_id` with either `lir.client_key` and `lir.client_kid`, or
+It signs in with a token of its own from the Lugh issuers, trying each in turn, as a Lugh
+service principal: `lir.client_id` with either `lir.client_key` and `lir.client_kid`, or
 `lir.client_secret`. Without a client it connects with no password, for a Lir that allows
 anonymous clients.
 

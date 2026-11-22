@@ -28,7 +28,7 @@ On Debian 13, with Dannan's and Dagda's packages (`libdannan0.9`, `libdagda0.3.2
 where apt can find them, as the stack's apt repository has them:
 
 ```
-sudo apt install ./louhi_0.1.1_arm64.deb
+sudo apt install ./louhi_0.2.0_arm64.deb
 ```
 
 The package installs `louhi-node` and `louhi-ctl` in `/usr/bin`, the node's example
@@ -394,12 +394,14 @@ removed.
 
 ## Status
 
-This is Louhi's first release. What works today, on one node: the records and their
-codecs; the Docker driver with the hardened profile, limits and storage bounds; images by
-digest from allowed registries; the agent, with restart, backoff and the parked state;
-`louhi-node`; the API with Lugh sign-in, project scopes and quota admission; and
-`louhi-ctl`. Events on Lir are written and tested but wait for a released Lir client (see
-"Events on Lir").
+What works today, on one node: the records and their codecs; the Docker driver with the
+hardened profile, limits and storage bounds; images by digest from allowed registries;
+read-only host directories and bounded output directories; the agent, with restart,
+backoff, the parked state and the retention of finished tasks; `louhi-node`; the API with
+Lugh sign-in, project scopes, quota and node-capacity admission; and `louhi-ctl`, for a
+person or a service principal. Events on Lir are written and tested but wait for Lir's
+broker to take retained messages and wills (see "Events on Lir"). A task's logs come with
+Louhi's move to Dannan 0.10.x.
 
 What it does not do yet:
 

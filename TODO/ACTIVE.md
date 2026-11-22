@@ -92,11 +92,14 @@ Dannan and Dagda packages, which need not be built again.
    placement, then services, then address allocation, on the same
    `AcceptorStore`. Nothing that places across nodes, allocates addresses
    or keeps a service's count is built without it.
-6. **Events back on**, when Lir releases `liblir-client0.1` **and** its
-   rewritten broker accepts retained messages and wills. The client is on
-   Lir's develop at `1fe5667` (2026-11-22), untagged until Lir 0.2.0: its
-   API is the stored contract header byte for byte, so Louhi's calls stand;
-   `find_package(lir CONFIG)` and `lir::client`; it is on Dannan 0.10.2,
+6. **Events back on**, when Lir's rewritten broker accepts retained
+   messages and wills. The client is released: Lir 0.2.0 (tag `0.2.0`,
+   `9085820` on main, 2026-11-22), packaged as `liblir-client0.2` with
+   `liblir-dev` 0.2.0; its contract `lir/client/client.h` is the stored
+   contract header byte for byte, so Louhi's calls stand;
+   `find_package(lir 0.2.0 CONFIG REQUIRED)` and `lir::client`, Build-Depends
+   `liblir-dev (>= 0.2.0), liblir-dev (<< 0.3~)`. The broker that takes
+   retain and wills will be Lir 0.3.0, after Dannan 0.11.0. The client is on Dannan 0.10.2,
    so it follows item 2, and `liblir-dev` now depends on `libboost-dev`. Until
    Dagda's nouns ship, that broker grants QoS 0 only (until D9), no retain
    (until D6), and refuses every will at CONNECT (until D5): the maintainer's
@@ -121,9 +124,8 @@ Dannan and Dagda packages, which need not be built again.
   `AcceptorStore` and caught-up (item 3).
 - **Lugh:** nothing now (0.4.0 is on Dannan 0.10.2); it says before
   lugh_client's types move onto Dannan's completion (item 2).
-- **Lir:** a release with `liblir-client0.1` (on develop at `1fe5667`), and
-  its broker taking retain and wills once Dagda's D5 and D6 ship; it says
-  when (item 6).
+- **Lir:** its broker taking retain and wills once Dagda's D5 and D6 ship;
+  it says when (item 6). The client is out as Lir 0.2.0.
 - **Dannan:** the HTTP core (`api/client.cpp` moves onto its client) and
   the process runner (`net/command.*` moves to it).
 - **The maintainer:** a join to the standing Lir cluster

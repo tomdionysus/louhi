@@ -72,6 +72,21 @@ Dannan and Dagda packages, which need not be built again.
      reads the output treats it as untrusted. The rest of the hardened
      profile is unchanged.
    - 0.2.0 is (a) to (d) and (f); (e) comes with item 2.
+   - **Where it stands (2026-11-22):** (a) to (d) and (f) are on
+     `develop` (`78d75e7`, `31de887`), the version 0.2.0 (`ce80724`,
+     pushed). Gates passed at `ce80724`: release on node-c 421 of 421 (the
+     xfs quota test with `LOUHI_TEST_XFS_OUTPUT`), ASan and TSan on node-d
+     419 passed and 2 skipped each (no xfs there), events on node-c 423,
+     fuzz (four targets, 60 s each, no crash); the deb on node-c lintian
+     clean. **Left:** the clang step, which the board's guard on the Mac
+     blocks because its command line says "clang" (asked of the
+     coordinating session, 2026-11-22); then the cut (squash onto `main`,
+     tag, the deb from the tag), with the maintainer's word to push.
+   - **Then the trial** on node-c: tell the coordinating session first; it
+     adds the board claim for Louhi's cores. Output area
+     `/var/lib/docker/louhi-output` on Docker's xfs (the maintainer,
+     2026-11-22), removed after the trial; a Dannan cluster of Louhi's
+     own; one project's test runs.
 2. **Dannan 0.10.x**, once Dagda has released on it (one Dannan a
    process; Dagda's 0.4.0 is under way). Lugh has: 0.4.0 (2026-11-22) is
    on Dannan 0.10.2 and lir::mqtt 0.1.0, carries the five TokenSource cases,

@@ -33,12 +33,26 @@ std::vector<Assignment> StoreDesired::assignments() const {
                    " is not in the store");
       continue;
     }
+    Assignment assignment;
     try {
-      auto definition = model::decode_task_definition(*definition_bytes);
-      out.push_back({std::move(task), std::move(definition)});
+      assignment.definition = model::decode_task_definition(*definition_bytes);
     } catch (const model::DecodeError& bad) {
       _logger.warn("skipping task " + model::to_string(task.id) + ": its revision does not decode: " + bad.what());
+      continue;
     }
+    model::TaskStatus probe;
+    probe.task = task.id;
+    probe.node = _self;
+    if (const auto status_bytes = _store.get(model::key(probe))) {
+      // A report that does not decode is as none: the agent reports afresh.
+      try {
+        assignment.status = model::decode_task_status(*status_bytes);
+      } catch (const model::DecodeError& bad) {
+        _logger.warn("task " + model::to_string(task.id) + ": this node's status of it does not decode: " + bad.what());
+      }
+    }
+    assignment.task = std::move(task);
+    out.push_back(std::move(assignment));
   }
   return out;
 }

@@ -69,7 +69,7 @@ model::NodeStatus node_status(const Facts& facts, const std::vector<agent::Assig
   uint64_t cpu = 0;
   uint64_t memory = 0;
   for (const auto& assignment : placed) {
-    if (assignment.task.node != facts.self || assignment.task.desired != model::DesiredState::running) continue;
+    if (assignment.task.node != facts.self || !model::holds_resources(assignment.task, assignment.status)) continue;
     cpu += assignment.definition.cpu_millis;
     memory += assignment.definition.memory_mib;
     if (out.tasks < std::numeric_limits<uint32_t>::max()) ++out.tasks;

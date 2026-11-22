@@ -182,6 +182,7 @@ The settings, by key and flag:
 | `log.level`, `log.format` | `--log-level`, `--log-format` | Logging |
 | `runtime.docker_socket` | `--docker-socket` | Docker's socket (default `/var/run/docker.sock`) |
 | `runtime.allow_*` | `--allow-*` | The three overrides above |
+| `runtime.retain_finished_hours` | `--retain-finished-hours` | Hours a finished task's containers and volumes are kept after it stopped (24) |
 | `registries.allow` | `--registry` | A registry images may come from, by domain (`docker.io` for Docker Hub) |
 | `registries.credentials` | `--registry-credential` | `DOMAIN=USER:PASSWORD` or `DOMAIN=:IDENTITY_TOKEN`; keep in `secrets.yaml` |
 | `api.http`, `api.https` | `--api-http`, `--api-https` | `HOST:PORT` for the API over HTTP and over HTTPS |
@@ -217,9 +218,10 @@ audiences.
 
 ### Events on Lir
 
-Not yet in a release. The publisher is written and tested, but
-[Lir](https://github.com/tomdionysus/lir)'s releases ship no client yet: its client
-library returns as `liblir-client0.1`, and the events come to a Louhi release after it.
+Not yet in a release. The publisher is written and tested, and
+[Lir](https://github.com/tomdionysus/lir) 0.2.0 ships its client, but Lir's broker does
+not yet take the retained messages and wills Louhi's events depend on; they come to a
+Louhi release after it does.
 Until then they build only on request (`-DLOUHI_BUILD_LIR=ON`, or `tools/ci.sh events`),
 against a commit of Lir from before its rewrite. In such a build, with `lir.enabled` the
 node publishes to the Lir nodes it finds in its Dannan cluster.
@@ -266,7 +268,20 @@ Login writes the issuer, client id, endpoints and scopes (and `--ca`, when given
 `~/.config/louhi/credentials.yaml`, readable only by you. The access token is refreshed
 when less than a minute of it is left. `louhi-ctl logout` removes the tokens.
 
-The configuration's keys are `issuer`, `client_id`, `endpoints` and `scopes` (lists), `ca`
+A program, rather than a person, signs in as a Lugh service principal: a client with a
+secret, granted scopes such as `louhi:web:run` and `louhi:web:read`. Put the secret in a
+file only you can read (`chmod 600`) and log in with it; there is no device flow:
+
+```
+louhi-ctl login --issuer https://lugh.example --client-id web-builds \
+  --client-secret-file ~/.config/louhi/web-builds.secret \
+  --endpoint http://10.0.0.10:7480 --scope 'louhi:web:run louhi:web:read'
+```
+
+The configuration keeps the secret file's path, never the secret, and a new token is asked
+for with it whenever the one held has less than a minute left.
+
+The configuration's keys are `issuer`, `client_id`, `client_secret_file`, `endpoints` and `scopes` (lists), `ca`
 (the roots an https endpoint and the issuer chain to) and `credentials` (the credentials
 file). It is read from `--config PATH`, `$LOUHI_CONFIG`, or `~/.config/louhi/config.yaml`;
 then `$LOUHI_ENDPOINT` (a list, separated by commas or spaces) and `$LOUHI_CREDENTIALS`;
@@ -348,6 +363,13 @@ JSON over HTTP/1.1. Every request carries `Authorization: Bearer <Lugh access to
 dispatches from. `/v1/status` is the node as it sees itself: its id, version, readiness
 and its store's, and for `louhi:admin` its task count and full report. Errors are
 `{"error": code, "message": text}`.
+
+RunTask admits tasks against the project's quota (409, `quota`) and against the node's
+capacity, its CPU and memory less what the tasks placed on it hold, of every project (409,
+`capacity`; 503, `capacity_unknown`, until the node has reported what it has). A refusal
+is final: nothing waits in a queue. A task run on its own holds nothing once its node
+reports it stopped; its containers are kept for `runtime.retain_finished_hours`, then
+removed.
 
 ## Status
 

@@ -60,10 +60,18 @@ Dannan and Dagda packages, which need not be built again.
      through the driver (Docker's multiplexed log stream, a fuzzed
      parser). Log text is bytes from a workload: it reaches JSON only as
      valid UTF-8, which needs Dannan 0.10.x's `encoding::utf8_length`
-     (not in 0.9.2), so this step follows item 2 unless the maintainer
-     rules otherwise.
-   - Host-directory mounts: the maintainer is weighing them against
-     volumes only (2026-11-22); nothing is built until that choice is made.
+     (not in 0.9.2), so this step follows item 2 (the maintainer,
+     2026-11-22: wait for Dannan 0.10.x; no base64 stand-in).
+   - (f) **Host-directory mounts** (the maintainer, 2026-11-22): the
+     operator lists host directories on the node; a task definition mounts
+     a source under one read-only and gets an output directory read-write,
+     with four controls: each path resolved and checked against the list
+     (no `..`, no symlink out); every task its own output subdirectory,
+     made by Louhi, never shared; a quota on the output area (xfs project
+     quota, as for scratch); the output mounted `nosuid,nodev`. Whatever
+     reads the output treats it as untrusted. The rest of the hardened
+     profile is unchanged.
+   - 0.2.0 is (a) to (d) and (f); (e) comes with item 2.
 2. **Dannan 0.10.x**, once Dagda has released on it (one Dannan a
    process; Dagda's 0.4.0 is under way). Lugh has: 0.4.0 (2026-11-22) is
    on Dannan 0.10.2 and lir::mqtt 0.1.0, carries the five TokenSource cases,

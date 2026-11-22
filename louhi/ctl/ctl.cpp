@@ -58,6 +58,8 @@ dannan::config::Reader reader() {
   out.settings = {
       {"issuer", Kind::value, "--issuer", "", "the issuer URL of the Lugh to sign in to"},
       {"client_id", Kind::value, "--client-id", "", "louhi-ctl's client id at the issuer"},
+      {"client_secret_file", Kind::value, "--client-secret-file", "LOUHI_CLIENT_SECRET_FILE",
+       "a file only its owner can read holding the client's secret, to sign in as a service principal"},
       {"endpoints", Kind::list, "--endpoint", "LOUHI_ENDPOINT", "a node's API, an http or https URL"},
       {"scopes", Kind::list, "--scope", "", "a scope to sign in with"},
       {"ca", Kind::value, "--ca", "", "the roots an https endpoint and the issuer chain to, PEM; the system's when absent"},
@@ -161,6 +163,7 @@ struct Saved {
   std::vector<std::string> scopes;
   std::optional<std::string> ca;
   std::optional<std::string> credentials;
+  std::optional<std::string> client_secret_file;
 };
 
 std::string config_text(const Saved& saved) {
@@ -172,6 +175,7 @@ std::string config_text(const Saved& saved) {
   out << YAML::Key << "scopes" << YAML::Value << saved.scopes;
   if (saved.ca) out << YAML::Key << "ca" << YAML::Value << *saved.ca;
   if (saved.credentials) out << YAML::Key << "credentials" << YAML::Value << *saved.credentials;
+  if (saved.client_secret_file) out << YAML::Key << "client_secret_file" << YAML::Value << *saved.client_secret_file;
   out << YAML::EndMap;
   return emitted(out);
 }
@@ -230,6 +234,34 @@ lugh::client::ClientIdentity public_client(const std::string& client_id) {
   return identity;
 }
 
+// A service principal proves itself by its secret (client_secret_basic).
+lugh::client::ClientIdentity confidential_client(const std::string& client_id, std::shared_ptr<const dannan::identity::Secret> secret) {
+  lugh::client::ClientIdentity identity;
+  identity.client_id = client_id;
+  identity.method = lugh::client::ClientIdentity::Method::client_secret_basic;
+  identity.secret = std::move(secret);
+  return identity;
+}
+
+// The secret in the file at `path`: its text less a line ending, refused when
+// the file is missing, empty or readable by others.
+std::shared_ptr<const dannan::identity::Secret> client_secret(const Environment& env, const std::string& path) {
+  const auto file = env.file(path);
+  auto text = file->read();
+  if (!text) throw std::runtime_error("cannot read the client secret at " + path);
+  while (!text->empty() && (text->back() == '\n' || text->back() == '\r')) text->pop_back();
+  if (text->empty()) throw std::runtime_error("the client secret at " + path + " is empty");
+  if (!file->owner_only()) throw std::runtime_error("the client secret at " + path + " may be read by others than its owner: make it owner-only (chmod 600)");
+  return std::make_shared<const dannan::identity::Secret>(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(text->data()), text->size()));
+}
+
+// Tokens for the service principal itself.
+lugh::client::TokenSet client_tokens(const Environment& env, lugh::client::OAuthClient& oauth, const std::vector<std::string>& scopes) {
+  auto got = ask<lugh::Outcome<lugh::client::TokenSet>>([&](auto done) { oauth.client_credentials(scopes, step, env.executor, std::move(done)); }, patience);
+  if (!got.ok()) throw std::runtime_error("signing in as a service principal: " + got.message);
+  return std::move(got.value);
+}
+
 void keep(Credentials& c, const lugh::client::TokenSet& tokens, const dannan::contract::WallClock& wall) {
   c.access_token = text_of(tokens.access_token);
   // Lugh rotates refresh tokens: the new one replaces the one just spent.
@@ -238,7 +270,8 @@ void keep(Credentials& c, const lugh::client::TokenSet& tokens, const dannan::co
 }
 
 int login(const Args& args, const Environment& env) {
-  if (args.positional.size() != 1) throw Usage("usage: louhi-ctl login --issuer URL --client-id ID --endpoint URL... [--scope S]... [--ca FILE]");
+  if (args.positional.size() != 1)
+    throw Usage("usage: louhi-ctl login --issuer URL --client-id ID [--client-secret-file FILE] --endpoint URL... [--scope S]... [--ca FILE]");
   Saved saved;
   const auto issuer = args.flag("issuer");
   const auto client_id = args.flag("client_id");
@@ -263,10 +296,28 @@ int login(const Args& args, const Environment& env) {
     saved.credentials = args.flag("credentials");
   const auto path = credentials_path(args, env.getenv);
   const auto config = config_path(args, env.getenv);
+  saved.client_secret_file = args.flag("client_secret_file");
+  // Read before anything is sent: a secret that cannot be used asks nothing.
+  const auto secret = saved.client_secret_file ? client_secret(env, *saved.client_secret_file) : nullptr;
 
   const auto https = env.issuer(saved.ca.value_or(""));
   const auto endpoints = discover(env, *https, saved.issuer);
   const lugh::client::Verifier verifier({saved.issuer}, *env.wall);
+  Credentials c;
+  c.issuer = saved.issuer;
+  c.client_id = saved.client_id;
+  const auto saving = [&] {
+    env.file(config)->write(config_text(saved));
+    env.file(path)->write(encode(c));
+    if (default_credentials(args)) env.file(old_credentials_path(path))->remove();
+    *env.err << "Signed in; the settings are in " << config.string() << " and the credentials in " << path.string() << "\n";
+    return 0;
+  };
+  if (secret) {
+    lugh::client::OAuthClient oauth(endpoints, confidential_client(saved.client_id, secret), *https, verifier, *env.wall);
+    keep(c, client_tokens(env, oauth, saved.scopes), *env.wall);
+    return saving();
+  }
   lugh::client::OAuthClient oauth(endpoints, public_client(saved.client_id), *https, verifier, *env.wall);
 
   const auto started = ask<lugh::Outcome<lugh::client::DeviceAuthorization>>(
@@ -279,15 +330,8 @@ int login(const Args& args, const Environment& env) {
       ask<lugh::Outcome<lugh::client::TokenSet>>([&](auto done) { oauth.device_tokens(started.value, *env.steady, step, env.executor, std::move(done)); },
                                                  std::chrono::seconds(started.value.expires_in) + patience);
   if (!got.ok()) throw std::runtime_error("signing in: " + got.message);
-  Credentials c;
-  c.issuer = saved.issuer;
-  c.client_id = saved.client_id;
   keep(c, got.value, *env.wall);
-  env.file(config)->write(config_text(saved));
-  env.file(path)->write(encode(c));
-  if (default_credentials(args)) env.file(old_credentials_path(path))->remove();
-  *env.err << "Signed in; the settings are in " << config.string() << " and the credentials in " << path.string() << "\n";
-  return 0;
+  return saving();
 }
 
 // Credentials an older louhi-ctl kept in credentials.json, beside the default
@@ -312,7 +356,7 @@ std::optional<std::string> move_old_credentials(const Args& args, const Environm
   if (args.settings.path.empty()) {
     const auto config_file = env.file(config_path(args, env.getenv));
     if (!config_file->read()) {
-      config_file->write(config_text({old.credentials.issuer, old.credentials.client_id, old.endpoints, old.scopes, std::nullopt, std::nullopt}));
+      config_file->write(config_text({old.credentials.issuer, old.credentials.client_id, old.endpoints, old.scopes, std::nullopt, std::nullopt, std::nullopt}));
       moved_endpoints = old.endpoints;
     }
   }
@@ -324,10 +368,19 @@ std::optional<std::string> move_old_credentials(const Args& args, const Environm
 // An access token good for a minute more, refreshed and saved when it is not.
 std::string access_token(const Args& args, const Environment& env, CredentialFile& file, Credentials& c) {
   if (!c.access_token.empty() && c.expires_unix > env.wall->unix_ms() / 1000 + least_life_seconds) return c.access_token;
-  if (c.refresh_token.empty()) throw std::runtime_error("the sign-in has run out: run louhi-ctl login");
+  const auto secret_file = args.flag("client_secret_file");
+  if (c.refresh_token.empty() && !secret_file) throw std::runtime_error("the sign-in has run out: run louhi-ctl login");
+  // A service principal has no refresh token: it asks again with its secret.
+  const auto secret = c.refresh_token.empty() ? client_secret(env, *secret_file) : nullptr;
   const auto https = env.issuer(args.flag("ca").value_or(""));
   const auto endpoints = discover(env, *https, c.issuer);
   const lugh::client::Verifier verifier({c.issuer}, *env.wall);
+  if (secret) {
+    lugh::client::OAuthClient oauth(endpoints, confidential_client(c.client_id, secret), *https, verifier, *env.wall);
+    keep(c, client_tokens(env, oauth, args.all("scopes")), *env.wall);
+    file.write(encode(c));
+    return c.access_token;
+  }
   lugh::client::OAuthClient oauth(endpoints, public_client(c.client_id), *https, verifier, *env.wall);
   const dannan::identity::Secret refresh(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(c.refresh_token.data()), c.refresh_token.size()));
   const auto r = ask<lugh::Outcome<lugh::client::TokenSet>>([&](auto done) { oauth.refresh(refresh, {}, step, env.executor, std::move(done)); }, patience);
@@ -474,6 +527,14 @@ void DiskCredentialFile::write(std::string_view text) {
 }
 
 void DiskCredentialFile::remove() { std::filesystem::remove(_path); }
+
+bool DiskCredentialFile::owner_only() {
+  using std::filesystem::perms;
+  std::error_code ec;
+  const auto status = std::filesystem::status(_path, ec);
+  if (ec) return false;
+  return (status.permissions() & (perms::group_all | perms::others_all)) == perms::none;
+}
 
 std::filesystem::path credentials_path(const Args& args, const Getenv& getenv) {
   if (const auto given = args.settings.path_of("credentials")) return *given;

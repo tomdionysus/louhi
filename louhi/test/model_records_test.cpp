@@ -234,6 +234,42 @@ TEST(Tasks, AStopReasonOnlyWhenStopped) {
   EXPECT_NO_THROW(t.validate());
 }
 
+// A task run on its own is done when its own node reports it stopped, and
+// then holds nothing; a service's task, or a report from another node, or
+// any other state, finishes nothing.
+TEST(Tasks, ATaskRunOnItsOwnIsFinishedWhenItsNodeReportsItStopped) {
+  auto t = fixture::task();
+  t.service.clear();
+  auto s = fixture::task_status();
+  s.task = t.id;
+  s.node = *t.node;
+  EXPECT_FALSE(finished(t, std::nullopt));
+  EXPECT_TRUE(holds_resources(t, std::nullopt));
+  EXPECT_FALSE(finished(t, s)) << "running";
+  s.state = TaskState::parked;
+  EXPECT_FALSE(finished(t, s)) << "parked waits on an operator, and holds what it had";
+  s.state = TaskState::stopped;
+  EXPECT_TRUE(finished(t, s));
+  EXPECT_FALSE(holds_resources(t, s));
+
+  auto elsewhere = s;
+  elsewhere.node = fixture::node_id(0x77);
+  EXPECT_FALSE(finished(t, elsewhere)) << "only the node it is placed on says";
+  auto other = s;
+  other.task = fixture::task_id(0x99);
+  EXPECT_FALSE(finished(t, other));
+
+  auto of_service = t;
+  of_service.service = "frontend";
+  EXPECT_FALSE(finished(of_service, s)) << "a service's task is relaunched, never finished";
+  EXPECT_TRUE(holds_resources(of_service, s));
+
+  auto stopped = t;
+  stopped.desired = DesiredState::stopped;
+  stopped.stop_reason = "done";
+  EXPECT_FALSE(holds_resources(stopped, std::nullopt));
+}
+
 TEST(Tasks, AnEpochOnlyWithANode) {
   auto t = fixture::task();
   t.node.reset();

@@ -255,6 +255,14 @@ struct TaskStatus {
   void validate() const;
 };
 
+// A task run on its own is done once the node it is placed on reports it
+// stopped: it is never launched again, and holds nothing. `status` is a
+// node's last report of it. A service's task is relaunched, never finished.
+bool finished(const Task& task, const std::optional<TaskStatus>& status);
+// Whether a task counts against its project's quota and its node's capacity:
+// wanted running and not finished.
+bool holds_resources(const Task& task, const std::optional<TaskStatus>& status);
+
 struct Capacity {
   uint32_t cpu_millis = 0;
   uint32_t memory_mib = 0;

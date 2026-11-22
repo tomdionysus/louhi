@@ -169,6 +169,12 @@ void TaskStatus::validate() const {
   }
 }
 
+bool finished(const Task& task, const std::optional<TaskStatus>& status) {
+  return task.service.empty() && status && task.node && status->node == *task.node && status->task == task.id && status->state == TaskState::stopped;
+}
+
+bool holds_resources(const Task& task, const std::optional<TaskStatus>& status) { return task.desired == DesiredState::running && !finished(task, status); }
+
 void NodeStatus::validate() const {
   require_text("node status louhi version", louhi_version, max_version_text);
   require_text("node status runtime", runtime, max_version_text);

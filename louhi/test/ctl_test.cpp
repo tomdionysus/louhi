@@ -25,10 +25,11 @@
 //   that may have arrived is never sent again; any HTTP answer is the answer;
 // - the answer's JSON goes to stdout, and the exit is 0 for a 2xx answer, 1
 //   for any other answer or failure;
-// - login signs in by the device flow, telling the person where to go, and
-//   keeps nothing unless it signed in: then it writes the settings to the
-//   configuration and the tokens to the credentials; logout removes the
-//   credentials.
+// - login signs in by the device flow, telling the person where to go, or,
+//   given a client secret file only its owner can read, by the client
+//   credentials grant; it keeps nothing unless it signed in: then it writes
+//   the settings to the configuration and the tokens to the credentials, and
+//   never the secret; logout removes the credentials.
 // Driven by a fake issuer, a fake API, files in memory (or on disk, in a
 // directory of the test's own) and stepped clocks: no sleep anywhere.
 
@@ -47,6 +48,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -128,11 +130,21 @@ class Files {
       std::lock_guard<std::mutex> lock(_files._mutex);
       _files._text.erase(_path);
     }
+    bool owner_only() override {
+      std::lock_guard<std::mutex> lock(_files._mutex);
+      return _files._shared.count(_path) == 0;
+    }
 
    private:
     Files& _files;
     const std::string _path;
   };
+
+  // A file others may read too.
+  void share(const std::string& path) {
+    std::lock_guard<std::mutex> lock(_mutex);
+    _shared.insert(path);
+  }
 
   std::unique_ptr<ctl::CredentialFile> open(const std::filesystem::path& path) { return std::make_unique<File>(*this, path.string()); }
   std::optional<std::string> text(const std::string& path) { return File(*this, path).read(); }
@@ -146,6 +158,7 @@ class Files {
  private:
   std::mutex _mutex;
   std::map<std::string, std::string> _text;
+  std::set<std::string> _shared;
 };
 
 // Steady time that moves a second at every reading, and never asks a timer
@@ -505,6 +518,18 @@ TEST(CtlCredentials, OnDiskTheyAreOwnerOnlyAndReplacedWhole) {
   EXPECT_NO_THROW(file.remove());
 }
 
+TEST(CtlCredentials, OnDiskAFileIsOwnerOnlyWhenNoOneElseMayReadIt) {
+  dannan::test::TempDir dir;
+  const auto path = dir.path() / "secret";
+  ctl::DiskCredentialFile file(path);
+  EXPECT_FALSE(file.owner_only()) << "no file is no owner-only file";
+  write_file(path, "s3cret\n");
+  std::filesystem::permissions(path, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write, std::filesystem::perm_options::replace);
+  EXPECT_TRUE(file.owner_only());
+  std::filesystem::permissions(path, std::filesystem::perms::group_read, std::filesystem::perm_options::add);
+  EXPECT_FALSE(file.owner_only());
+}
+
 TEST(CtlCredentials, OnDiskAFileTooLargeToBeThemIsRefused) {
   dannan::test::TempDir dir;
   const auto path = dir.path() / "credentials.yaml";
@@ -834,6 +859,78 @@ TEST_F(CtlTest, ALoginRefusedKeepsNothing) {
   EXPECT_NE(err.str().find("access_denied"), std::string::npos) << err.str();
   EXPECT_FALSE(files.at(home_credentials));
   EXPECT_FALSE(files.text(home_config));
+}
+
+// A service principal (a Lugh client with a secret) signs in by the client
+// credentials grant: no person, no device flow. The secret stays in its own
+// file, which only its owner may read; louhi-ctl keeps the file's path, never
+// the secret, and fetches a new token with it when the one held runs out.
+TEST_F(CtlTest, LoginWithAClientSecretSignsInByTheClientCredentialsGrant) {
+  files.open("/s/secret")->write("s3cret\n");
+  issuer_answers(200, {{"access_token", "a1"}, {"token_type", "Bearer"}, {"expires_in", 3600}});
+  EXPECT_EQ(run({"login", "--issuer", issuer, "--client-id", "build", "--client-secret-file", "/s/secret", "--endpoint", "http://louhi.example:8080", "--scope",
+                 "louhi:web:run louhi:web:read"}),
+            0)
+      << err.str();
+  EXPECT_EQ(https->sent_to(device_url), 0u) << "no device flow";
+  const auto forms = forms_to(token_url);
+  ASSERT_EQ(forms.size(), 1u);
+  auto form = forms[0];
+  EXPECT_EQ(form["grant_type"], "client_credentials");
+  EXPECT_EQ(form["scope"], "louhi:web:run louhi:web:read");
+  EXPECT_EQ(https->header(https->sent().size() - 1, "Authorization"), "Basic YnVpbGQ6czNjcmV0") << "the secret without its newline";
+
+  auto kept = fresh();
+  kept.client_id = "build";
+  kept.refresh_token.clear();
+  EXPECT_EQ(files.at(home_credentials), kept);
+  const YAML::Node saved = saved_config();
+  ASSERT_TRUE(saved.IsMap());
+  EXPECT_EQ(saved["client_id"].as<std::string>(), "build");
+  EXPECT_EQ(saved["client_secret_file"].as<std::string>(), "/s/secret");
+  EXPECT_EQ(files.text(home_config)->find("s3cret"), std::string::npos);
+  EXPECT_EQ(files.text(home_credentials)->find("s3cret"), std::string::npos);
+}
+
+TEST_F(CtlTest, AnExpiredTokenIsFetchedAgainWithTheClientSecret) {
+  files.open("/s/secret")->write("s3cret");
+  auto c = fresh();
+  c.client_id = "build";
+  c.refresh_token.clear();
+  c.expires_unix = now_unix + 30;
+  files.put(home_credentials, c);
+  write_file(home_config, "client_secret_file: /s/secret\nscopes:\n  - louhi:web:run\n" + endpoints_yaml({"http://louhi.example:8080"}));
+  issuer_answers(200, {{"access_token", "a2"}, {"token_type", "Bearer"}, {"expires_in", 600}});
+  EXPECT_EQ(run({"list-projects"}), 0) << err.str();
+  const auto forms = forms_to(token_url);
+  ASSERT_EQ(forms.size(), 1u);
+  auto form = forms[0];
+  EXPECT_EQ(form["grant_type"], "client_credentials");
+  EXPECT_EQ(form["scope"], "louhi:web:run");
+  ASSERT_EQ(server->requests().size(), 1u);
+  EXPECT_EQ(server->requests()[0].token, "a2");
+  auto kept = c;
+  kept.access_token = "a2";
+  kept.expires_unix = now_unix + 600;
+  EXPECT_EQ(files.at(home_credentials), kept);
+}
+
+TEST_F(CtlTest, AClientSecretFileMissingEmptyOrReadableByOthersIsRefused) {
+  issuer_answers(200, {{"access_token", "a1"}, {"token_type", "Bearer"}, {"expires_in", 3600}});
+  const auto login = [&] {
+    return run({"login", "--issuer", issuer, "--client-id", "build", "--client-secret-file", "/s/secret", "--endpoint", "http://louhi.example:8080"});
+  };
+  EXPECT_EQ(login(), 1);
+  EXPECT_NE(err.str().find("/s/secret"), std::string::npos) << err.str();
+  files.open("/s/secret")->write("\n");
+  EXPECT_EQ(login(), 1);
+  EXPECT_NE(err.str().find("empty"), std::string::npos) << err.str();
+  files.open("/s/secret")->write("s3cret\n");
+  files.share("/s/secret");
+  EXPECT_EQ(login(), 1);
+  EXPECT_NE(err.str().find("owner"), std::string::npos) << err.str();
+  EXPECT_TRUE(https->sent().empty());
+  EXPECT_FALSE(files.at(home_credentials));
 }
 
 TEST_F(CtlTest, LoginNeedsItsFlagsAndAnEndpointThatIsOne) {

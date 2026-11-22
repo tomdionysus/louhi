@@ -145,6 +145,7 @@ struct Options {
   bool allow_unenforced_memory = false;
   bool allow_without_user_namespaces = false;
   bool allow_unbounded_storage = false;
+  std::chrono::hours retain_finished{24};
   std::vector<std::string> registries;
   std::map<std::string, louhi::runtime::RegistryCredential> registry_credentials;
   std::optional<dannan::net::Endpoint> api_http;
@@ -201,6 +202,8 @@ dannan::config::Reader reader() {
       "launch tasks even where the runtime has no user namespaces (root in a container is root on the node)");
   add("runtime.allow_unbounded_storage", Kind::toggle, "--allow-unbounded-storage",
       "launch tasks even where the runtime cannot bound their storage (Docker needs overlay2 on xfs with project quotas)");
+  add("runtime.retain_finished_hours", Kind::value, "--retain-finished-hours",
+      "hours a finished task's containers and volumes are kept, for its logs, after it stopped; 24 when absent");
   add("registries.allow", Kind::list, "--registry", "a registry images may come from, by domain (docker.io for Docker Hub); none allows none");
   add("registries.credentials", Kind::list, "--registry-credential",
       "DOMAIN=USER:PASSWORD, or DOMAIN=:IDENTITY_TOKEN, for an allowed registry; keep them in secrets.yaml");
@@ -253,6 +256,7 @@ Options parse(int argc, char** argv) {
   out.allow_unenforced_memory = settings.toggle("runtime.allow_unenforced_memory").value_or(false);
   out.allow_without_user_namespaces = settings.toggle("runtime.allow_without_user_namespaces").value_or(false);
   out.allow_unbounded_storage = settings.toggle("runtime.allow_unbounded_storage").value_or(false);
+  out.retain_finished = std::chrono::hours(settings.number("runtime.retain_finished_hours", 0, 8760).value_or(24));
   out.registries = settings.list("registries.allow");
   for (const auto& entry : settings.list("registries.credentials")) {
     // A user name never holds ':' (RFC 7617), so the first ':' ends it; an
@@ -476,6 +480,7 @@ int main(int argc, char** argv) {
     policy.allow_unenforced_memory = options.allow_unenforced_memory;
     policy.allow_without_user_namespaces = options.allow_without_user_namespaces;
     policy.allow_unbounded_storage = options.allow_unbounded_storage;
+    policy.retain_finished = options.retain_finished;
     louhi::agent::Clock clock{&dannan::contract::steady_time_source(), &dannan::contract::system_wall_clock(), after};
     auto agent = std::make_shared<louhi::agent::Agent>(driver, desired, agent_reports, self, clock, io.get_executor(), context.logger("louhi.agent"), policy);
 

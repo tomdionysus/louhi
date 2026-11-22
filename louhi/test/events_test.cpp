@@ -23,6 +23,8 @@
 
 #include "dannan/test/fixtures/stepped_time.h"
 #include "louhi/api/api.h"
+#include "louhi/model/codec.h"
+#include "louhi/model/keys.h"
 #include "louhi/store/memory_store.h"
 #include "louhi/test/fixtures/fake_driver.h"
 #include "louhi/test/fixtures/records.h"
@@ -179,6 +181,9 @@ TEST_F(ApiEventsTest, TheApiPublishesARunAndAStopOnceTheirWritesLand) {
   call("PUT", "/v1/projects/web", "{}");
   call("PUT", "/v1/projects/web/quota", R"({"max_tasks":5,"max_cpu_millis":5000,"max_memory_mib":5000})");
   call("POST", "/v1/projects/web/task-definitions", R"({"family":"f","cpu_millis":1,"memory_mib":4,"containers":[{"name":"a","image":"alpine"}]})");
+  auto report = test::node_status();
+  report.node = self;
+  store.put(model::key(report), model::encode(report), store::Deadline(1000), io.get_executor(), [](auto) {});
   const auto run = call("POST", "/v1/projects/web/tasks", R"({"family":"f","count":2})");
   ASSERT_EQ(run.status, 200u);
   EXPECT_EQ(kinds(), (std::vector<std::string>{"task.run", "task.run"}));

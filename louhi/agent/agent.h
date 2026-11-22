@@ -41,7 +41,10 @@
 //
 // What exits: a task run on its own (no service) is done when an essential
 // container exits, and is reported stopped, its other containers stopped and
-// kept for inspection. A service's task is relaunched, after a backoff, up to
+// kept for inspection. Once the store holds that report (model::finished) the
+// task is never launched again, by this agent or one restarted after its
+// containers are gone, and when Policy::retain_finished has passed since the
+// report its containers and volumes are removed. A service's task is relaunched, after a backoff, up to
 // a budget of restarts within a window; past it, it is parked: stopped,
 // reported, and left until an operator unparks it (discipline 2: backoff, a
 // budget, a visible parked state and an operator action).
@@ -89,6 +92,9 @@ struct Policy {
   // its backoff again.
   dannan::sched::RetryPolicy restarts{5, std::chrono::minutes(10), std::chrono::seconds(1), std::chrono::minutes(1), std::chrono::milliseconds{0}};
   std::chrono::seconds stop_grace{10};
+  // How long a finished task's containers and volumes are kept, for its logs
+  // and inspection, after this node reported it stopped.
+  std::chrono::milliseconds retain_finished{std::chrono::hours(24)};
   runtime::Deadline call_deadline{30'000};
   runtime::Deadline pull_deadline{600'000};
   // Launch tasks on a node whose runtime cannot enforce memory limits.
@@ -148,7 +154,9 @@ class Agent : public std::enable_shared_from_this<Agent> {
   void watch();
   std::vector<Step> plan(const std::vector<Assignment>& assignments, const std::vector<runtime::ContainerInfo>& containers,
                          const std::vector<runtime::VolumeInfo>& volumes);
-  Step handle(const Assignment& assignment, std::vector<runtime::ContainerInfo> observed);
+  Step handle(const Assignment& assignment, std::vector<runtime::ContainerInfo> observed, std::vector<std::string> volumes);
+  // A finished task: kept until its retention has passed, then removed.
+  Step finished(const Assignment& assignment, const std::vector<runtime::ContainerInfo>& observed, std::vector<std::string> volumes);
   Step launch(const Assignment& assignment);
   Step teardown(std::vector<runtime::ContainerInfo> containers, std::vector<std::string> volumes, bool remove);
   Step start_created(std::vector<runtime::ContainerInfo> containers);

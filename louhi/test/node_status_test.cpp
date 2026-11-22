@@ -87,6 +87,22 @@ TEST(NodeStatus, AllocatedCountsOnlyTasksWantedRunning) {
   EXPECT_EQ(s.tasks, 2u);
 }
 
+TEST(NodeStatus, AFinishedTaskIsNotAllocated) {
+  node::Facts facts;
+  facts.self = test::node_id(1);
+  facts.runtime = capable();
+  auto done = placed(facts.self, 1000, 1024);
+  done.task.service.clear();
+  done.status = test::task_status();
+  done.status->task = done.task.id;
+  done.status->node = facts.self;
+  done.status->state = model::TaskState::stopped;
+  const auto s = node::node_status(facts, {placed(facts.self, 500, 256), done}, 1, 1);
+  EXPECT_EQ(s.allocated.cpu_millis, 500u);
+  EXPECT_EQ(s.allocated.memory_mib, 256u);
+  EXPECT_EQ(s.tasks, 1u);
+}
+
 TEST(NodeStatus, AllocationSaturatesRatherThanWraps) {
   node::Facts facts;
   facts.self = test::node_id(1);

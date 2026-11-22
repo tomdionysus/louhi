@@ -4,6 +4,47 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## 0.1.0 readied; the history scrubbed; repins (2026-11-20 to 22)
+
+- **History scrub** (the maintainer's word): hosts, addresses, user paths
+  and his name outside copyright notices rewritten in every branch and
+  force-pushed; checked again from a fresh clone with lines joined, so a
+  name split across a line break would show: none. The backups are in
+  `../backups/2026-11-20-louhi.tar.gz` (local only).
+- **Repins:** Lir `6268fef` to `e40dd2e` and Lugh `dbb0573` to `53a3280`
+  (the same trees, rewritten), then Lugh to its `0.2.0` tag. Lugh 0.2.0's
+  relying-party pieces duplicate Louhi's: moved after 0.1.0 (ACTIVE.md).
+- **Events off by default:** Lir's 0.1.0 is its rewrite and ships no
+  client, so `LOUHI_BUILD_LIR` defaults off; `tools/ci.sh events` and a CI
+  job build and test them on `e40dd2e`. 0.1.0 has no events.
+- **Release branch** (`feature/release-0.1.0`): README on installation and
+  use, `docs/architecture.md`, `docs/packaging.md`, man pages, `debian/`
+  (debhelper 13; `louhi.install` dropped, as a single binary package
+  installs straight into `debian/louhi`), `tools/build-deb.sh`, a release
+  badge. Every link checked (200).
+- **Repository:** `CODE_OF_CONDUCT.md` (the stack's Contributor Covenant),
+  GitHub description and topics; CI on develop, main and pull requests
+  only, markdown ignored, superseded runs cancelled, CodeQL on main and
+  weekly.
+- **Gates on the release branch:** on node-c with Lir on (the first run),
+  then on node-b at `8534fc9` with Lir off: release, clang, ASan with
+  UBSan, TSan and coverage **396 passed, 1 skipped** each (the storage
+  test node-b's Docker cannot run), coverage **99.1%** of lines (4870 of
+  4912), no sanitizer report, the four fuzz targets 60 s each clean.
+  Every stack library in the sanitizer builds carried the sanitizer's
+  symbols (`nm`), built from source. The deb built and lintian clean on
+  node-c (`23d3f81`), with Dannan 0.9.2's and Dagda 0.3.2's packages
+  installed there.
+- **Incidents:** (1) a gate's steps reused build trees on a Pi whose CMake
+  cache still held `LOUHI_BUILD_LIR=ON` after the default moved, so four
+  steps tested the events build; every CI step now names the option, and
+  those steps ran again. (2) The tidy step checks every source, the
+  events code included, and failed once Lir was not fetched; it fetches
+  Lir now. (3) Hosted CI failed on the old Lugh pin after the rewrite;
+  fixed by the repin.
+- **Python audit:** none in Louhi; Codecov's uploader is the one indirect
+  use.
+
 ## A task's interface on its node: the command runner, the veth plan, nft (2026-11-20)
 
 Designed first ("A task's network namespace"): a sandbox container per task

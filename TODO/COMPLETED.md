@@ -4,6 +4,43 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## 0.1.1 released: Louhi onto Lugh's relying-party pieces (2026-11-22)
+
+- **What moved to Lugh** (the lower project keeps what two need): the Lugh
+  plugin holds `lugh::client::RelyingParty`; the node's Lir token is
+  `lugh::client::TokenSource` over every issuer, failing over (it was the
+  first issuer only); `louhi-ctl` reads discovery through
+  `lugh::client::discover()`; `ctl_test` runs on lugh_client's
+  `testing::FakeHttps`, with `test/fixtures/issuer.h` keeping the
+  discovery document and the form parser. `auth/service_token.*`, its 11
+  tests and Louhi's scripted fake are deleted. Six of the 11 were covered
+  by lugh_client's own tests already (checked: `client_oauth_test.cpp`
+  for the assertion and the Basic header, `client_relying_party_test.cpp`
+  for the rest); the other five the Lugh session took into Lugh's suite
+  (develop `51044cd`, 50 runs each in debug, ASan and TSan), and Lugh
+  0.4.0 carries them. Kept: the API's own bearer parsing, as Louhi's core
+  builds without Lugh.
+- **Tests:** 397 to **386** with Lir off, 400 to **389** with it on: the
+  11 above, and nothing else.
+- **Gate** at `2dadbd7`: release, clang, ASan and TSan on node-b, **385
+  passed, 1 skipped** each (the bounded-storage test), no sanitizer
+  report; events (Lir on) on node-c **389 of 389**. The ASan and TSan
+  steps ran once. A first build failed on `-Werror=shadow` in the new
+  `ctl_test` helper (a local `out` beside the fixture's): fixed before the
+  gate.
+- **The deb** on node-c from `2dadbd7`: built, lintian clean.
+- **Cut:** squashed onto `main` as `ddd285d` "Release 0.1.1", tag `0.1.1`;
+  `main`, the tag pushed; `develop` had the 0.1.0 record commit `main`
+  lacked, so `main` was merged back (`2683f3d`), trees identical.
+  `feature/lugh-relying-party` and its worktree deleted, locally and on the
+  remote.
+- **Decided on the way:** Lir's rewritten broker refuses retain and wills
+  until Dagda's D6 and D5, so Louhi keeps its Lir pin and events off until
+  then (ACTIVE.md, item 6); node-d is used as the other Pis (the
+  coordinating session confirmed the maintainer's 2026-11-20 word).
+  `build/pi.sh` (untracked) takes `LOUHI_CI_JOBS`, so a 1-core claim runs
+  at `-j1`.
+
 ## 0.1.0 released (2026-11-22)
 
 - **Final gate on node-c** (Docker on xfs, so storage is bounded): the

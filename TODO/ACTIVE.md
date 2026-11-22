@@ -5,16 +5,16 @@ of this file.
 
 ## Resume here
 
-**State.** **0.1.0 is released** (2026-11-22): tag `0.1.0` on `main` at
-`81b9b22`; `develop` is `main` plus the notes since. The release branch is
-deleted (COMPLETED.md, "0.1.0 released").
+**State.** **0.1.1 is released** (2026-11-22): tag `0.1.1` on `main` at
+`ddd285d`; `develop` is `main` merged back, plus the notes since. No
+feature branch is open (COMPLETED.md, "0.1.1 released"). Every item below
+waits on another project's release, or (item 4) on the maintainer's
+go-ahead.
 
-- **`feature/lugh-relying-party`** (`1c83198`, pushed, WIP, unbuilt;
-  worktree `build/wt-lugh`): next after 0.1.0 (item 1 below).
 - **Pins:** Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`; Lir `e40dd2e`
   only when `LOUHI_BUILD_LIR` is on (off by default: no Lir release ships a
   client).
-- **Tests:** 397 with Lir off (396 run on node-b, 1 skipped there); 400
+- **Tests:** 386 with Lir off (385 run on node-b, 1 skipped there); 389
   with it on.
 
 **The deb on node-c.** Dannan 0.9.2's and Dagda 0.3.2's packages and
@@ -31,30 +31,17 @@ Dannan and Dagda packages, which need not be built again.
 
 ## Next, in order
 
-1. **Louhi onto Lugh 0.2.0's relying-party pieces**
-   (`feature/lugh-relying-party`, a patch release). Lugh 0.2.0 moved into
-   `lugh_client` what Louhi wrote for itself (the maintainer's Q6: the
-   lower project keeps what both need). Done in the WIP commit:
-   `auth::LughPlugin` holds a `lugh::client::RelyingParty` (same face, so
-   its tests and the node are unchanged), and the node's Lir token is a
-   `lugh::client::TokenSource` over every issuer, failing over. Left:
-   - delete `auth/service_token.*` and drop it from `louhi/CMakeLists.txt`;
-   - its 11 tests: five cover what Lugh's suite does not (never sooner
-     than ten seconds; a failed discovery retried; no scopes asks for all;
-     a pending refresh after stop; a timer still pending once the token is
-     gone). Send those five to the Lugh session for Lugh's suite, and
-     delete Louhi's copies once Lugh has them. The test count drops by 11:
-     say why in the commit;
-   - `test/fixtures/fake_https.h` onto `lugh::client::testing::FakeHttps`
-     where `ctl_test.cpp` and `auth_lugh_test.cpp` allow;
-   - the discovery in `ctl/ctl.cpp` onto `lugh::client::discover()`;
-   - kept: the API's own bearer parsing (`api/auth.cpp`), as that is in
-     Louhi's core, built without Lugh (macOS CI), where `bearer_token()`
-     is not available. Record that in the commit.
-   Gate on a Pi, ASan and TSan once, squash onto develop, cut `0.1.1`.
-2. **Dannan 0.10.1**, once Dagda and Lugh have released on it (one Dannan a
-   process; Dagda's 0.4.0 is under way). Read both changelogs' "Adopting"
-   notes again then. Found so far against Louhi:
+2. **Dannan 0.10.x**, once Dagda has released on it (one Dannan a
+   process; Dagda's 0.4.0 is under way). Lugh has: 0.4.0 (2026-11-22) is
+   on Dannan 0.10.2 and lir::mqtt 0.1.0, carries the five TokenSource cases,
+   and leaves lugh_client's API as 0.2.0's; its `lugh-node` flags are
+   renamed (`--server-address`, `--server-port`, `--oauth-issuer`,
+   `--oauth-mtls-port`), which touches nothing of Louhi's, as nothing of
+   Louhi's starts `lugh-node`. Lugh's next change makes lugh_client's
+   `Outcome`, `Fault` and `Completion` Dannan's `contract/completion.h`, a
+   public type change Louhi's Lugh calls follow; Lugh says before it
+   lands. Read Dagda's and Lugh's changelogs' "Adopting" notes again then.
+   Found so far against Louhi:
    - `admit::RequestId` becomes `identity::RandomId<Tag>`;
    - the four fuzz targets register with `dannan::testing` and run under
      `dannan::fuzz::smoke` in `louhi_tests`, replacing Louhi's drivers;
@@ -102,9 +89,12 @@ Dannan and Dagda packages, which need not be built again.
    placement, then services, then address allocation, on the same
    `AcceptorStore`. Nothing that places across nodes, allocates addresses
    or keeps a service's count is built without it.
-6. **Events back on**, when Lir ships `liblir-client0.1` (Lir has Louhi's
-   calls as its first requirements; it will send the names and commit)
-   **and** its rewritten broker accepts retained messages and wills. Until
+6. **Events back on**, when Lir releases `liblir-client0.1` **and** its
+   rewritten broker accepts retained messages and wills. The client is on
+   Lir's develop at `1fe5667` (2026-11-22), untagged until Lir 0.2.0: its
+   API is the stored contract header byte for byte, so Louhi's calls stand;
+   `find_package(lir CONFIG)` and `lir::client`; it is on Dannan 0.10.2,
+   so it follows item 2, and `liblir-dev` now depends on `libboost-dev`. Until
    Dagda's nouns ship, that broker grants QoS 0 only (until D9), no retain
    (until D6), and refuses every will at CONNECT (until D5): the maintainer's
    ruling, 2026-11-22, sent by Lir. Louhi's publisher sets a retained QoS 1
@@ -126,11 +116,11 @@ Dannan and Dagda packages, which need not be built again.
 
 - **Dagda:** 0.4.0 on Dannan 0.10.x; then the register map, the
   `AcceptorStore` and caught-up (item 3).
-- **Lugh:** a release on Dannan 0.10.x (item 2); the five TokenSource cases
-  (item 1).
-- **Lir:** `liblir-client0.1` (on its feature/client branch; it sends the
-  develop commit), and its broker taking retain and wills once Dagda's D5
-  and D6 ship (item 6).
+- **Lugh:** nothing now (0.4.0 is on Dannan 0.10.2); it says before
+  lugh_client's types move onto Dannan's completion (item 2).
+- **Lir:** a release with `liblir-client0.1` (on develop at `1fe5667`), and
+  its broker taking retain and wills once Dagda's D5 and D6 ship; it says
+  when (item 6).
 - **Dannan:** the HTTP core (`api/client.cpp` moves onto its client) and
   the process runner (`net/command.*` moves to it).
 - **The maintainer:** a join to the standing Lir cluster

@@ -28,10 +28,14 @@
 
 // louhi-ctl: the API from a terminal (design, "API and sign-on"), everything
 // but its main(), which only binds it to the real issuer, API, files and
-// clocks. It signs in to a Lugh by the device flow (RFC 8628), keeps the
-// settings it signed in with in a YAML configuration file and the tokens in a
-// YAML credentials file only its owner can read, refreshes the access token
-// when less than a minute of it is left, and prints each answer's JSON.
+// clocks. It signs in to a Lugh by the device flow (RFC 8628), or, given a
+// client secret file, as a service principal by the client credentials grant;
+// keeps the settings it signed in with in a YAML configuration file and the
+// tokens in a YAML credentials file only its owner can read; renews the
+// access token when less than a minute of it is left (by its refresh token,
+// else by the client credentials grant again); and prints each answer's JSON.
+// The client secret stays in its own file: louhi-ctl keeps the file's path,
+// never the secret.
 // Built only with LOUHI_BUILD_LUGH.
 namespace louhi::ctl {
 
@@ -46,8 +50,9 @@ using Getenv = std::function<std::optional<std::string>(const std::string&)>;
 // The settings, layered by the stack's one reader (dannan/config/config.h):
 // the configuration file (--config PATH, else $LOUHI_CONFIG, else
 // $HOME/.config/louhi/config.yaml when it exists), then the environment,
-// then the flags. Keys: issuer, client_id, endpoints and scopes (lists), ca,
-// credentials, and command.* for the flags one command takes.
+// then the flags. Keys: issuer, client_id, client_secret_file, endpoints and
+// scopes (lists), ca, credentials, and command.* for the flags one command
+// takes.
 struct Args {
   dannan::config::Settings settings;
   // The command and its operands, in order.
@@ -94,6 +99,9 @@ class CredentialFile {
   virtual void write(std::string_view text) = 0;
   // Removes it; no file is no error.
   virtual void remove() = 0;
+  // Whether no one but its owner may read it. A client secret in a file others
+  // may read is refused, as ssh refuses such a key.
+  virtual bool owner_only() = 0;
 };
 
 // The file at a path, replaced by Dannan's durable_replace_file and then made
@@ -104,6 +112,7 @@ class DiskCredentialFile final : public CredentialFile {
   std::optional<std::string> read() override;
   void write(std::string_view text) override;
   void remove() override;
+  bool owner_only() override;
 
  private:
   const std::filesystem::path _path;

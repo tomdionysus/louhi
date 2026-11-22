@@ -31,7 +31,9 @@
 // capability dropped but a short list, no new privileges, Docker's default
 // seccomp profile left in force, an init process, a private IPC namespace, no
 // restart policy (the agent restarts), CPU, memory and process limits always
-// set, no swap, and no host path ever mounted.
+// set, no swap, and no host path mounted but through a volume binding a
+// directory the operator lists (read-only) or the task's own output directory,
+// both nosuid and nodev.
 namespace louhi::runtime::docker {
 
 // The API version Louhi speaks: Docker 20.10 and later.
@@ -58,9 +60,11 @@ const std::vector<std::string>& kept_capabilities();
 // or a limit of zero. A container's writable layer is bounded by StorageOpt
 // "size" when it has a storage bound. A memory volume is tmpfs of its size; a
 // disk volume is the local driver's directory, bounded by its "size" option
-// (an xfs project quota) when it has one.
+// (an xfs project quota) when it has one. A host or output volume binds
+// `device`, the directory the driver has resolved or made; throws
+// std::invalid_argument when it is not absolute.
 std::string create_container_body(const ContainerSpec& spec);
-std::string create_volume_body(const VolumeSpec& spec);
+std::string create_volume_body(const VolumeSpec& spec, const std::string& device = "");
 
 // The X-Registry-Auth header's value for signing in to `domain`: the
 // credential as JSON, in base64url with padding, as the daemon decodes it.

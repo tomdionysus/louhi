@@ -255,7 +255,7 @@ std::vector<Agent::Step> Agent::plan(const std::vector<Assignment>& assignments,
       steps.push_back(report_step(assignment, model::TaskState::stopped, assignment.task.stop_reason, {}));
       continue;
     }
-    steps.push_back(handle(assignment, observed[id]));
+    steps.push_back(handle(assignment, observed[id], volumes_of[id]));
   }
 
   // What the runtime has that nothing wants here: only once the desired state
@@ -281,7 +281,7 @@ std::vector<Agent::Step> Agent::plan(const std::vector<Assignment>& assignments,
   return steps;
 }
 
-Agent::Step Agent::handle(const Assignment& a, std::vector<ContainerInfo> observed) {
+Agent::Step Agent::handle(const Assignment& a, std::vector<ContainerInfo> observed, std::vector<std::string> volumes) {
   Pacing& p = _pacing[a.task.id];
   const TimePoint now = _clock.steady->now();
 
@@ -292,7 +292,15 @@ Agent::Step Agent::handle(const Assignment& a, std::vector<ContainerInfo> observ
   if (p.parked) {
     return chain(teardown(running, {}, false), report_step(a, model::TaskState::parked, p.parked_reason, observed));
   }
+  // Finished as the store records it: what this agent decided before a
+  // restart, or its own report landed.
+  if (model::finished(a.task, a.status) && !p.finished) {
+    p.finished = true;
+    p.finished_reason = a.status->reason;
+    if (!p.reported) p.reported = a.status;
+  }
   if (p.finished) {
+    if (model::finished(a.task, a.status) && running.empty()) return finished(a, observed, std::move(volumes));
     return chain(teardown(running, {}, false), report_step(a, model::TaskState::stopped, p.finished_reason, observed));
   }
 
@@ -373,6 +381,22 @@ Agent::Step Agent::handle(const Assignment& a, std::vector<ContainerInfo> observ
   return report_step(a, model::TaskState::running, "", observed);
 }
 
+Agent::Step Agent::finished(const Assignment& a, const std::vector<ContainerInfo>& observed, std::vector<std::string> volumes) {
+  const auto nothing = [](std::function<void()> next) { next(); };
+  if (observed.empty() && volumes.empty()) return nothing;
+  const auto retain = static_cast<uint64_t>(std::max<int64_t>(_policy.retain_finished.count(), 0));
+  const uint64_t until =
+      a.status->observed_unix_ms > std::numeric_limits<uint64_t>::max() - retain ? std::numeric_limits<uint64_t>::max() : a.status->observed_unix_ms + retain;
+  const uint64_t wall_now = _clock.wall->unix_ms();
+  if (wall_now < until) {
+    const auto left = static_cast<int64_t>(std::min<uint64_t>(until - wall_now, static_cast<uint64_t>(std::numeric_limits<int32_t>::max())));
+    wake_at(_clock.steady->now() + std::chrono::milliseconds(left));
+    return nothing;
+  }
+  _logger.info("removing finished task " + model::to_string(a.task.id) + ", its retention passed");
+  return teardown(observed, std::move(volumes), true);
+}
+
 Agent::Step Agent::launch(const Assignment& a) {
   auto self = shared_from_this();
   return [self, a](std::function<void()> next) {
@@ -387,6 +411,10 @@ Agent::Step Agent::launch(const Assignment& a) {
     // it cannot is the operator's allowance.
     SpecPolicy here = self->_policy.spec;
     here.bound_storage = self->_runtime && self->_runtime->limits_storage;
+    if (self->_runtime) {
+      here.root_uid = self->_runtime->root_uid;
+      here.root_gid = self->_runtime->root_gid;
+    }
     plan->containers = container_specs(a, here);
     plan->volumes = volume_specs(a, here);
     for (const auto& c : plan->containers) {
@@ -417,8 +445,12 @@ Agent::Step Agent::launch(const Assignment& a) {
     }
     for (const auto& volume : plan->volumes) {
       steps.push_back([self, volume, fail](std::function<void()> go) {
-        self->_driver.create_volume(volume, self->_policy.call_deadline, self->_strand, [fail, go](Result<runtime::Done> got) {
-          if (!got.ok() && got.error().kind != runtime::Error::Kind::refused) return fail(got.error());
+        // A bind refused (a directory this node does not list, a path out of
+        // it, no output area) fails the launch: left to go on, the runtime
+        // would make an empty volume of that name in its place.
+        const bool binds = volume.kind == runtime::VolumeKind::host || volume.kind == runtime::VolumeKind::output;
+        self->_driver.create_volume(volume, self->_policy.call_deadline, self->_strand, [fail, go, binds](Result<runtime::Done> got) {
+          if (!got.ok() && (binds || got.error().kind != runtime::Error::Kind::refused)) return fail(got.error());
           go();
         });
       });

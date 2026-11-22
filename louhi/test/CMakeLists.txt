@@ -10,6 +10,7 @@ add_executable(louhi_tests
   admit_registers_test.cpp
   agent_docker_test.cpp
   agent_specs_test.cpp
+  agent_store_bindings_test.cpp
   agent_test.cpp
   api_auth_test.cpp
   api_http_test.cpp
@@ -30,6 +31,7 @@ add_executable(louhi_tests
   runtime_docker_api_test.cpp
   runtime_docker_driver_test.cpp
   runtime_driver_test.cpp
+  runtime_host_files_test.cpp
   runtime_local_http_test.cpp
   runtime_registries_test.cpp
   store_test.cpp

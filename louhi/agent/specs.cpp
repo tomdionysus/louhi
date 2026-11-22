@@ -50,8 +50,26 @@ std::vector<runtime::VolumeSpec> volume_specs(const Assignment& a, const SpecPol
   for (const auto& volume : a.definition.volumes) {
     runtime::VolumeSpec spec;
     spec.name = runtime::volume_name(a.task.id, volume.name);
-    spec.kind = volume.kind == model::VolumeKind::disk ? runtime::VolumeKind::disk : runtime::VolumeKind::memory;
-    if (spec.kind == runtime::VolumeKind::memory || policy.bound_storage) spec.size_bytes = static_cast<uint64_t>(volume.size_mib) * mib;
+    switch (volume.kind) {
+      case model::VolumeKind::disk:
+        spec.kind = runtime::VolumeKind::disk;
+        break;
+      case model::VolumeKind::host:
+        spec.kind = runtime::VolumeKind::host;
+        spec.host_directory = volume.host_directory;
+        spec.host_path = volume.host_path;
+        break;
+      case model::VolumeKind::output:
+        spec.kind = runtime::VolumeKind::output;
+        spec.owner_uid = policy.root_uid;
+        spec.owner_gid = policy.root_gid;
+        break;
+      default:
+        spec.kind = runtime::VolumeKind::memory;
+        break;
+    }
+    if (spec.kind == runtime::VolumeKind::memory || (spec.kind != runtime::VolumeKind::host && policy.bound_storage))
+      spec.size_bytes = static_cast<uint64_t>(volume.size_mib) * mib;
     spec.labels = labels_of(a);
     out.push_back(std::move(spec));
   }
@@ -81,7 +99,12 @@ std::vector<runtime::ContainerSpec> container_specs(const Assignment& a, const S
     s.command = c.command;
     for (const auto& variable : c.environment) s.environment.emplace_back(variable.name, variable.value);
     s.working_directory = c.working_directory;
-    for (const auto& mount : c.mounts) s.mounts.push_back({runtime::volume_name(a.task.id, mount.volume), mount.container_path, mount.read_only});
+    for (const auto& mount : c.mounts) {
+      // A host directory is never writable, whatever reached here.
+      const auto declared = std::find_if(a.definition.volumes.begin(), a.definition.volumes.end(), [&](const auto& v) { return v.name == mount.volume; });
+      const bool host = declared != a.definition.volumes.end() && declared->kind == model::VolumeKind::host;
+      s.mounts.push_back({runtime::volume_name(a.task.id, mount.volume), mount.container_path, mount.read_only || host});
+    }
     if (c.health_check) {
       const auto& h = *c.health_check;
       s.health_check = runtime::HealthCheck{h.command, std::chrono::seconds(h.interval_s), std::chrono::seconds(h.timeout_s), h.retries,

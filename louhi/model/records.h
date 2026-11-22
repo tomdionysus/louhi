@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "louhi/model/ids.h"
@@ -139,12 +140,29 @@ enum class VolumeKind : uint8_t {
   memory = 1,
   // On the node's disk, bounded by the runtime.
   disk = 2,
+  // A read-only view of a path inside a host directory the operator names on
+  // the node (the maintainer, 2026-11-22): a caller names the directory and
+  // a relative path in it, never a host path.
+  host = 3,
+  // The task's own directory on the node's output area, writable, bounded by
+  // a quota, mounted nosuid and nodev; kept with the task's containers, for
+  // its results.
+  output = 4,
 };
 
 struct VolumeDefinition {
+  VolumeDefinition() = default;
+  VolumeDefinition(std::string name_, VolumeKind kind_, uint32_t size_mib_ = 0, std::string host_directory_ = {}, std::string host_path_ = {})
+      : name(std::move(name_)), kind(kind_), size_mib(size_mib_), host_directory(std::move(host_directory_)), host_path(std::move(host_path_)) {}
+
   std::string name;
   VolumeKind kind = VolumeKind::memory;
+  // Every kind but host.
   uint32_t size_mib = 0;
+  // host only: the operator's name for the directory, and a relative path in
+  // it ("" for the directory itself).
+  std::string host_directory;
+  std::string host_path;
   bool operator==(const VolumeDefinition&) const = default;
 };
 
@@ -254,6 +272,14 @@ struct TaskStatus {
   bool operator==(const TaskStatus&) const = default;
   void validate() const;
 };
+
+// A task run on its own is done once the node it is placed on reports it
+// stopped: it is never launched again, and holds nothing. `status` is a
+// node's last report of it. A service's task is relaunched, never finished.
+bool finished(const Task& task, const std::optional<TaskStatus>& status);
+// Whether a task counts against its project's quota and its node's capacity:
+// wanted running and not finished.
+bool holds_resources(const Task& task, const std::optional<TaskStatus>& status);
 
 struct Capacity {
   uint32_t cpu_millis = 0;

@@ -318,12 +318,18 @@ model::TaskDefinition task_definition_body(const json::object& body, std::string
       const std::string kind = v.string("kind", 16);
       if (kind == "disk") {
         volume.kind = model::VolumeKind::disk;
+      } else if (kind == "host") {
+        volume.kind = model::VolumeKind::host;
+      } else if (kind == "output") {
+        volume.kind = model::VolumeKind::output;
       } else if (kind.empty() || kind == "memory") {
         volume.kind = model::VolumeKind::memory;
       } else {
-        invalid(v.name("kind") + " is not memory or disk");
+        invalid(v.name("kind") + " is not memory, disk, host or output");
       }
       volume.size_mib = v.number_or<uint32_t>("size_mib", 0, model::max_scratch_mib, 0);
+      volume.host_directory = v.string("host_directory", model::max_name);
+      volume.host_path = v.string("host_path", model::max_path);
       v.done();
       out.volumes.push_back(std::move(volume));
     }
@@ -417,8 +423,20 @@ json::object to_json(const model::TaskDefinition& record) {
     containers.push_back(std::move(container));
   }
   json::array volumes;
-  for (const auto& v : record.volumes)
-    volumes.push_back(json::object{{"name", v.name}, {"kind", v.kind == model::VolumeKind::disk ? "disk" : "memory"}, {"size_mib", v.size_mib}});
+  for (const auto& v : record.volumes) {
+    const char* kind = v.kind == model::VolumeKind::disk     ? "disk"
+                       : v.kind == model::VolumeKind::host   ? "host"
+                       : v.kind == model::VolumeKind::output ? "output"
+                                                             : "memory";
+    json::object volume{{"name", v.name}, {"kind", kind}};
+    if (v.kind == model::VolumeKind::host) {
+      volume["host_directory"] = v.host_directory;
+      volume["host_path"] = v.host_path;
+    } else {
+      volume["size_mib"] = v.size_mib;
+    }
+    volumes.push_back(std::move(volume));
+  }
   return {{"project", record.project},           {"family", record.family},
           {"revision", record.revision},         {"cpu_millis", record.cpu_millis},
           {"memory_mib", record.memory_mib},     {"ephemeral_storage_mib", record.ephemeral_storage_mib},

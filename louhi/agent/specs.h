@@ -8,7 +8,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "louhi/model/records.h"
@@ -27,8 +29,14 @@
 namespace louhi::agent {
 
 struct Assignment {
+  Assignment() = default;
+  Assignment(model::Task task_, model::TaskDefinition definition_, std::optional<model::TaskStatus> status_ = std::nullopt)
+      : task(std::move(task_)), definition(std::move(definition_)), status(std::move(status_)) {}
+
   model::Task task;
   model::TaskDefinition definition;
+  // This node's last report of the task, as the store holds it.
+  std::optional<model::TaskStatus> status;
   bool operator==(const Assignment&) const = default;
 };
 
@@ -39,6 +47,10 @@ struct SpecPolicy {
   // such a node), containers and disk volumes carry no storage bound, since
   // the runtime would refuse one.
   bool bound_storage = true;
+  // Who root in a container is on this node (RuntimeInfo): the owner of the
+  // output directories made for its tasks.
+  uint32_t root_uid = 0;
+  uint32_t root_gid = 0;
 };
 
 // The image a container runs: pinned to its digest when the revision has one.

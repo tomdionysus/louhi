@@ -114,6 +114,16 @@ struct ApiTest : ::testing::Test {
   void make_project(const std::string& quota = R"({"max_tasks":4,"max_cpu_millis":1000,"max_memory_mib":1024})") {
     ASSERT_EQ(call(admin, "PUT", "/v1/projects/web", R"({"description":"The public site"})").status, 200u);
     ASSERT_EQ(call(admin, "PUT", "/v1/projects/web/quota", quota).status, 200u);
+    report_capacity(64'000, 65'536);
+  }
+
+  // This node's report of itself, with room for what a test runs unless it
+  // says less.
+  void report_capacity(uint32_t cpu_millis, uint32_t memory_mib) {
+    auto status = test::node_status();
+    status.node = self;
+    status.total = {cpu_millis, memory_mib};
+    put_raw(model::key(status), model::encode(status));
   }
 
   uint32_t register_definition(const std::string& memory = "128") {
@@ -336,6 +346,113 @@ TEST_F(ApiTest, AStoppedTaskNoLongerCountsAgainstTheQuota) {
   const std::string id(first.body.at("tasks").as_array()[0].at("id").as_string());
   EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks/" + id + "/stop", "").status, 200u);
   EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})").status, 200u);
+}
+
+TEST_F(ApiTest, AFinishedTaskNoLongerCountsAgainstTheQuota) {
+  make_project(R"({"max_tasks":1,"max_cpu_millis":1000,"max_memory_mib":1000})");
+  register_definition();
+  auto first = call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})");
+  const std::string id(first.body.at("tasks").as_array()[0].at("id").as_string());
+  auto status = test::task_status();
+  status.task = *model::TaskId::parse(id);
+  status.node = self;
+  status.state = model::TaskState::stopped;
+  status.reason = "essential container app exited with 0";
+  status.containers = {{"app", model::ContainerState::exited, 0, 0, model::Health::unknown}};
+  status.node = test::node_id(0x77);
+  put_raw(model::key(status), model::encode(status));
+  EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})").status, 409u) << "another node's report finishes nothing";
+  status.node = self;
+  put_raw(model::key(status), model::encode(status));
+  EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})").status, 200u);
+}
+
+// Node-capacity admission: a task is refused that this node cannot hold beside
+// every task placed on it that holds resources, of any project, and what it
+// has admitted that the store does not show yet; refused outright while the
+// node has not reported what it has.
+TEST_F(ApiTest, RunTaskWaitsForThisNodeToReportItsCapacity) {
+  call(admin, "PUT", "/v1/projects/web", "{}");
+  call(admin, "PUT", "/v1/projects/web/quota", R"({"max_tasks":4,"max_cpu_millis":1000,"max_memory_mib":1024})");
+  register_definition();
+  auto r = call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})");
+  EXPECT_EQ(r.status, 503u);
+  EXPECT_EQ(code(r), "capacity_unknown");
+  report_capacity(4000, 8192);
+  EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})").status, 200u);
+}
+
+TEST_F(ApiTest, AdmissionRefusesWhatThisNodeCannotHoldAndSaysWhich) {
+  make_project(R"({"max_tasks":100,"max_cpu_millis":100000,"max_memory_mib":100000})");
+  report_capacity(1000, 100'000);
+  register_definition();
+  // 250 millis each: four fill the node exactly.
+  EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend","count":3})").status, 200u);
+  auto r = call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend","count":2})");
+  EXPECT_EQ(r.status, 409u);
+  EXPECT_EQ(code(r), "capacity");
+  EXPECT_NE(std::string(r.body.at("message").as_string()).find("CPU"), std::string::npos);
+  EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})").status, 200u);
+
+  report_capacity(100'000, 300);
+  r = call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})");
+  EXPECT_EQ(r.status, 409u);
+  EXPECT_NE(std::string(r.body.at("message").as_string()).find("memory"), std::string::npos);
+}
+
+TEST_F(ApiTest, CapacityCountsEveryProjectsTasksHereAndNoneElsewhere) {
+  make_project(R"({"max_tasks":100,"max_cpu_millis":100000,"max_memory_mib":100000})");
+  report_capacity(1000, 100'000);
+  register_definition();
+  // Another project's task here holds 500; one placed on another node holds nothing here.
+  for (const auto& [id, node] : {std::pair{0x31, self}, std::pair{0x32, test::node_id(0x77)}}) {
+    auto other = test::task();
+    other.id = test::task_id(static_cast<uint8_t>(id));
+    other.project = "shop";
+    other.service.clear();
+    other.node = node;
+    auto definition = test::task_definition();
+    definition.project = "shop";
+    definition.family = other.family;
+    definition.revision = other.revision;
+    definition.cpu_millis = 500;
+    for (auto& container : definition.containers) container.cpu_millis = 0;
+    put_raw(model::key(definition), model::encode(definition));
+    put_raw(model::key(other), model::encode(other));
+  }
+  EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend","count":2})").status, 200u);
+  EXPECT_EQ(code(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})")), "capacity");
+}
+
+TEST_F(ApiTest, AFinishedTaskFreesItsNodesCapacity) {
+  make_project(R"({"max_tasks":100,"max_cpu_millis":100000,"max_memory_mib":100000})");
+  report_capacity(250, 100'000);
+  register_definition();
+  auto first = call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})");
+  ASSERT_EQ(first.status, 200u);
+  EXPECT_EQ(code(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})")), "capacity");
+  auto status = test::task_status();
+  status.task = *model::TaskId::parse(std::string(first.body.at("tasks").as_array()[0].at("id").as_string()));
+  status.node = self;
+  status.state = model::TaskState::stopped;
+  status.containers = {{"app", model::ContainerState::exited, 0, 0, model::Health::unknown}};
+  put_raw(model::key(status), model::encode(status));
+  EXPECT_EQ(call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})").status, 200u);
+}
+
+TEST_F(ApiTest, CapacityCountsWhatThisNodeAdmittedThatTheStoreDoesNotShowYet) {
+  make_project(R"({"max_tasks":100,"max_cpu_millis":100000,"max_memory_mib":100000})");
+  report_capacity(250, 100'000);
+  register_definition();
+  store.hold = true;
+  std::vector<std::string> codes;
+  for (int i = 0; i < 2; ++i)
+    api.handle(web, {"POST", "/v1/projects/web/tasks", {}, R"({"family":"frontend"})"}, [&](api::Response r) { codes.push_back(code(r)); });
+  settle();
+  store.release();
+  settle();
+  std::sort(codes.begin(), codes.end());
+  EXPECT_EQ(codes, (std::vector<std::string>{"", "capacity"}));
 }
 
 TEST_F(ApiTest, AdmissionCountsWhatThisNodeAdmittedThatTheStoreDoesNotShowYet) {
@@ -574,7 +691,8 @@ TEST_F(ApiTest, ARecordThatDoesNotDecodeIsSkippedByEveryList) {
   EXPECT_TRUE(described.body.at("statuses").as_array().empty());
   auto nodes = call(admin, "GET", "/v1/nodes");
   ASSERT_EQ(nodes.status, 200u);
-  EXPECT_TRUE(nodes.body.at("nodes").as_array().empty());
+  ASSERT_EQ(nodes.body.at("nodes").as_array().size(), 1u) << "this node's own report, which decodes; the damaged one is skipped";
+  EXPECT_EQ(nodes.body.at("nodes").as_array()[0].at("node"), json::value(dannan::identity::to_string(self)));
 
   // Revision 1 named: the latest, 3, is the damaged one, and running "the
   // latest" must not quietly run another.

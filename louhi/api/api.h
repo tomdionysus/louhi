@@ -48,6 +48,12 @@
 // not yet shown, so this node never over-admits; two nodes deciding at once
 // can, and the design bounds that (Projects and quotas).
 //
+// A task is also admitted against this node's capacity: refused (409,
+// "capacity") when it would not fit beside what every task placed here holds,
+// of any project, and refused (503) until the node has reported what it has.
+// A refusal, not a queue. A task run on its own that its node reports stopped
+// holds nothing (model::finished).
+//
 // The executor rule: `done` is posted to the executor given at construction,
 // exactly once, never called inline. Thread-safe. The Api outlives every
 // request it was handed until that request's `done` has run.
@@ -130,6 +136,12 @@ class Api {
   // the store does not show yet. Called with _admission held.
   Usage usage(const std::string& project) const DANNAN_REQUIRES(_admission);
   uint32_t highest_revision(const std::string& project, const std::string& family) const DANNAN_REQUIRES(_admission);
+  // What the tasks placed on this node hold, of every project, with what this
+  // node admitted that the store does not show yet. Called with _admission
+  // held.
+  Usage node_usage() const DANNAN_REQUIRES(_admission);
+  // The task's status as the node it is placed on last reported it.
+  std::optional<model::TaskStatus> status_on_its_node(const model::Task& task) const;
   void forget_tokens(uint64_t now) DANNAN_REQUIRES(_admission);
 
   store::Store& _store;

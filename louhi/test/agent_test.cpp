@@ -10,7 +10,9 @@
 //   made with their specs and started in order, and reported pulling,
 //   starting, then running; a task placed elsewhere is not;
 // - a task run on its own stops when an essential container exits, is
-//   reported stopped with the exit, and is not launched again;
+//   reported stopped with the exit, and is not launched again, even by an
+//   agent restarted after its containers are gone; they are kept until the
+//   node's retention has passed since the store recorded it stopped;
 // - a service's task is relaunched after a backoff, up to a budget within a
 //   window, then parked and left until unparked (discipline 2);
 // - a launch that fails is reported with why and retried after a backoff;
@@ -230,6 +232,105 @@ TEST_F(AgentTest, ATaskOnItsOwnStopsWhenAnEssentialContainerExits) {
   advance(seconds(60));
   pass();
   for (const auto& call : driver.calls()) EXPECT_EQ(call.rfind("create ", 0), std::string::npos) << call;
+}
+
+// Retention: a finished task's containers and volumes are kept for
+// inspection (its logs) until Policy::retain_finished has passed since its
+// node reported it stopped, then removed; only once the store holds that
+// report, so a finished task is never forgotten before it is recorded.
+TEST_F(AgentTest, AFinishedTaskIsRemovedOnceItsRetentionHasPassed) {
+  policy.retain_finished = std::chrono::hours(1);
+  Assignment a = assignment(1, "");
+  desired.set({a});
+  start();
+  driver.exit(id_of(1, "app"), 0);
+  settle();
+  ASSERT_EQ(reports.last().state, model::TaskState::stopped);
+  a.status = reports.last();
+  desired.set({a});
+  pass();
+  advance(std::chrono::minutes(59));
+  EXPECT_EQ(driver.containers().size(), 2u);
+  const size_t reported = reports.all().size();
+  advance(std::chrono::minutes(2));
+  EXPECT_TRUE(driver.containers().empty());
+  EXPECT_TRUE(driver.volumes().empty());
+  EXPECT_EQ(reports.all().size(), reported) << "nothing new to say: the store keeps how it finished";
+
+  driver.clear_calls();
+  pass();
+  for (const auto& call : driver.calls()) EXPECT_EQ(call.rfind("create", 0), std::string::npos) << call;
+}
+
+TEST_F(AgentTest, AFinishedTaskIsKeptUntilTheStoreHoldsItsReport) {
+  policy.retain_finished = std::chrono::hours(1);
+  desired.set({assignment(1, "")});
+  start();
+  driver.exit(id_of(1, "app"), 0);
+  settle();
+  advance(std::chrono::hours(2));
+  pass();
+  EXPECT_EQ(driver.containers().size(), 2u);
+}
+
+TEST_F(AgentTest, TheRetentionWakesTheAgentWithoutAPoke) {
+  policy.retain_finished = std::chrono::hours(1);
+  Assignment a = assignment(1, "");
+  desired.set({a});
+  start();
+  driver.exit(id_of(1, "app"), 0);
+  settle();
+  a.status = reports.last();
+  desired.set({a});
+  pass();
+  time.advance(std::chrono::minutes(61));
+  wall.advance(std::chrono::minutes(61));
+  timers.fire_due();
+  settle();
+  EXPECT_TRUE(driver.containers().empty());
+}
+
+TEST_F(AgentTest, ARestartedAgentNeverRelaunchesAFinishedTaskWhoseContainersAreGone) {
+  Assignment a = assignment(1, "");
+  a.status = test::task_status();
+  a.status->task = a.task.id;
+  a.status->node = self_node;
+  a.status->state = model::TaskState::stopped;
+  a.status->reason = "essential container app exited with 0";
+  a.status->containers = {{"app", model::ContainerState::exited, 0, 0, model::Health::unknown}};
+  desired.set({a});
+  start();
+  EXPECT_TRUE(driver.containers().empty());
+  EXPECT_TRUE(reports.all().empty()) << "its report stands";
+  for (const auto& call : driver.calls()) EXPECT_EQ(call.rfind("pull", 0), std::string::npos) << call;
+}
+
+TEST_F(AgentTest, AServicesTaskIsNotFinishedByAStoppedReport) {
+  Assignment a = assignment(1);
+  a.status = test::task_status();
+  a.status->task = a.task.id;
+  a.status->node = self_node;
+  a.status->state = model::TaskState::stopped;
+  desired.set({a});
+  start();
+  EXPECT_EQ(driver.containers().size(), 2u) << "launched";
+}
+
+// A host or output volume the runtime refuses (a directory this node does not
+// list, a path out of it) fails the launch: no container is made, or the
+// runtime would put an empty volume of that name in its place. A scratch
+// volume refused is one already there, as before.
+TEST_F(AgentTest, ABindTheRuntimeRefusesFailsTheLaunch) {
+  Assignment a = assignment(1);
+  // First, so the refusal is the host volume's.
+  a.definition.volumes.insert(a.definition.volumes.begin(), {"src", model::VolumeKind::host, 0, "work", "web/src"});
+  a.definition.containers[0].mounts.push_back({"src", "/src", true});
+  desired.set({a});
+  driver.fail_next("create_volume", runtime::Error{runtime::Error::Kind::refused, "this node lists no host directory work"});
+  start();
+  EXPECT_TRUE(driver.containers().empty());
+  EXPECT_EQ(reports.last().state, model::TaskState::pending);
+  EXPECT_NE(reports.last().reason.find("no host directory work"), std::string::npos) << reports.last().reason;
 }
 
 TEST_F(AgentTest, ANonEssentialExitIsLeftAlone) {

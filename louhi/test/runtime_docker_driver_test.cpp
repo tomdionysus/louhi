@@ -561,3 +561,99 @@ TEST_F(DockerDriverRepliesTest, ARuntimeThatIsNotThereIsALoss) {
   ASSERT_TRUE(watched.lost);
   EXPECT_EQ(watched.lost->kind, Error::Kind::unavailable);
 }
+
+namespace {
+
+// The node's directories, as calls recorded: a path containing "escape"
+// leads out of its directory.
+class FakeHostFiles final : public HostFiles {
+ public:
+  std::string resolve_inside(const std::string& root, const std::string& relative) override {
+    std::lock_guard<std::mutex> lock(_mutex);
+    calls.push_back("resolve " + root + " " + relative);
+    if (relative.find("escape") != std::string::npos) throw OutsideDirectory("leads out");
+    return root + "/" + relative;
+  }
+  void make_output(const std::string& root, const std::string& name, uint32_t uid, uint32_t gid, uint64_t bytes) override {
+    std::lock_guard<std::mutex> lock(_mutex);
+    calls.push_back("make " + root + " " + name + " " + std::to_string(uid) + ":" + std::to_string(gid) + " " + std::to_string(bytes));
+    if (fail_make) throw std::runtime_error("no project quotas here");
+  }
+  void remove_output(const std::string& root, const std::string& name) override {
+    std::lock_guard<std::mutex> lock(_mutex);
+    calls.push_back("remove " + root + " " + name);
+  }
+  std::vector<std::string> seen() {
+    std::lock_guard<std::mutex> lock(_mutex);
+    return calls;
+  }
+  bool fail_make = false;
+
+ private:
+  std::mutex _mutex;
+  std::vector<std::string> calls;
+};
+
+}  // namespace
+
+// Host mounts (the maintainer, 2026-11-22): a host volume binds a path the
+// driver resolved inside a directory the operator lists, read-only; an output
+// volume binds the directory made for it in the output area, which goes when
+// the volume does. What cannot be bound is refused before the daemon is asked.
+TEST_F(DockerDriverRepliesTest, AHostVolumeBindsAResolvedPathInsideAListedDirectory) {
+  FakeHostFiles files;
+  docker::DockerDriver bound(executor(), socket, Registries(), {{{"work", "/srv/work"}}, "/srv/out", &files});
+  daemon.script({reply(R"({"Name": "louhi-src"})", 201)});
+  VolumeSpec host{"louhi-src", VolumeKind::host};
+  host.host_directory = "work";
+  host.host_path = "web/src";
+  auto made = wait<Done>([&](auto done) { bound.create_volume(host, Deadline(5000), executor(), done); });
+  ASSERT_TRUE(made.ok()) << made.error().message;
+  EXPECT_EQ(files.seen(), (std::vector<std::string>{"resolve /srv/work web/src"}));
+  const auto seen = daemon.requests();
+  ASSERT_EQ(seen.size(), 1u);
+  EXPECT_NE(seen[0].find(R"("device":"/srv/work/web/src")"), std::string::npos) << seen[0];
+  EXPECT_NE(seen[0].find(R"("o":"bind,ro,nosuid,nodev")"), std::string::npos) << seen[0];
+
+  for (const auto& [directory, path] : std::vector<std::pair<std::string, std::string>>{{"other", "x"}, {"work", "escape"}}) {
+    host.host_directory = directory;
+    host.host_path = path;
+    auto refused = wait<Done>([&](auto done) { bound.create_volume(host, Deadline(5000), executor(), done); });
+    ASSERT_FALSE(refused.ok()) << directory;
+    EXPECT_EQ(refused.error().kind, Error::Kind::refused);
+  }
+  EXPECT_EQ(daemon.requests().size(), 1u) << "nothing more was asked";
+
+  host.host_directory = "work";
+  host.host_path = "x";
+  auto unlisted = wait<Done>([&](auto done) { driver.create_volume(host, Deadline(5000), executor(), done); });
+  ASSERT_FALSE(unlisted.ok()) << "a node that lists no directories binds none";
+  EXPECT_EQ(unlisted.error().kind, Error::Kind::refused);
+}
+
+TEST_F(DockerDriverRepliesTest, AnOutputVolumeIsADirectoryMadeForItAndRemovedWithIt) {
+  FakeHostFiles files;
+  docker::DockerDriver bound(executor(), socket, Registries(), {{}, "/srv/out", &files});
+  daemon.script({reply(R"({"Name": "louhi-out"})", 201), reply("", 204)});
+  VolumeSpec output{"louhi-out", VolumeKind::output, 1ull << 30};
+  output.owner_uid = 100000;
+  output.owner_gid = 100001;
+  auto made = wait<Done>([&](auto done) { bound.create_volume(output, Deadline(5000), executor(), done); });
+  ASSERT_TRUE(made.ok()) << made.error().message;
+  EXPECT_NE(daemon.requests()[0].find(R"("device":"/srv/out/louhi-out")"), std::string::npos) << daemon.requests()[0];
+  EXPECT_NE(daemon.requests()[0].find(R"("o":"bind,nosuid,nodev")"), std::string::npos) << daemon.requests()[0];
+  auto removed = wait<Done>([&](auto done) { bound.remove_volume("louhi-out", Deadline(5000), executor(), done); });
+  ASSERT_TRUE(removed.ok()) << removed.error().message;
+  EXPECT_EQ(files.seen(), (std::vector<std::string>{"make /srv/out louhi-out 100000:100001 1073741824", "remove /srv/out louhi-out"}));
+
+  files.fail_make = true;
+  auto unbounded = wait<Done>([&](auto done) { bound.create_volume(output, Deadline(5000), executor(), done); });
+  ASSERT_FALSE(unbounded.ok());
+  EXPECT_EQ(unbounded.error().kind, Error::Kind::unavailable);
+  EXPECT_NE(unbounded.error().message.find("project quotas"), std::string::npos);
+  EXPECT_EQ(daemon.requests().size(), 2u) << "the daemon is not asked to bind what could not be made";
+
+  auto nowhere = wait<Done>([&](auto done) { driver.create_volume(output, Deadline(5000), executor(), done); });
+  ASSERT_FALSE(nowhere.ok()) << "a node with no output area";
+  EXPECT_EQ(nowhere.error().kind, Error::Kind::refused);
+}

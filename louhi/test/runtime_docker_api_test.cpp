@@ -306,6 +306,41 @@ TEST(DockerApi, ParsesTheRuntime) {
   EXPECT_THROW(parse_runtime(R"({"Version": "1"})", info), MalformedReply);
 }
 
+// With user namespaces, root in a container is the user the daemon's root
+// directory is named for; an output directory is made that user's.
+TEST(DockerApi, TheRemappedRootIsReadFromTheDaemonsRootDirectory) {
+  const std::string version = R"({"Version": "26.1.5", "ApiVersion": "1.45"})";
+  const auto root = [&](const std::string& options, const std::string& dir) {
+    const auto r = parse_runtime(version, R"({"SecurityOptions": [)" + options + R"(], "DockerRootDir": ")" + dir + R"("})");
+    return std::make_pair(r.root_uid, r.root_gid);
+  };
+  EXPECT_EQ(root(R"("name=userns")", "/var/lib/docker/100000.100000"), std::make_pair(100000u, 100000u));
+  EXPECT_EQ(root(R"("name=userns")", "/srv/docker/231072.231073"), std::make_pair(231072u, 231073u));
+  EXPECT_EQ(root("", "/var/lib/docker/100000.100000"), std::make_pair(0u, 0u)) << "no user namespaces, no remapping";
+  EXPECT_EQ(root(R"("name=userns")", "/var/lib/docker"), std::make_pair(0u, 0u));
+  EXPECT_EQ(root(R"("name=userns")", "/var/lib/docker/1.x"), std::make_pair(0u, 0u));
+  EXPECT_EQ(root(R"("name=userns")", "/var/lib/docker/99999999999.1"), std::make_pair(0u, 0u)) << "past 32 bits";
+}
+
+// A host directory is bound read-only, the output directory writable; both
+// nosuid and nodev, and only at a path the driver has resolved.
+TEST(DockerApi, HostAndOutputVolumesBindTheirDirectories) {
+  VolumeSpec host{"louhi-src", VolumeKind::host};
+  host.host_directory = "work";
+  host.host_path = "web/src";
+  json::object body = json::parse(create_volume_body(host, "/srv/louhi/work/web/src")).as_object();
+  EXPECT_EQ(body.at("Driver"), "local");
+  EXPECT_EQ(body.at("DriverOpts"), (json::object{{"type", "none"}, {"device", "/srv/louhi/work/web/src"}, {"o", "bind,ro,nosuid,nodev"}}));
+
+  VolumeSpec output{"louhi-out", VolumeKind::output, 1ull << 30};
+  body = json::parse(create_volume_body(output, "/srv/louhi/output/louhi-out")).as_object();
+  EXPECT_EQ(body.at("DriverOpts"), (json::object{{"type", "none"}, {"device", "/srv/louhi/output/louhi-out"}, {"o", "bind,nosuid,nodev"}}));
+
+  EXPECT_THROW(create_volume_body(host, "relative"), std::invalid_argument);
+  EXPECT_THROW(create_volume_body(host), std::invalid_argument);
+  EXPECT_THROW(create_volume_body(output), std::invalid_argument);
+}
+
 // Docker bounds the writable layer only with overlay2 on xfs.
 TEST(DockerApi, StorageIsBoundedOnlyByOverlayOnXfs) {
   const std::string version = R"({"Version": "26.1.5", "ApiVersion": "1.45"})";

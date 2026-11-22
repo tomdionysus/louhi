@@ -426,7 +426,7 @@ Api::Usage Api::usage(const std::string& project) const {
     if (task.project == project) tasks.emplace(key, task);
   Usage out;
   for (const auto& [key, task] : tasks) {
-    if (task.desired != model::DesiredState::running) continue;
+    if (!model::holds_resources(task, status_on_its_node(task))) continue;
     ++out.tasks;
     const auto bytes = _store.get(model::task_definition_key(task.project, task.family, task.revision));
     if (!bytes) continue;
@@ -440,6 +440,51 @@ Api::Usage Api::usage(const std::string& project) const {
     }
   }
   return out;
+}
+
+Api::Usage Api::node_usage() const {
+  std::map<std::string, model::Task> tasks;
+  for (const auto& [key, bytes] : _store.list(model::tasks_prefix(""))) {
+    try {
+      auto task = model::decode_task(bytes);
+      if (task.node == _self) tasks.emplace(key, std::move(task));
+    } catch (const model::DecodeError& bad) {
+      _logger.warn("skipping record " + key + ": " + bad.what());
+    }
+  }
+  for (const auto& [key, task] : _pending_tasks)
+    if (task.node == _self) tasks.emplace(key, task);
+  Usage out;
+  for (const auto& [key, task] : tasks) {
+    if (!model::holds_resources(task, status_on_its_node(task))) continue;
+    ++out.tasks;
+    const auto bytes = _store.get(model::task_definition_key(task.project, task.family, task.revision));
+    if (!bytes) continue;
+    try {
+      const auto definition = model::decode_task_definition(*bytes);
+      out.cpu_millis += definition.cpu_millis;
+      out.memory_mib += definition.memory_mib;
+    } catch (const model::DecodeError& bad) {
+      _logger.warn("task " + key + " runs a revision that does not decode, so its CPU and memory are not counted here: " + bad.what());
+    }
+  }
+  return out;
+}
+
+std::optional<model::TaskStatus> Api::status_on_its_node(const model::Task& task) const {
+  if (!task.node) return std::nullopt;
+  model::TaskStatus probe;
+  probe.task = task.id;
+  probe.node = *task.node;
+  const auto bytes = _store.get(model::key(probe));
+  if (!bytes) return std::nullopt;
+  try {
+    return model::decode_task_status(*bytes);
+  } catch (const model::DecodeError& bad) {
+    // Counted as unfinished: holding too much is safe, too little is not.
+    _logger.warn("task " + model::to_string(task.id) + ": its node's status does not decode: " + bad.what());
+    return std::nullopt;
+  }
 }
 
 void Api::forget_tokens(uint64_t now) {
@@ -493,6 +538,18 @@ void Api::run_task(const Grant& grant, const Path& path, const Request& request,
       return answer(done, error_response(409, "quota", "this would pass the project's max_cpu_millis"));
     if (over(used.memory_mib, definition.memory_mib, quota.max_memory_mib))
       return answer(done, error_response(409, "quota", "this would pass the project's max_memory_mib"));
+
+    // This node's room, from its own last report of what it has.
+    model::NodeStatus self_probe;
+    self_probe.node = _self;
+    const auto report_bytes = _store.get(model::key(self_probe));
+    if (!report_bytes) return answer(done, error_response(503, "capacity_unknown", "this node has not yet reported what it can hold"));
+    const auto report = model::decode_node_status(*report_bytes);
+    const Usage here = node_usage();
+    if (here.cpu_millis + uint64_t{definition.cpu_millis} * body.count > report.total.cpu_millis)
+      return answer(done, error_response(409, "capacity", "this node lacks the CPU for this beside what it already holds"));
+    if (here.memory_mib + uint64_t{definition.memory_mib} * body.count > report.total.memory_mib)
+      return answer(done, error_response(409, "capacity", "this node lacks the memory for this beside what it already holds"));
 
     std::vector<model::TaskId> ids;
     for (uint32_t i = 0; i < body.count; ++i) {

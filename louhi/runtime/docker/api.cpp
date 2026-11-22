@@ -226,13 +226,19 @@ std::string create_container_body(const ContainerSpec& spec) {
   return json::serialize(body);
 }
 
-std::string create_volume_body(const VolumeSpec& spec) {
+std::string create_volume_body(const VolumeSpec& spec, const std::string& device) {
   if (spec.name.empty()) throw std::invalid_argument("volume spec has no name");
   if (spec.kind == VolumeKind::memory && spec.size_bytes == 0) throw std::invalid_argument("memory volume spec has no size");
   json::object body;
   body["Name"] = spec.name;
   body["Driver"] = "local";
-  if (spec.kind == VolumeKind::memory) {
+  if (spec.kind == VolumeKind::host || spec.kind == VolumeKind::output) {
+    // A bind of a directory the driver has resolved or made: never set-uid,
+    // never a device, and a host directory never writable.
+    if (device.empty() || device.front() != '/') throw std::invalid_argument("volume spec binds no absolute host directory");
+    body["DriverOpts"] =
+        json::object{{"type", "none"}, {"device", device}, {"o", spec.kind == VolumeKind::host ? "bind,ro,nosuid,nodev" : "bind,nosuid,nodev"}};
+  } else if (spec.kind == VolumeKind::memory) {
     body["DriverOpts"] = json::object{{"type", "tmpfs"}, {"device", "tmpfs"}, {"o", "size=" + std::to_string(spec.size_bytes)}};
   } else if (spec.size_bytes != 0) {
     body["DriverOpts"] = json::object{{"size", std::to_string(spec.size_bytes)}};
@@ -377,6 +383,27 @@ RuntimeInfo parse_runtime(std::string_view version_body, std::string_view info_b
         const std::string name = bounded(pair.get_array()[0].get_string(), "a DriverStatus name", 256);
         const std::string value = bounded(pair.get_array()[1].get_string(), "a DriverStatus value", 1024);
         if (name == "Backing Filesystem" && value == "xfs") info.limits_storage = true;
+      }
+    }
+  }
+  // With user namespaces the daemon keeps its state under a directory named
+  // for the remapped root, ".../100000.100000".
+  if (info.user_namespaces) {
+    const std::string root = string_member(s, "DockerRootDir", 4096);
+    const std::string last = root.substr(root.rfind('/') + 1);
+    const auto dot = last.find('.');
+    const auto number = [](const std::string& text) -> std::optional<uint32_t> {
+      if (text.empty() || text.size() > 10 || text.find_first_not_of("0123456789") != std::string::npos) return std::nullopt;
+      const uint64_t n = std::stoull(text);
+      if (n > std::numeric_limits<uint32_t>::max()) return std::nullopt;
+      return static_cast<uint32_t>(n);
+    };
+    if (dot != std::string::npos) {
+      const auto uid = number(last.substr(0, dot));
+      const auto gid = number(last.substr(dot + 1));
+      if (uid && gid) {
+        info.root_uid = *uid;
+        info.root_gid = *gid;
       }
     }
   }

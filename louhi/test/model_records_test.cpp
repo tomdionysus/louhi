@@ -17,6 +17,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "louhi/model/ids.h"
 #include "louhi/model/records.h"
@@ -153,6 +154,56 @@ TEST(TaskDefinitions, MountsNameDeclaredVolumesAtDistinctPaths) {
   EXPECT_THROW(d.validate(), std::invalid_argument);
 }
 
+// Host mounts (the maintainer, 2026-11-22): a host volume is a read-only view
+// of a path inside a host directory the operator names, never a host path of
+// the caller's; an output volume is the task's own directory on the node's
+// output area, sized. Only an output volume may be mounted writable.
+TEST(TaskDefinitions, AHostVolumeNamesTheOperatorsDirectoryAndARelativePathAndIsReadOnly) {
+  auto d = fixture::task_definition();
+  d.volumes.push_back({"source", VolumeKind::host, 0, "work", "web/src"});
+  d.containers[0].mounts.push_back({"source", "/src", true});
+  EXPECT_NO_THROW(d.validate());
+
+  auto writable = d;
+  writable.containers[0].mounts.back().read_only = false;
+  EXPECT_THROW(writable.validate(), std::invalid_argument);
+
+  for (const std::string& path : std::vector<std::string>{"/web/src", "web/../etc", "./web", "web//src", "..", std::string("web\0x", 5)}) {
+    auto bad = d;
+    bad.volumes.back().host_path = path;
+    EXPECT_THROW(bad.validate(), std::invalid_argument) << path;
+  }
+  auto whole = d;
+  whole.volumes.back().host_path.clear();
+  EXPECT_NO_THROW(whole.validate()) << "the directory itself";
+  auto trailing = d;
+  trailing.volumes.back().host_path = "web/src/";
+  EXPECT_NO_THROW(trailing.validate());
+
+  auto unnamed = d;
+  unnamed.volumes.back().host_directory = "Work";
+  EXPECT_THROW(unnamed.validate(), std::invalid_argument);
+  auto sized = d;
+  sized.volumes.back().size_mib = 10;
+  EXPECT_THROW(sized.validate(), std::invalid_argument) << "a host volume takes no size";
+}
+
+TEST(TaskDefinitions, AnOutputVolumeIsSizedAndNamesNoHostDirectory) {
+  auto d = fixture::task_definition();
+  d.volumes.push_back({"out", VolumeKind::output, 512, "", ""});
+  d.containers[0].mounts.push_back({"out", "/out", false});
+  EXPECT_NO_THROW(d.validate());
+  auto unsized = d;
+  unsized.volumes.back().size_mib = 0;
+  EXPECT_THROW(unsized.validate(), std::invalid_argument);
+  auto named = d;
+  named.volumes.back().host_directory = "work";
+  EXPECT_THROW(named.validate(), std::invalid_argument);
+  auto scratch = fixture::task_definition();
+  scratch.volumes[0].host_path = "x";
+  EXPECT_THROW(scratch.validate(), std::invalid_argument) << "scratch names no host path";
+}
+
 TEST(TaskDefinitions, VolumesAreNamedOnceAndSized) {
   auto d = fixture::task_definition();
   d.volumes.push_back(d.volumes[0]);
@@ -232,6 +283,42 @@ TEST(Tasks, AStopReasonOnlyWhenStopped) {
   EXPECT_THROW(t.validate(), std::invalid_argument);
   t.desired = DesiredState::stopped;
   EXPECT_NO_THROW(t.validate());
+}
+
+// A task run on its own is done when its own node reports it stopped, and
+// then holds nothing; a service's task, or a report from another node, or
+// any other state, finishes nothing.
+TEST(Tasks, ATaskRunOnItsOwnIsFinishedWhenItsNodeReportsItStopped) {
+  auto t = fixture::task();
+  t.service.clear();
+  auto s = fixture::task_status();
+  s.task = t.id;
+  s.node = *t.node;
+  EXPECT_FALSE(finished(t, std::nullopt));
+  EXPECT_TRUE(holds_resources(t, std::nullopt));
+  EXPECT_FALSE(finished(t, s)) << "running";
+  s.state = TaskState::parked;
+  EXPECT_FALSE(finished(t, s)) << "parked waits on an operator, and holds what it had";
+  s.state = TaskState::stopped;
+  EXPECT_TRUE(finished(t, s));
+  EXPECT_FALSE(holds_resources(t, s));
+
+  auto elsewhere = s;
+  elsewhere.node = fixture::node_id(0x77);
+  EXPECT_FALSE(finished(t, elsewhere)) << "only the node it is placed on says";
+  auto other = s;
+  other.task = fixture::task_id(0x99);
+  EXPECT_FALSE(finished(t, other));
+
+  auto of_service = t;
+  of_service.service = "frontend";
+  EXPECT_FALSE(finished(of_service, s)) << "a service's task is relaunched, never finished";
+  EXPECT_TRUE(holds_resources(of_service, s));
+
+  auto stopped = t;
+  stopped.desired = DesiredState::stopped;
+  stopped.stop_reason = "done";
+  EXPECT_FALSE(holds_resources(stopped, std::nullopt));
 }
 
 TEST(Tasks, AnEpochOnlyWithANode) {

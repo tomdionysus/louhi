@@ -88,8 +88,8 @@ Error not_allowed(const model::ImageReference& reference) {
 
 }  // namespace
 
-DockerDriver::DockerDriver(asio::any_io_executor io, std::string socket_path, Registries registries)
-    : _io(std::move(io)), _http(std::make_shared<LocalHttp>(_io, std::move(socket_path))), _registries(std::move(registries)) {}
+DockerDriver::DockerDriver(asio::any_io_executor io, std::string socket_path, Registries registries, HostDirectories host)
+    : _io(std::move(io)), _http(std::make_shared<LocalHttp>(_io, std::move(socket_path))), _registries(std::move(registries)), _host(std::move(host)) {}
 
 std::string DockerDriver::path(const std::string& rest) const { return "/v" + std::string(api_version) + rest; }
 
@@ -178,9 +178,29 @@ void DockerDriver::pull(const std::string& image, Deadline deadline, Executor ex
 
 void DockerDriver::create_volume(const VolumeSpec& spec, Deadline deadline, Executor executor, Completion<Done> done) {
   if (!safe_segment(spec.name)) return complete<Done>(executor, std::move(done), unsafe("the volume name"));
+  // A host directory is resolved, and an output directory made, before the
+  // daemon is asked to bind it.
+  std::string device;
+  try {
+    if (spec.kind == VolumeKind::host) {
+      const auto source = _host.sources.find(spec.host_directory);
+      if (source == _host.sources.end() || _host.files == nullptr)
+        return complete<Done>(executor, std::move(done), Error{Error::Kind::refused, "this node lists no host directory " + spec.host_directory});
+      device = _host.files->resolve_inside(source->second, spec.host_path);
+    } else if (spec.kind == VolumeKind::output) {
+      if (_host.output_root.empty() || _host.files == nullptr)
+        return complete<Done>(executor, std::move(done), Error{Error::Kind::refused, "this node has no output area"});
+      _host.files->make_output(_host.output_root, spec.name, spec.owner_uid, spec.owner_gid, spec.size_bytes);
+      device = _host.output_root + "/" + spec.name;
+    }
+  } catch (const std::invalid_argument& refused) {
+    return complete<Done>(executor, std::move(done), Error{Error::Kind::refused, refused.what()});
+  } catch (const std::runtime_error& failed) {
+    return complete<Done>(executor, std::move(done), Error{Error::Kind::unavailable, failed.what()});
+  }
   std::string body;
   try {
-    body = create_volume_body(spec);
+    body = create_volume_body(spec, device);
   } catch (const std::invalid_argument& bad) {
     return complete<Done>(executor, std::move(done), Error{Error::Kind::refused, bad.what()});
   }
@@ -190,8 +210,18 @@ void DockerDriver::create_volume(const VolumeSpec& spec, Deadline deadline, Exec
 
 void DockerDriver::remove_volume(const std::string& name, Deadline deadline, Executor executor, Completion<Done> done) {
   if (!safe_segment(name)) return complete<Done>(executor, std::move(done), unsafe("the volume name"));
-  _http->request(http_verb::delete_, path("/volumes/" + name), "", deadline, executor,
-                 [done = std::move(done)](Result<Reply> got) { done(done_unless(got, "removing a volume", {204}, true)); });
+  _http->request(http_verb::delete_, path("/volumes/" + name), "", deadline, executor, [host = _host, name, done = std::move(done)](Result<Reply> got) {
+    auto removed = done_unless(got, "removing a volume", {204}, true);
+    // An output volume's directory goes once the daemon has let go of it.
+    if (removed.ok() && !host.output_root.empty() && host.files != nullptr) {
+      try {
+        host.files->remove_output(host.output_root, name);
+      } catch (const std::exception& failed) {
+        return done(Error{Error::Kind::unavailable, failed.what()});
+      }
+    }
+    done(std::move(removed));
+  });
 }
 
 void DockerDriver::list_volumes(Deadline deadline, Executor executor, Completion<std::vector<VolumeInfo>> done) {

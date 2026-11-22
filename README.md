@@ -28,7 +28,7 @@ On Debian 13, with Dannan's and Dagda's packages (`libdannan0.9`, `libdagda0.3.2
 where apt can find them, as the stack's apt repository has them:
 
 ```
-sudo apt install ./louhi_0.1.1_arm64.deb
+sudo apt install ./louhi_0.2.0_arm64.deb
 ```
 
 The package installs `louhi-node` and `louhi-ctl` in `/usr/bin`, the node's example
@@ -182,6 +182,9 @@ The settings, by key and flag:
 | `log.level`, `log.format` | `--log-level`, `--log-format` | Logging |
 | `runtime.docker_socket` | `--docker-socket` | Docker's socket (default `/var/run/docker.sock`) |
 | `runtime.allow_*` | `--allow-*` | The three overrides above |
+| `runtime.retain_finished_hours` | `--retain-finished-hours` | Hours a finished task's containers and volumes are kept after it stopped (24) |
+| `runtime.host_directories` | `--host-directory` | `NAME=PATH`: a host directory tasks may mount read-only by `NAME`; a list |
+| `runtime.output_directory` | `--output-directory` | Where each output volume is made, a directory of its own (xfs with project quotas to bound them) |
 | `registries.allow` | `--registry` | A registry images may come from, by domain (`docker.io` for Docker Hub) |
 | `registries.credentials` | `--registry-credential` | `DOMAIN=USER:PASSWORD` or `DOMAIN=:IDENTITY_TOKEN`; keep in `secrets.yaml` |
 | `api.http`, `api.https` | `--api-http`, `--api-https` | `HOST:PORT` for the API over HTTP and over HTTPS |
@@ -217,9 +220,10 @@ audiences.
 
 ### Events on Lir
 
-Not yet in a release. The publisher is written and tested, but
-[Lir](https://github.com/tomdionysus/lir)'s releases ship no client yet: its client
-library returns as `liblir-client0.1`, and the events come to a Louhi release after it.
+Not yet in a release. The publisher is written and tested, and
+[Lir](https://github.com/tomdionysus/lir) 0.2.0 ships its client, but Lir's broker does
+not yet take the retained messages and wills Louhi's events depend on; they come to a
+Louhi release after it does.
 Until then they build only on request (`-DLOUHI_BUILD_LIR=ON`, or `tools/ci.sh events`),
 against a commit of Lir from before its rewrite. In such a build, with `lir.enabled` the
 node publishes to the Lir nodes it finds in its Dannan cluster.
@@ -266,7 +270,20 @@ Login writes the issuer, client id, endpoints and scopes (and `--ca`, when given
 `~/.config/louhi/credentials.yaml`, readable only by you. The access token is refreshed
 when less than a minute of it is left. `louhi-ctl logout` removes the tokens.
 
-The configuration's keys are `issuer`, `client_id`, `endpoints` and `scopes` (lists), `ca`
+A program, rather than a person, signs in as a Lugh service principal: a client with a
+secret, granted scopes such as `louhi:web:run` and `louhi:web:read`. Put the secret in a
+file only you can read (`chmod 600`) and log in with it; there is no device flow:
+
+```
+louhi-ctl login --issuer https://lugh.example --client-id web-builds \
+  --client-secret-file ~/.config/louhi/web-builds.secret \
+  --endpoint http://10.0.0.10:7480 --scope 'louhi:web:run louhi:web:read'
+```
+
+The configuration keeps the secret file's path, never the secret, and a new token is asked
+for with it whenever the one held has less than a minute left.
+
+The configuration's keys are `issuer`, `client_id`, `client_secret_file`, `endpoints` and `scopes` (lists), `ca`
 (the roots an https endpoint and the issuer chain to) and `credentials` (the credentials
 file). It is read from `--config PATH`, `$LOUHI_CONFIG`, or `~/.config/louhi/config.yaml`;
 then `$LOUHI_ENDPOINT` (a list, separated by commas or spaces) and `$LOUHI_CREDENTIALS`;
@@ -312,6 +329,25 @@ echo '{"max_tasks":10,"max_cpu_millis":4000,"max_memory_mib":4096}' | louhi-ctl 
 }
 ```
 
+**Host directories and output.** A task sees no host path of its own choosing. The node's
+operator lists host directories by name (`--host-directory work=/srv/louhi/work`) and an
+output area (`--output-directory /srv/louhi/output`); a definition mounts them as volumes:
+
+```json
+"volumes": [
+  {"name": "src", "kind": "host", "host_directory": "work", "host_path": "web/src"},
+  {"name": "out", "kind": "output", "size_mib": 512}
+]
+```
+
+A `host` volume is a path inside a listed directory, resolved on the node and refused if it
+leads out (through `..` or a link); it is always mounted read-only. An `output` volume is a
+directory made for the task in the output area, named as the volume is on the node
+(`louhi-<task>-<volume>`), owned by the container's root, bounded by an xfs project quota
+to its `size_mib`, and mounted `nosuid,nodev`. It is kept with the task's containers and
+removed with them. Whatever reads it reads a workload's files: follow no link in it and run
+nothing from it.
+
 **Endpoint failover.** Any node serves the API, so each call goes to the endpoints in
 turn until one answers: past one that cannot be connected to, and for a read past one that
 gives no answer as well. A write that may have reached a node is never sent to another;
@@ -349,14 +385,23 @@ dispatches from. `/v1/status` is the node as it sees itself: its id, version, re
 and its store's, and for `louhi:admin` its task count and full report. Errors are
 `{"error": code, "message": text}`.
 
+RunTask admits tasks against the project's quota (409, `quota`) and against the node's
+capacity, its CPU and memory less what the tasks placed on it hold, of every project (409,
+`capacity`; 503, `capacity_unknown`, until the node has reported what it has). A refusal
+is final: nothing waits in a queue. A task run on its own holds nothing once its node
+reports it stopped; its containers are kept for `runtime.retain_finished_hours`, then
+removed.
+
 ## Status
 
-This is Louhi's first release. What works today, on one node: the records and their
-codecs; the Docker driver with the hardened profile, limits and storage bounds; images by
-digest from allowed registries; the agent, with restart, backoff and the parked state;
-`louhi-node`; the API with Lugh sign-in, project scopes and quota admission; and
-`louhi-ctl`. Events on Lir are written and tested but wait for a released Lir client (see
-"Events on Lir").
+What works today, on one node: the records and their codecs; the Docker driver with the
+hardened profile, limits and storage bounds; images by digest from allowed registries;
+read-only host directories and bounded output directories; the agent, with restart,
+backoff, the parked state and the retention of finished tasks; `louhi-node`; the API with
+Lugh sign-in, project scopes, quota and node-capacity admission; and `louhi-ctl`, for a
+person or a service principal. Events on Lir are written and tested but wait for Lir's
+broker to take retained messages and wills (see "Events on Lir"). A task's logs come with
+Louhi's move to Dannan 0.10.x.
 
 What it does not do yet:
 

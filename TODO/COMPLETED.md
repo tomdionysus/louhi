@@ -4,6 +4,48 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## 0.2.0 released: what the build cluster needs to run on Louhi (2026-11-22)
+
+- **Why:** the maintainer said yes in principle to moving the build
+  cluster onto Louhi (2026-11-22, by the coordinating session), a trial on
+  node-c first; ACTIVE.md item 1.
+- **What:** (a) a task run on its own that its node reports stopped holds
+  nothing of its project's quota or its node's capacity
+  (`model::finished`, `holds_resources`; `Assignment` carries this node's
+  stored status); (b) RunTask admits against the node's capacity (409
+  `capacity`, 503 `capacity_unknown`); (c) `louhi-ctl login
+  --client-secret-file`, the client credentials grant, the secret's path
+  kept and never the secret, a file others may read refused; (d) a
+  finished task's containers and volumes kept for
+  `--retain-finished-hours` (24) after the store holds its report, then
+  removed, and never launched again; (f) host mounts (the maintainer's
+  four controls): `host` volumes, a path inside an operator-listed
+  directory, resolved and refused outside it, always read-only; `output`
+  volumes, a directory per task in the operator's output area, owned by
+  the container's root (from Docker's root directory name), bounded by an
+  xfs project quota, `nosuid,nodev`, removed with the task
+  (`runtime/host_files.*`). Logs (e) wait for Dannan 0.10.x, the
+  maintainer's call.
+- **Tests:** 386 to **421** with Lir off (423 with it on): 35 new, none
+  removed; two older tests changed for the new rules (a list test now sees
+  this node's own capacity report; the codec's undefined volume kinds are
+  0, 5 and 255, as 3 and 4 are host and output).
+- **Gate** at `ce80724`: release on node-c **421 of 421**, the xfs quota
+  test included (`LOUHI_TEST_XFS_OUTPUT=/var/lib/docker/louhi-test-output`,
+  removed after); ASan and TSan on node-d **419 passed, 2 skipped** each
+  (no xfs), no sanitizer report; events (Lir on) on node-c **423 of 423**;
+  fuzz, four targets 60 s each, no crash; clang on node-d **407 passed, 14
+  skipped** (the ssh line set no Docker socket: the real-Docker tests ran
+  in the other steps). The clang step was first blocked by the board's
+  guard, which matched "clang" among the command's arguments; the
+  coordinating session found the defect and gave the sanctioned form, a
+  direct ssh line under the claim (the fix is put to the maintainer).
+- **The deb** on node-c from `ce80724`: built, lintian clean.
+- **Decided on the way:** host mounts with four controls (the
+  maintainer, after "volumes only" and a question on the risk); logs wait
+  for Dannan 0.10.x; Docker stays on all four Pis (already installed); the
+  trial's output area is `/var/lib/docker/louhi-output` on Docker's xfs.
+
 ## 0.1.1 released: Louhi onto Lugh's relying-party pieces (2026-11-22)
 
 - **What moved to Lugh** (the lower project keeps what two need): the Lugh

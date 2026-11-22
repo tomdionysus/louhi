@@ -5,17 +5,17 @@ of this file.
 
 ## Resume here
 
-**State.** **0.1.1 is released** (2026-11-22): tag `0.1.1` on `main` at
-`ddd285d`; `develop` is `main` merged back, plus the notes since. No
-feature branch is open (COMPLETED.md, "0.1.1 released"). Item 1 is
-Louhi's own; every other waits on another project's release, or (item 4)
-on the maintainer's go-ahead.
+**State.** **0.2.0 is released** (2026-11-22): tag `0.2.0` on `main`;
+`develop` is `main` merged back. No feature branch is open (COMPLETED.md,
+"0.2.0 released"). Item 1's trial is next, with the coordinating session;
+every other item waits on another project's release, or (item 4) on the
+maintainer's go-ahead.
 
 - **Pins:** Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`; Lir `e40dd2e`
-  only when `LOUHI_BUILD_LIR` is on (off by default: no Lir release ships a
-  client).
-- **Tests:** 386 with Lir off (385 run on node-b, 1 skipped there); 389
-  with it on.
+  only when `LOUHI_BUILD_LIR` is on (off by default: Lir's broker does not
+  take retain and wills yet).
+- **Tests:** 421 with Lir off (419 run where there is no xfs with project
+  quotas, 2 skipped); 423 with it on.
 
 **The deb on node-c.** Dannan 0.9.2's and Dagda 0.3.2's packages and
 lintian are installed there (the maintainer's go-ahead, 2026-11-20, kept
@@ -78,10 +78,8 @@ Dannan and Dagda packages, which need not be built again.
      xfs quota test with `LOUHI_TEST_XFS_OUTPUT`), ASan and TSan on node-d
      419 passed and 2 skipped each (no xfs there), events on node-c 423,
      fuzz (four targets, 60 s each, no crash); the deb on node-c lintian
-     clean. **Left:** the clang step, which the board's guard on the Mac
-     blocks because its command line says "clang" (asked of the
-     coordinating session, 2026-11-22); then the cut (squash onto `main`,
-     tag, the deb from the tag), with the maintainer's word to push.
+     clean; clang on node-d 407 passed, 14 skipped. Released as 0.2.0
+     (COMPLETED.md).
    - **Then the trial** on node-c: tell the coordinating session first; it
      adds the board claim for Louhi's cores. Output area
      `/var/lib/docker/louhi-output` on Docker's xfs (the maintainer,

@@ -8,7 +8,7 @@ of this file.
 **State.** `develop` is pushed, clean and green on hosted CI. `main` does
 not exist yet: it is made by the 0.1.0 merge.
 
-- **0.1.0** is on `feature/release-0.1.0` (`8534fc9`, pushed; worktree
+- **0.1.0** is on `feature/release-0.1.0` (pushed; the gate ran at `8534fc9`, and only TODO notes have changed since; worktree
   `build/wt-rel`). Gated on node-b (COMPLETED.md, "0.1.0 readied"). Left:
   1. On node-c, whose Docker can bound storage: `tools/ci.sh release` on
      the final tree (it runs the one test node-b skips,

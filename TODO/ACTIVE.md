@@ -5,20 +5,10 @@ of this file.
 
 ## Resume here
 
-**State.** `develop` is pushed, clean and green on hosted CI. `main` does
-not exist yet: it is made by the 0.1.0 merge.
+**State.** **0.1.0 is released** (2026-11-22): tag `0.1.0` on `main` at
+`81b9b22`; `develop` is `main` plus the notes since. The release branch is
+deleted (COMPLETED.md, "0.1.0 released").
 
-- **0.1.0** is on `feature/release-0.1.0` (pushed; the gate ran at `8534fc9`, and only TODO notes have changed since; worktree
-  `build/wt-rel`). Gated on node-b (COMPLETED.md, "0.1.0 readied"). Left:
-  1. On node-c, whose Docker can bound storage: `tools/ci.sh release` on
-     the final tree (it runs the one test node-b skips,
-     `DockerDriverTest.ADiskVolumesSizeIsKeptWhereStorageIsBounded`), then
-     Louhi's deb and lintian (below). About an hour at 2 cores. It was
-     stopped part-way on the maintainer's word (2026-11-21).
-  2. Merge the branch to `main` (squash), tag `0.1.0` (annotated, no `v`)
-     on `main`, push `main` and the tag, merge `main` back to `develop`.
-  3. Report the version, tag hash, gates and link check to the
-     coordinating session.
 - **`feature/lugh-relying-party`** (`1c83198`, pushed, WIP, unbuilt;
   worktree `build/wt-lugh`): next after 0.1.0 (item 1 below).
 - **Pins:** Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`; Lir `e40dd2e`
@@ -30,8 +20,10 @@ not exist yet: it is made by the 0.1.0 merge.
 **The deb on node-c.** Dannan 0.9.2's and Dagda 0.3.2's packages and
 lintian are installed there (the maintainer's go-ahead, 2026-11-20, kept
 for every project). The mirrors are `/root/louhi-pkg/*.git`; refresh
-`louhi.git` and `lugh.git` with rsync first. Then, in `/root/louhi-pkg`:
-clone `louhi.git`, check out the release branch, and run
+`louhi.git` and `lugh.git` with rsync first, then `chown -R root:root`
+them (rsync keeps the Mac's owner, and git refuses a clone from a
+repository another user owns). Then, in `/root/louhi-pkg`:
+clone `louhi.git`, check out the release, and run
 `DEB_BUILD_OPTIONS="nocheck parallel=2" LOUHI_LUGH_REPOSITORY=/root/louhi-pkg/lugh.git nice -n 19 tools/build-deb.sh`,
 then `lintian --fail-on error,warning build-deb/*.changes`.
 `build/pkg.sh` (untracked) is the whole script, including the
@@ -39,7 +31,6 @@ Dannan and Dagda packages, which need not be built again.
 
 ## Next, in order
 
-0. **Cut 0.1.0** (above).
 1. **Louhi onto Lugh 0.2.0's relying-party pieces**
    (`feature/lugh-relying-party`, a patch release). Lugh 0.2.0 moved into
    `lugh_client` what Louhi wrote for itself (the maintainer's Q6: the

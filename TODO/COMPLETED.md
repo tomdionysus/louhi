@@ -4,6 +4,23 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## 0.1.0 released (2026-11-22)
+
+- **Final gate on node-c** (Docker on xfs, so storage is bounded): the
+  release step on the release branch's head `7091b9c`, **397 passed, 0
+  skipped**, `DockerDriverTest.ADiskVolumesSizeIsKeptWhereStorageIsBounded`
+  included; not throttled. The sanitizer, fuzz and coverage gates are
+  node-b's at `8534fc9`, the same code (below).
+- **The deb** on node-c from `7091b9c`: `louhi` and `louhi-dbgsym` built,
+  lintian clean (errors and warnings). The first try failed before
+  building: the rsync'd mirrors kept the Mac's owner and git refused the
+  clone; `chown -R root:root` fixed it (ACTIVE.md, "The deb on node-c").
+- **Cut:** `main` made from `develop` (`fc5315f`), the release branch
+  squashed onto it as `81b9b22` "Release 0.1.0" (its tree identical to the
+  branch's), tag `0.1.0` annotated on it; `main`, the tag and `develop`
+  (fast-forwarded to `main`) pushed. `feature/release-0.1.0` and its
+  worktree deleted, locally and on the remote.
+
 ## 0.1.0 readied; the history scrubbed; repins (2026-11-20 to 22)
 
 - **History scrub** (the maintainer's word): hosts, addresses, user paths

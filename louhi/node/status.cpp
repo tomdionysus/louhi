@@ -46,6 +46,8 @@ model::NodeStatus node_status(const Facts& facts, const std::vector<agent::Assig
     out.runtime_version = bounded(r.version, model::max_version_text);
     out.total.cpu_millis = saturated(static_cast<uint64_t>(r.cpus) * 1000);
     out.total.memory_mib = saturated(r.memory_bytes >> 20);
+    if (facts.offer_cpu_millis != 0) out.total.cpu_millis = std::min(out.total.cpu_millis, facts.offer_cpu_millis);
+    if (facts.offer_memory_mib != 0) out.total.memory_mib = std::min(out.total.memory_mib, facts.offer_memory_mib);
     out.ready = (r.limits_memory || facts.allow_unenforced_memory) && (r.user_namespaces || facts.allow_without_user_namespaces) &&
                 (r.limits_storage || facts.allow_unbounded_storage);
     if (!r.limits_memory) {

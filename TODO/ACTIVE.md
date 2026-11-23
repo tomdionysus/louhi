@@ -5,17 +5,17 @@ of this file.
 
 ## Resume here
 
-**State.** **0.2.0 is released** (2026-11-22): tag `0.2.0` on `main`;
+**State.** **0.2.1 is released** (2026-11-23): tag `0.2.1` on `main`;
 `develop` is `main` merged back. No feature branch is open (COMPLETED.md,
-"0.2.0 released"). Item 1's trial is next, with the coordinating session;
+"0.2.1 released"). Item 1's trial is next, with the coordinating session;
 every other item waits on another project's release, or (item 4) on the
 maintainer's go-ahead.
 
 - **Pins:** Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`; Lir `e40dd2e`
   only when `LOUHI_BUILD_LIR` is on (off by default: Lir's broker does not
   take retain and wills yet).
-- **Tests:** 421 with Lir off (419 run where there is no xfs with project
-  quotas, 2 skipped); 423 with it on.
+- **Tests:** 422 with Lir off (420 run where there is no xfs with project
+  quotas, 2 skipped); 425 with it on.
 
 **The deb on node-c.** Dannan 0.9.2's and Dagda 0.3.2's packages and
 lintian are installed there (the maintainer's go-ahead, 2026-11-20, kept
@@ -133,7 +133,9 @@ Dannan and Dagda packages, which need not be built again.
      `cluster.name`, `cluster.domain`, `cluster.listen.address`,
      `cluster.listen.port`, `cluster.listen.advertise` and
      `cluster.heartbeat_ms`; Louhi keeps its rule that a state and a key
-     are required, and the README gets a renaming note.
+     are required, and the README gets a renaming note. On Dannan's
+     develop since 2026-11-22. 0.11.0 also adds `Fault::cancelled` after
+     `failed`: nothing in Louhi switches over `Fault` (checked).
 3. **The Dagda store** (the rest of step 4), on Dagda's register map (its
    D6 design, `../dagda/TODO/2026-11-20-register-map.md`, with Louhi's
    review taken), when Dagda releases it with the `AcceptorStore` and the
@@ -183,7 +185,17 @@ Dannan and Dagda packages, which need not be built again.
    private registry signed in to for real.
 8. **The image store on Dagda** (step 13's second half), after item 3.
 9. **The dashboard** (`2026-11-20-dashboard.md`), on Lugh's
-   `@lugh/admin-ui` and Dannan's HTTP core.
+   `@lugh/admin-ui` and Dannan's HTTP core. `@lugh/admin-ui` is on Lugh's
+   develop (`05ebbaf`, 2026-11-22) and ships in Lugh's next tag: source in
+   `lugh/ui`, built by Louhi's own Vite, depended on by file path at a
+   Lugh tag (`"@lugh/admin-ui": "file:<lugh>/lugh/ui"`); import
+   `styles/reset.css` then `styles/admin.css` once at the root; peers
+   react 19, react-dom, react-router 7. It gives `ApiClient` (a base path),
+   `StatusPill` (a state-to-colour map), `SignIn` (own password, Lugh's
+   code flow with PKCE, or both), `AdminShell`, `NavBar`, `Messages`,
+   `Confirm`, `DataTable`, `DetailPanel`, `useEvents`, `useLoad`, `useAct`.
+   The read-only JSON view stays Louhi's own. Lugh's CHANGELOG
+   "Unreleased" has the rest.
 
 ## Waiting on others
 

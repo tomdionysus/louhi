@@ -82,7 +82,7 @@ What exists (design, "The endpoints") plus, each behind its scope:
    interface the Api is given. Still to do: `/v1/nodes/{node}`, task
    events, unpark (no dependency).
 3. Password sign-in and session tokens, on Dannan's credential helper and
-   keyed limits (waits on Dannan 0.10.0's items).
+   keyed limits (in no Dannan release yet: queued for Dannan 0.12.0).
 4. The screens, on the shared React shell once the group settles where it
    lives.
 5. Static serving and the SPA fallback, on Dannan's HTTP core (Q1).

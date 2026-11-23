@@ -60,7 +60,7 @@ Dannan and Dagda packages, which need not be built again.
      through the driver (Docker's multiplexed log stream, a fuzzed
      parser). Log text is bytes from a workload: it reaches JSON only as
      valid UTF-8, which needs Dannan 0.10.x's `encoding::utf8_length`
-     (not in 0.9.2), so this step follows item 2 (the maintainer,
+     (not in 0.9.2), so this step comes with item 2 (the maintainer,
      2026-11-22: wait for Dannan 0.10.x; no base64 stand-in).
    - (f) **Host-directory mounts** (the maintainer, 2026-11-22): the
      operator lists host directories on the node; a task definition mounts
@@ -101,8 +101,13 @@ Dannan and Dagda packages, which need not be built again.
      `debian:trixie` locally; the test binary is
      `build-ci/release/louhi_tests` on a Pi; its libraries are checked on
      the day, under the claim. Lugh 0.6.0 is on Dannan 0.11.0 (item 2).
-2. **Dannan 0.10.x**, once Dagda has released on it (one Dannan a
-   process; Dagda's 0.4.0 is under way). Lugh has: 0.4.0 (2026-11-22) is
+2. **Dannan 0.11.1, Dagda 0.4.0, Lugh 0.6.0: unblocked** (the coordinating
+   session, 2026-11-23: Dagda 0.4.0 is tagged on Dannan 0.11.1; Lugh 0.6.0
+   is on Dannan 0.11.0, the same SONAME). The repin is Dannan 0.11.1, Dagda
+   0.4.0, Lugh 0.6.0, and step (e), GetTaskLogs, comes with it, since
+   `encoding::utf8_length` is in every Dannan since 0.10.0. Lir 0.2.0's
+   client is on Dannan 0.10.2, so the events build (`LOUHI_BUILD_LIR`)
+   waits on a Lir on 0.11. Earlier notes: Lugh had: 0.4.0 (2026-11-22) is
    on Dannan 0.10.2 and lir::mqtt 0.1.0, carries the five TokenSource cases,
    and leaves lugh_client's API as 0.2.0's; its `lugh-node` flags are
    renamed (`--server-address`, `--server-port`, `--oauth-issuer`,
@@ -184,7 +189,9 @@ Dannan and Dagda packages, which need not be built again.
    contract header byte for byte, so Louhi's calls stand;
    `find_package(lir 0.2.0 CONFIG REQUIRED)` and `lir::client`, Build-Depends
    `liblir-dev (>= 0.2.0), liblir-dev (<< 0.3~)`. The broker that takes
-   retain and wills will be Lir 0.3.0, after Dannan 0.11.0. The client is on Dannan 0.10.2,
+   retain and wills will be Lir 0.3.0, which waits on Dagda's D6 (register
+   map) and D5 (leases, wills) (the maintainer's ruling, by the
+   coordinating session, 2026-11-23). The client is on Dannan 0.10.2,
    so it follows item 2, and `liblir-dev` now depends on `libboost-dev`. Until
    Dagda's nouns ship, that broker grants QoS 0 only (until D9), no retain
    (until D6), and refuses every will at CONNECT (until D5): the maintainer's
@@ -215,14 +222,17 @@ Dannan and Dagda packages, which need not be built again.
 
 ## Waiting on others
 
-- **Dagda:** 0.4.0 on Dannan 0.10.x; then the register map, the
-  `AcceptorStore` and caught-up (item 3).
-- **Lugh:** nothing now (0.4.0 is on Dannan 0.10.2); it says before
-  lugh_client's types move onto Dannan's completion (item 2).
-- **Lir:** its broker taking retain and wills once Dagda's D5 and D6 ship;
-  it says when (item 6). The client is out as Lir 0.2.0.
-- **Dannan:** the HTTP core (`api/client.cpp` moves onto its client) and
-  the process runner (`net/command.*` moves to it).
+- **Dagda:** 0.4.0 is out (on Dannan 0.11.1); the register map, the
+  `AcceptorStore` and caught-up (items 3, 5 and 8), which the coordinating
+  session has asked Dagda to put first.
+- **Dannan:** for 0.12.0: the HTTP core (`api/client.cpp` moves onto its
+  client), the process runner (`net/command.*` moves to it), the register
+  layer, and the credential helper and keyed limits (the dashboard).
+- **Lugh:** nothing for item 2 (0.6.0 is out); neptune's issuer for the
+  trial waits on the maintainer's word in Lugh's session.
+- **Lir:** a client on Dannan 0.11 (for the events build), and its broker
+  taking retain and wills once Dagda's D5 and D6 ship; it says when (item
+  6). Lir 0.2.0's client is on Dannan 0.10.2.
 - **The maintainer:** a join to the standing Lir cluster
   needs his word each time.
 

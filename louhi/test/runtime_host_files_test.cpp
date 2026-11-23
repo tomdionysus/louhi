@@ -14,8 +14,14 @@
 // where LOUHI_TEST_XFS_OUTPUT names a directory on one (node-c), and is
 // skipped elsewhere.
 
+#include <fcntl.h>
 #include <gtest/gtest.h>
+#include <linux/dqblk_xfs.h>
+#include <linux/fs.h>
+#include <linux/quota.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <cstdlib>
@@ -30,6 +36,17 @@ using namespace louhi::runtime;
 namespace fs = std::filesystem;
 
 namespace {
+
+// A project's hard block limit on the file system holding `path`; zero when it
+// has none.
+uint64_t hard_limit(const std::string& path, uint32_t project) {
+  const int fd = ::open(path.c_str(), O_RDONLY | O_DIRECTORY);
+  if (fd < 0) return 0;
+  struct fs_disk_quota quota{};
+  const long got = ::syscall(SYS_quotactl_fd, fd, QCMD(Q_XGETQUOTA, PRJQUOTA), project, &quota);
+  ::close(fd);
+  return got == 0 ? quota.d_blk_hardlimit : 0;
+}
 
 struct HostFilesTest : ::testing::Test {
   dannan::test::TempDir dir;
@@ -119,6 +136,19 @@ TEST_F(HostFilesTest, ABoundNeedsProjectQuotas) {
   big.flush();
   EXPECT_FALSE(big.good()) << "the quota stops the write";
   big.close();
+
+  // The directory's project, and its limit, which goes with the directory:
+  // nothing of the bound is left on the file system.
+  const int fd = ::open((fs::path(xfs) / name).c_str(), O_RDONLY | O_DIRECTORY);
+  ASSERT_GE(fd, 0);
+  struct fsxattr attributes{};
+  ASSERT_EQ(::ioctl(fd, FS_IOC_FSGETXATTR, &attributes), 0);
+  ::close(fd);
+  const uint32_t project = attributes.fsx_projid;
+  EXPECT_NE(project, 0u);
+  EXPECT_GT(hard_limit(xfs, project), 0u);
+
   files.remove_output(xfs, name);
   EXPECT_FALSE(fs::exists(fs::path(xfs) / name));
+  EXPECT_EQ(hard_limit(xfs, project), 0u) << "the project's limit is cleared with its directory";
 }

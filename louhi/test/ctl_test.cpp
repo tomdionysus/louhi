@@ -434,6 +434,9 @@ TEST(CtlCommand, EachCommandMakesItsCall) {
   EXPECT_EQ(call({"describe-task", "web", "t1"}), (Call{"GET", "/v1/projects/web/tasks/t1", ""}));
   EXPECT_EQ(call({"stop-task", "web", "t1", "--reason", "done"}), (Call{"POST", "/v1/projects/web/tasks/t1/stop", R"({"reason":"done"})"}));
   EXPECT_EQ(call({"stop-task", "web", "t1"}), (Call{"POST", "/v1/projects/web/tasks/t1/stop", "{}"}));
+  EXPECT_EQ(call({"logs", "web", "t1"}), (Call{"GET", "/v1/projects/web/tasks/t1/logs", ""}));
+  EXPECT_EQ(call({"logs", "web", "t1", "--container", "app", "--tail", "50", "--after", "1700000000000000000"}),
+            (Call{"GET", "/v1/projects/web/tasks/t1/logs?container=app&tail=50&after=1700000000000000000", ""}));
 }
 
 TEST(CtlCommand, EachOperandIsOnePathSegment) {

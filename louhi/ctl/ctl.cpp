@@ -44,7 +44,7 @@ constexpr std::uintmax_t most_credentials_bytes = 64 * 1024;
 
 constexpr const char* usage_text =
     "usage: louhi-ctl COMMAND ...: login, logout, list-projects, put-project, describe-project, put-quota, describe-quota, register-task-definition, "
-    "list-task-definition-families, list-task-definitions, describe-task-definition, run-task, list-tasks, describe-task, stop-task, list-nodes";
+    "list-task-definition-families, list-task-definitions, describe-task-definition, run-task, list-tasks, describe-task, stop-task, logs, list-nodes";
 
 // The reader takes every argument that starts with '-' for a flag, so "-",
 // the operand for stdin, is handed to it as text no argument can hold, and
@@ -72,6 +72,9 @@ dannan::config::Reader reader() {
       {"command.limit", Kind::value, "--limit", "", "a number of tasks"},
       {"command.next", Kind::value, "--next", "", "where a list goes on from"},
       {"command.reason", Kind::value, "--reason", "", "why a task is stopped"},
+      {"command.container", Kind::value, "--container", "", "which of a task's containers"},
+      {"command.tail", Kind::value, "--tail", "", "how many of the last log lines"},
+      {"command.after", Kind::value, "--after", "", "log lines after this time, Unix nanoseconds (a reply's next)"},
   };
   return out;
 }
@@ -589,6 +592,15 @@ Call command(const Args& args, const std::function<std::string(const std::string
     json::object body;
     if (const auto reason = args.flag("command.reason")) body["reason"] = *reason;
     return {"POST", project() + "/tasks/" + segment(p.at(2)) + "/stop", json::serialize(body)};
+  }
+  if (verb == "logs") {
+    need(2, "logs PROJECT TASK [--container NAME] [--tail N] [--after NANOSECONDS]");
+    std::string query;
+    const auto add = [&](const std::string& part) { query += (query.empty() ? "?" : "&") + part; };
+    if (const auto container = args.flag("command.container")) add("container=" + segment(*container));
+    if (const auto tail = args.flag("command.tail")) add("tail=" + std::to_string(number("tail", *tail)));
+    if (const auto after = args.flag("command.after")) add("after=" + std::to_string(number("after", *after)));
+    return {"GET", project() + "/tasks/" + segment(p.at(2)) + "/logs" + query, ""};
   }
   throw Usage("no command " + verb);
 }

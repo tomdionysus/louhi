@@ -283,6 +283,51 @@ TEST(DockerApi, ParsesVolumes) {
   EXPECT_TRUE(parse_volumes(R"({"Volumes": null})").empty());
 }
 
+namespace {
+
+// One frame of a container's log stream: the stream, three zeros, the length.
+std::string frame(uint8_t stream, const std::string& payload) {
+  std::string out{static_cast<char>(stream), '\0', '\0', '\0'};
+  const auto size = static_cast<uint32_t>(payload.size());
+  for (const int shift : {24, 16, 8, 0}) out.push_back(static_cast<char>((size >> shift) & 0xff));
+  return out + payload;
+}
+
+}  // namespace
+
+// The log stream is bytes from a workload: every frame is bounded and checked,
+// its time read to the nanosecond, its text made UTF-8.
+TEST(DockerApi, ParsesTheLogStream) {
+  const std::string body = frame(1, "2026-11-15T17:39:37.123456789Z first line\n") + frame(2, "2026-11-15T17:39:38.000000001Z an error\n");
+  const auto lines = parse_logs(body, 10);
+  ASSERT_EQ(lines.size(), 2u);
+  EXPECT_EQ(lines[0].stream, LogStream::out);
+  EXPECT_EQ(lines[0].text, "first line");
+  EXPECT_EQ(lines[0].unix_ns, parse_time(("2026-11-15T17:39:37Z")) * 1'000'000 + 123'456'789);
+  EXPECT_EQ(lines[1].stream, LogStream::err);
+  EXPECT_EQ(lines[1].unix_ns % 1'000'000'000, 1u);
+  EXPECT_FALSE(lines[0].truncated);
+  EXPECT_TRUE(parse_logs("", 10).empty());
+
+  // Not UTF-8: each byte that begins no sequence is U+FFFD; UTF-8 is kept.
+  const auto odd = parse_logs(frame(1,
+                                    "2026-11-15T17:39:37Z a\xff"
+                                    "b \xc3\xa9\n"),
+                              10);
+  EXPECT_EQ(odd[0].text,
+            "a\xEF\xBF\xBD"
+            "b \xc3\xa9");
+  const auto longer = parse_logs(frame(1, "2026-11-15T17:39:37Z " + std::string(max_log_line + 5, 'x')), 10);
+  EXPECT_EQ(longer[0].text.size(), max_log_line);
+  EXPECT_TRUE(longer[0].truncated);
+
+  for (const std::string& bad : {frame(3, "2026-11-15T17:39:37Z x"), frame(1, "no-time"), frame(1, "2026-11-15T17:39:37Z x").substr(0, 6),
+                                 frame(1, "2026-11-15T17:39:37Z x").substr(0, 12), std::string("\x01\x00\x00\x01\x00\x00\x00\x00", 8)}) {
+    EXPECT_THROW(parse_logs(bad, 10), MalformedReply);
+  }
+  EXPECT_THROW(parse_logs(body, 1), MalformedReply) << "more lines than were asked for";
+}
+
 TEST(DockerApi, ParsesTheRuntime) {
   const std::string version = R"({"Version": "26.1.5+dfsg1", "ApiVersion": "1.45", "MinAPIVersion": "1.24", "Os": "linux", "Arch": "arm64"})";
   const std::string info = R"({"NCPU": 4, "MemTotal": 8443518976, "CgroupVersion": "2", "MemoryLimit": false, "SwapLimit": false,

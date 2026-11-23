@@ -12,6 +12,8 @@ louhi-ctl \- Louhi's API from a terminal
 .I ID
 .B \-\-endpoint
 .IR URL ...
+.RB [ \-\-client-secret-file
+.IR FILE ]
 .RB [ \-\-scope
 .IR SCOPE ...]
 .br
@@ -36,7 +38,12 @@ endpoints and scopes to
 and the tokens to
 .IR ~/.config/louhi/credentials.yaml ,
 readable only by the user. The access token is refreshed when less than a
-minute of it is left.
+minute of it is left. Given
+.BR \-\-client-secret-file ,
+a file only its owner may read holding a Lugh service principal's secret,
+.B login
+signs in by the client credentials grant instead, keeps the file's path and
+never the secret, and asks for a new token with it when one runs out.
 .B logout
 removes the tokens.
 .PP
@@ -57,6 +64,10 @@ that may have reached a node is never sent to another.
 .BR list-tasks ,
 .BR describe-task ,
 .BR stop-task ,
+.B logs
+.RB ( \-\-container ,
+.BR \-\-tail ,
+.BR \-\-after ),
 .BR list-nodes .
 A command that takes a JSON document reads it from a file, or from standard
 input given

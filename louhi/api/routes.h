@@ -40,6 +40,7 @@ enum class Operation : uint8_t {
   list_tasks,
   describe_task,
   stop_task,
+  get_task_logs,
   list_nodes,
   status,
   openapi,

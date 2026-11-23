@@ -278,7 +278,11 @@ emulated Ethernet.
   service's healthy tasks, served the same way from any node with public
   reach; HTTP-aware later.
 - **Service discovery**: a name per service resolving to its healthy tasks'
-  addresses, answered on each node from the records.
+  addresses, per VPC. No project depends on Manannan for DNS (the
+  maintainer, 2026-11-23): names are resolved with the system's resolver,
+  or a resolver in Dannan if that is ever simpler; Dannan's DNS responder
+  is dropped. How a service's name reaches a task's resolver is decided
+  when task networking starts, with the maintainer.
 
 On a node, each task has a network namespace and a veth pair whose host
 end sits in a per-VPC routing domain (a VRF). Because VPCs may overlap,

@@ -46,25 +46,29 @@ when it exists; then
 beside it, the environment, and the flags, each overriding the one before.
 .SH OPTIONS
 .TP
-.BI \-\-key " FILE"
+.BI \-\-cluster-key " FILE"
 The cluster key file, the same on every node (required).
 .TP
-.BI \-\-state " DIR"
+.BI \-\-cluster-state " DIR"
 The node's state directory (required).
 .TP
-.BI \-\-bootstrap " HOST:PORT"
+.BI \-\-cluster-bootstrap " HOST:PORT"
 A running node to join by; may be repeated.
 .TP
-.BR \-\-listen ", " \-\-port ", " \-\-advertise
-Dannan's listener (default 0.0.0.0:7437) and the host other nodes reach this
-one at.
+.BR \-\-cluster-listen-address ", " \-\-cluster-listen-port ", " \-\-cluster-listen-advertise
+Dannan's listener and the host other nodes reach this one at.
 .TP
-.BR \-\-name ", " \-\-domain
+.BR \-\-cluster-name ", " \-\-cluster-domain
 A name, and a failure domain.
 .TP
-.BR \-\-heartbeat-ms ", " \-\-status-ms ", " \-\-seconds
-The heartbeat (5000), the status interval (10000), and seconds to run (0, until
-stopped).
+.BR \-\-cluster-heartbeat-ms
+The heartbeat. The rest of
+.B cluster.*
+are Dannan's node settings, shared by every node binary in the stack, as
+Dannan's docs/config.md lists them.
+.TP
+.BR \-\-status-ms ", " \-\-seconds
+The status interval (10000), and seconds to run (0, until stopped).
 .TP
 .BR \-\-log-level ", " \-\-log-format " text|json"
 Logging.
@@ -74,6 +78,24 @@ Docker's socket (default /var/run/docker.sock).
 .TP
 .BR \-\-allow-without-user-namespaces ", " \-\-allow-unenforced-memory ", " \-\-allow-unbounded-storage
 Launch tasks although the node lacks that protection; the status says so.
+.TP
+.BI \-\-retain-finished-hours " N"
+How long a finished task's containers and volumes are kept, for its logs and
+output, after it stopped (24).
+.TP
+.BI \-\-host-directory " NAME=PATH"
+A host directory tasks may mount read-only, by
+.IR NAME ;
+may be repeated.
+.TP
+.BI \-\-output-directory " DIR"
+Where each task's output volumes are made, one directory each, owned by root in
+the container, bounded by xfs project quotas, mounted nosuid and nodev.
+.TP
+.BR \-\-offer-cpu-millis ", " \-\-offer-memory-mib
+On a shared machine, the CPU (thousandths of a core) and memory (MiB) this node
+offers tasks; capacity admission counts against the smaller of these and the
+machine.
 .TP
 .BI \-\-registry " DOMAIN"
 A registry images may come from; none listed allows none.

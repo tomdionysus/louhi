@@ -53,8 +53,6 @@ void validate_rules(const std::string& what, const std::vector<SecurityRule>& ru
   }
 }
 
-uint32_t mask_of(uint8_t length) noexcept { return length == 0 ? 0 : ~uint32_t{0} << (32 - length); }
-
 }  // namespace
 
 Prefix parse_range(std::string_view text) {
@@ -63,7 +61,7 @@ Prefix parse_range(std::string_view text) {
   require(prefix.address.is_v4(), "a range is IPv4");
   // One spelling per range: what is printed back is what was written.
   require(prefix.address.to_string() + "/" + std::to_string(prefix.length) == text, "a range is written a.b.c.d/n with no leading zeros");
-  require((prefix.address.to_v4().to_uint() & ~mask_of(prefix.length)) == 0, "a range has no host bits set");
+  // Host bits set are refused by Prefix::parse itself (Dannan 0.10.0).
   return prefix;
 }
 

@@ -42,11 +42,8 @@ namespace louhi::admit {
 using Bytes = dannan::agree::Bytes;
 
 // Names one call, made where the call is made: sixteen random bytes.
-struct RequestId {
-  std::array<uint8_t, 16> bytes{};
-  auto operator<=>(const RequestId&) const = default;
-  static RequestId random();
-};
+struct RequestTag;
+using RequestId = dannan::identity::RandomId<RequestTag>;
 
 // --- Revision numbers: a register per task definition family.
 

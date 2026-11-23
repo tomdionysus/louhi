@@ -90,6 +90,7 @@
 #include <vector>
 
 #include "dannan/config/config.h"
+#include "dannan/config/node_settings.h"
 #include "dannan/node.h"
 #include "louhi/agent/agent.h"
 #include "louhi/agent/store_bindings.h"
@@ -128,15 +129,10 @@ void say(const std::string& line) {
 }
 
 struct Options {
-  std::string key;
-  std::string state;
-  std::string listen = "0.0.0.0";
-  std::string advertise;
-  uint16_t port = 7437;
-  std::vector<dannan::net::Endpoint> bootstrap;
-  std::string name;
-  std::string domain;
-  std::chrono::milliseconds heartbeat{5000};
+  // What the layers gave, and the node's own settings from them (Dannan's
+  // shared cluster.* settings, dannan/config/node_settings.h).
+  dannan::config::Settings settings;
+  dannan::NodeConfig node;
   std::chrono::milliseconds status{10000};
   int seconds = 0;
   dannan::status::LogLevel log_level = dannan::status::LogLevel::info;
@@ -177,6 +173,8 @@ dannan::net::Endpoint endpoint(const std::string& text) {
 
 // Every setting, its flag, and its variable (LOUHI_ and the key in
 // capitals), read through the stack's one reader (dannan/config/config.h).
+// The node's own (cluster.key, cluster.state, cluster.listen.port and the
+// rest) are Dannan's shared ones.
 dannan::config::Reader reader() {
   using Kind = dannan::config::Setting::Kind;
   dannan::config::Reader out;
@@ -189,15 +187,7 @@ dannan::config::Reader reader() {
   };
   add("command.version", Kind::toggle, "--version", "print the version and stop");
   add("command.retire", Kind::list, "--retire", "a node id to take out of the agreed roster, with this node stopped; then stop");
-  add("cluster.key", Kind::value, "--key", "the cluster key file");
-  add("cluster.bootstrap", Kind::list, "--bootstrap", "HOST:PORT");
-  add("node.state", Kind::value, "--state", "the state directory");
-  add("node.name", Kind::value, "--name", "a name");
-  add("node.domain", Kind::value, "--domain", "a failure domain");
-  add("node.listen", Kind::value, "--listen", "an address");
-  add("node.port", Kind::value, "--port", "a port, 0 to 65535");
-  add("node.advertise", Kind::value, "--advertise", "a host");
-  add("timing.heartbeat_ms", Kind::value, "--heartbeat-ms", "milliseconds");
+  dannan::config::add_node_settings(out, "LOUHI");
   add("timing.status_ms", Kind::value, "--status-ms", "milliseconds");
   add("timing.seconds", Kind::value, "--seconds", "seconds to run, 0 until stopped");
   add("log.level", Kind::value, "--log-level", "a log level");
@@ -237,10 +227,11 @@ dannan::config::Reader reader() {
 }
 
 Options parse(int argc, char** argv) {
-  const auto settings = reader().read(std::vector<std::string>(argv + 1, argv + argc));
+  Options out;
+  out.settings = reader().read(std::vector<std::string>(argv + 1, argv + argc));
+  const auto& settings = out.settings;
   if (!settings.positional.empty()) throw std::runtime_error("unexpected argument " + settings.positional.front());
   for (const auto& warning : settings.warnings) std::cerr << "louhi-node: " << warning << "\n";
-  Options out;
   out.version = settings.toggle("command.version").value_or(false);
   if (out.version) return out;
   const auto ms = [&](const std::string& key, std::chrono::milliseconds otherwise) {
@@ -252,15 +243,9 @@ Options parse(int argc, char** argv) {
     if (!id) throw settings.refuse("command.retire", "a node id, 32 hex digits");
     out.retire.push_back(*id);
   }
-  out.key = settings.path_of("cluster.key").value_or("");
-  for (const auto& seed : settings.list("cluster.bootstrap")) out.bootstrap.push_back(endpoint(seed));
-  out.state = settings.path_of("node.state").value_or("");
-  out.name = settings.text("node.name").value_or("");
-  out.domain = settings.text("node.domain").value_or("");
-  out.listen = settings.text("node.listen").value_or(out.listen);
-  out.port = static_cast<uint16_t>(settings.number("node.port", 0, 65535).value_or(out.port));
-  out.advertise = settings.text("node.advertise").value_or("");
-  out.heartbeat = ms("timing.heartbeat_ms", out.heartbeat);
+  // Louhi's own rule: a state and a cluster key, always.
+  if (!settings.find("cluster.state") || !settings.find("cluster.key")) throw std::runtime_error("--cluster-key and --cluster-state are required");
+  out.node = dannan::config::node_config(settings);
   out.status = ms("timing.status_ms", out.status);
   out.seconds = static_cast<int>(settings.number("timing.seconds", 0, 31536000).value_or(0));
   if (const auto level = settings.text("log.level")) out.log_level = dannan::status::parse_log_level(*level);
@@ -311,7 +296,6 @@ Options parse(int argc, char** argv) {
   out.lir_client_key = settings.path_of("lir.client_key").value_or("");
   out.lir_client_kid = settings.text("lir.client_kid").value_or("");
   out.lir_client_secret = settings.text("lir.client_secret").value_or("");
-  if (out.key.empty() || out.state.empty()) throw std::runtime_error("--key and --state are required");
   if (!out.lir_client_id.empty()) {
     if (out.lugh_issuers.empty()) throw std::runtime_error("--lir-client-id needs a --lugh-issuer to get its token from");
     if (out.lir_client_key.empty() == out.lir_client_secret.empty())
@@ -366,9 +350,7 @@ louhi::node::Facts observe(louhi::runtime::Driver& driver, asio::io_context& io,
 int retire(const Options& options) {
   try {
     asio::io_context io;
-    dannan::NodeConfig config;
-    config.state_path = options.state;
-    config.key = dannan::identity::load_cluster_key(options.key);
+    dannan::NodeConfig config = options.node;
     config.log = dannan::status::console_sink(options.log_format, options.log_level);
     dannan::Node node(io, config);
     for (const auto& id : options.retire) {
@@ -408,18 +390,9 @@ int main(int argc, char** argv) {
 
   int status = 0;
   try {
-    dannan::NodeConfig config;
-    config.state_path = options.state;
-    config.key = dannan::identity::load_cluster_key(options.key);
-    config.listen_host = options.listen;
-    config.advertise_host = options.advertise;
-    config.port = options.port;
-    config.bootstrap = options.bootstrap;
-    config.node_name = options.name;
-    config.failure_domain = options.domain;
-    config.heartbeat = options.heartbeat;
-    config.dead_after = options.heartbeat * 6;
-    config.telemetry_interval = options.heartbeat;
+    dannan::NodeConfig config = options.node;
+    config.dead_after = config.heartbeat * 6;
+    config.telemetry_interval = config.heartbeat;
     config.version = std::string("louhi-node ") + louhi::kVersion;
     config.log = dannan::status::console_sink(options.log_format, options.log_level);
     // Held so it can be destroyed before the io threads end: its client's
@@ -512,6 +485,7 @@ int main(int argc, char** argv) {
     auto agent = std::make_shared<louhi::agent::Agent>(driver, desired, agent_reports, self, clock, io.get_executor(), context.logger("louhi.agent"), policy);
 
     node.start();
+    for (const auto& revocation : dannan::config::node_revocations(options.settings)) context.identity().revoke(revocation);
     context.nodes().advertise("louhi", {});
 #ifdef LOUHI_WITH_LUGH
     if (service_token) service_token->start();

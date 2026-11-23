@@ -82,6 +82,16 @@ configure() {
   cmake --build "$out/$dir" -j "$jobs"
 }
 
+# A sanitizer step's Dannan must carry the runtime's symbols (Dannan's
+# docs/building.md): a library built without them would be linked silently.
+instrumented() {
+  library=$(find "$out/$1/_deps/dannan-build" -name 'libdannan.so.*' -type f | head -1)
+  if [ -z "$library" ] || [ "$(nm -D --undefined-only "$library" | grep -c "$2")" = 0 ]; then
+    echo "Dannan's library in $1 carries no $2 symbols"
+    exit 1
+  fi
+}
+
 case "$step" in
   check)
     cd "$top"
@@ -110,12 +120,17 @@ case "$step" in
     ;;
   asan)
     flags="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
-    configure asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLOUHI_WARNINGS_AS_ERRORS=OFF -DCMAKE_CXX_FLAGS="$flags" -DCMAKE_EXE_LINKER_FLAGS="$flags" -DCMAKE_SHARED_LINKER_FLAGS="$flags"
+    # DANNAN_SANITIZE instruments Dannan and Dagda as well (Dannan 0.10.0);
+    # the library is checked to carry the runtime, so an uninstrumented one is
+    # never linked unseen.
+    configure asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLOUHI_WARNINGS_AS_ERRORS=OFF -DDANNAN_SANITIZE=address -DCMAKE_CXX_FLAGS="$flags" -DCMAKE_EXE_LINKER_FLAGS="$flags" -DCMAKE_SHARED_LINKER_FLAGS="$flags"
+    instrumented asan __asan_
     ASAN_OPTIONS=detect_stack_use_after_return=1 UBSAN_OPTIONS=print_stacktrace=1 "$out/asan/louhi_tests"
     ;;
   tsan)
     flags="-fsanitize=thread -fno-omit-frame-pointer"
-    configure tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLOUHI_WARNINGS_AS_ERRORS=OFF -DCMAKE_CXX_FLAGS="$flags" -DCMAKE_EXE_LINKER_FLAGS="$flags" -DCMAKE_SHARED_LINKER_FLAGS="$flags"
+    configure tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLOUHI_WARNINGS_AS_ERRORS=OFF -DDANNAN_SANITIZE=thread -DCMAKE_CXX_FLAGS="$flags" -DCMAKE_EXE_LINKER_FLAGS="$flags" -DCMAKE_SHARED_LINKER_FLAGS="$flags"
+    instrumented tsan __tsan_
     # Dannan's suppressions, from the Dannan this build fetched: the Asio
     # internals TSan cannot model (its executor count's fence, its kqueue
     # reactor), which Louhi meets on the same Asio. Nothing of Louhi's is

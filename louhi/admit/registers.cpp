@@ -86,13 +86,6 @@ dannan::agree::Change guarded(std::function<dannan::agree::Changed(std::span<con
 
 }  // namespace
 
-RequestId RequestId::random() {
-  const auto fresh = dannan::identity::random_bytes(16);
-  RequestId id;
-  std::copy_n(fresh.begin(), id.bytes.size(), id.bytes.begin());
-  return id;
-}
-
 Bytes encode(const RevisionCounter& counter) {
   if (counter.given.size() > remembered_requests) throw std::invalid_argument("a revision counter remembers too many requests");
   auto writer = begin(Form::revision_counter);

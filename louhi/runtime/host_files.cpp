@@ -85,6 +85,20 @@ void bound(const std::string& path, uint64_t bytes) {
 #endif
 }
 
+// Clears a project's limits on the file system holding `root`.
+void unbound(const std::string& root, uint32_t project) {
+  const Descriptor dir(::open(root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+  if (dir.get() < 0) throw failure("opening " + root);
+  struct fs_disk_quota quota{};
+  quota.d_version = FS_DQUOT_VERSION;
+  quota.d_flags = FS_PROJ_QUOTA;
+  quota.d_id = project;
+  quota.d_fieldmask = FS_DQ_BHARD | FS_DQ_BSOFT;
+#ifdef SYS_quotactl_fd
+  if (::syscall(SYS_quotactl_fd, dir.get(), QCMD(Q_XSETQLIM, PRJQUOTA), project, &quota) != 0) throw failure("clearing the bound under " + root);
+#endif
+}
+
 }  // namespace
 
 std::string LinuxHostFiles::resolve_inside(const std::string& root, const std::string& relative) {
@@ -108,17 +122,29 @@ void LinuxHostFiles::make_output(const std::string& root, const std::string& nam
   struct stat info{};
   if (::lstat(path.c_str(), &info) != 0) throw failure("reading " + path);
   if (!S_ISDIR(info.st_mode)) throw std::runtime_error(path + " is not a directory");
+  // Bounded before it is given away, so the node opens a directory it owns.
+  if (bytes != 0) bound(path, bytes);
   if (::lchown(path.c_str(), uid, gid) != 0) throw failure("giving " + path + " to its owner");
   if (::chmod(path.c_str(), 0700) != 0) throw failure("making " + path + " its owner's alone");
-  if (bytes != 0) bound(path, bytes);
 }
 
 void LinuxHostFiles::remove_output(const std::string& root, const std::string& name) {
   require_segment(name);
+  const std::string path = (fs::path(root) / name).string();
+  // The project its bound was kept under, read before the directory goes.
+  uint32_t project = 0;
+  {
+    const Descriptor dir(::open(path.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+    struct fsxattr attributes{};
+    if (dir.get() >= 0 && ::ioctl(dir.get(), FS_IOC_FSGETXATTR, &attributes) == 0) project = attributes.fsx_projid;
+  }
   std::error_code ec;
   // remove_all removes a link, never what it points to.
-  fs::remove_all(fs::path(root) / name, ec);
-  if (ec) throw std::runtime_error("removing " + (fs::path(root) / name).string() + ": " + ec.message());
+  fs::remove_all(path, ec);
+  if (ec) throw std::runtime_error("removing " + path + ": " + ec.message());
+  // Its limit goes with it, so nothing of the bound stays on the file
+  // system; only a project in Louhi's range (project_of), never Docker's.
+  if (project >= 0x40000000u) unbound(root, project);
 }
 
 }  // namespace louhi::runtime

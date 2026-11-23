@@ -220,6 +220,27 @@ struct VolumeInfo {
   bool operator==(const VolumeInfo&) const = default;
 };
 
+enum class LogStream : uint8_t { out, err };
+
+// One line a container wrote, as the runtime kept it.
+struct LogLine {
+  LogStream stream = LogStream::out;
+  // When the runtime took it, Unix nanoseconds.
+  uint64_t unix_ns = 0;
+  // Valid UTF-8, without its newline; cut at the runtime's bound.
+  std::string text;
+  bool truncated = false;
+  bool operator==(const LogLine&) const = default;
+};
+
+// Which of a container's lines: the last `tail` of those after `after_unix_ns`
+// (none when zero).
+struct LogQuery {
+  uint32_t tail = 100;
+  uint64_t after_unix_ns = 0;
+  bool operator==(const LogQuery&) const = default;
+};
+
 // Something happened to one of Louhi's containers. A prompt to look, never the
 // truth: the agent re-lists rather than trusting a sequence of events.
 struct ContainerEvent {
@@ -271,6 +292,11 @@ class Driver {
   virtual void remove(const std::string& id, Deadline deadline, Executor executor, Completion<Done> done) = 0;
   // Every container of Louhi's on this node, as it is now.
   virtual void list(Deadline deadline, Executor executor, Completion<std::vector<ContainerInfo>> done) = 0;
+
+  // What a container wrote, running or exited, oldest first: at most
+  // query.tail lines, each after query.after_unix_ns. not_found for a
+  // container that is not here.
+  virtual void logs(const std::string& id, const LogQuery& query, Deadline deadline, Executor executor, Completion<std::vector<LogLine>> done) = 0;
 
   // Events about Louhi's containers, posted to `executor` in order, until
   // unwatch(). If the stream is lost (the runtime restarted), `lost` is posted

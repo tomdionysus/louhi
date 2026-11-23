@@ -24,11 +24,11 @@ is to keep its records, [Lugh](https://github.com/tomdionysus/lugh) signs caller
 
 ### From the Debian package
 
-On Debian 13, with Dannan's and Dagda's packages (`libdannan0.9`, `libdagda0.3.2`)
+On Debian 13, with Dannan's and Dagda's packages (`libdannan0.11`, `libdagda0.4.0`)
 where apt can find them, as the stack's apt repository has them:
 
 ```
-sudo apt install ./louhi_0.2.1_arm64.deb
+sudo apt install ./louhi_0.3.0_arm64.deb
 ```
 
 The package installs `louhi-node` and `louhi-ctl` in `/usr/bin`, the node's example
@@ -60,7 +60,7 @@ sudo apt-get install g++ cmake ninja-build git ca-certificates \
 
 That is a C++20 compiler, CMake 3.24 or later, Boost 1.83 or later, OpenSSL 3 and
 yaml-cpp; GoogleTest only for the tests. The build fetches the sibling projects at pinned
-versions into the build tree: Dannan `0.9.2`, Dagda `0.3.2` and Lugh's client, and Lir's
+versions into the build tree: Dannan `0.11.1`, Dagda `0.4.0` and Lugh's client (`0.6.0`), and Lir's
 client only when the events are asked for.
 
 The simplest build is `tools/ci.sh`, which takes each sibling from a checkout beside this
@@ -138,10 +138,10 @@ A first node, serving the API over plain HTTP (the package's example configurati
 # /etc/louhi/config.yaml
 cluster:
   key: /etc/louhi/cluster.key
-node:
   state: /var/lib/louhi
-  advertise: 10.0.0.10        # the address other nodes reach this one at
-  port: 7437                  # Dannan's port (the default)
+  listen:
+    advertise: 10.0.0.10      # the address other nodes reach this one at
+    port: 7437                # Dannan's port
 registries:
   allow: [docker.io]          # where images may come from; none listed allows none
 api:
@@ -173,12 +173,21 @@ The settings, by key and flag:
 
 | Key | Flag | Meaning |
 |---|---|---|
-| `cluster.key` | `--key` | The cluster key file (required) |
-| `cluster.bootstrap` | `--bootstrap` | `HOST:PORT` of a node to join by; a list |
-| `node.state` | `--state` | The state directory (required) |
-| `node.listen`, `node.port`, `node.advertise` | `--listen`, `--port`, `--advertise` | Dannan's listener (default `0.0.0.0:7437`) and the host others reach |
-| `node.name`, `node.domain` | `--name`, `--domain` | A name, and a failure domain |
-| `timing.heartbeat_ms`, `timing.status_ms`, `timing.seconds` | `--heartbeat-ms`, `--status-ms`, `--seconds` | Heartbeat (5000), status interval (10000), seconds to run (0, until stopped) |
+| `cluster.key` | `--cluster-key` | The cluster key file (required) |
+| `cluster.state` | `--cluster-state` | The state directory (required) |
+| `cluster.bootstrap` | `--cluster-bootstrap` | `HOST:PORT` of a node to join by; a list |
+| `cluster.listen.address`, `.port`, `.advertise` | `--cluster-listen-address`, `-port`, `-advertise` | Dannan's listener and the host others reach |
+| `cluster.name`, `cluster.domain` | `--cluster-name`, `--cluster-domain` | A name, and a failure domain |
+| `cluster.heartbeat_ms` and the rest of `cluster.*` | `--cluster-...` | Dannan's node settings, shared by every node binary in the stack: Dannan's `docs/config.md` lists them all |
+| `timing.status_ms`, `timing.seconds` | `--status-ms`, `--seconds` | Status interval (10000), seconds to run (0, until stopped) |
+
+**Renamed in 0.3.0.** The node's own settings are Dannan's shared ones now. A
+configuration from 0.2 renames `node.state` to `cluster.state`, `node.name` and
+`node.domain` to `cluster.name` and `cluster.domain`, `node.listen` and `node.port` to
+`cluster.listen.address` and `cluster.listen.port`, `node.advertise` to
+`cluster.listen.advertise`, and `timing.heartbeat_ms` to `cluster.heartbeat_ms`; the flags
+follow (`--key` is `--cluster-key`, `--state` is `--cluster-state`). An old key in a file
+is warned about and ignored; an old flag is refused.
 | `log.level`, `log.format` | `--log-level`, `--log-format` | Logging |
 | `runtime.docker_socket` | `--docker-socket` | Docker's socket (default `/var/run/docker.sock`) |
 | `runtime.allow_*` | `--allow-*` | The three overrides above |
@@ -249,7 +258,7 @@ against the majority until it is retired. On each remaining node in turn, with t
 stopped (the command opens its state and is refused while it runs):
 
 ```
-louhi-node --key cluster.key --state /var/lib/louhi --retire <node id>
+louhi-node --cluster-key cluster.key --cluster-state /var/lib/louhi --retire <node id>
 #   {"event":"retire","id":"...","retired":true}
 ```
 
@@ -310,6 +319,7 @@ or failure, 2 for a usage error.
 | `list-tasks` | `louhi-ctl list-tasks web --limit 50 --next <task id>` |
 | `describe-task` | `louhi-ctl describe-task web <task id>` |
 | `stop-task` | `louhi-ctl stop-task web <task id> --reason 'done with it'` |
+| `logs` | `louhi-ctl logs web <task id> --container app --tail 200 --after <a reply's next>` |
 | `list-nodes` | `louhi-ctl list-nodes` |
 
 A quota, and a task definition:
@@ -347,7 +357,10 @@ directory made for the task in the output area, named as the volume is on the no
 (`louhi-<task>-<volume>`), owned by the container's root, bounded by an xfs project quota
 to its `size_mib`, and mounted `nosuid,nodev`. It is kept with the task's containers and
 removed with them. Whatever reads it reads a workload's files: follow no link in it and run
-nothing from it.
+nothing from it. Making, bounding and removing these directories takes four capabilities,
+which the packaged service has as the `louhi` user: `CAP_CHOWN`, `CAP_FOWNER`,
+`CAP_DAC_OVERRIDE` and `CAP_SYS_ADMIN` (the quota). A node run another way needs them too,
+or root.
 
 **Endpoint failover.** Any node serves the API, so each call goes to the endpoints in
 turn until one answers: past one that cannot be connected to, and for a read past one that
@@ -380,6 +393,7 @@ JSON over HTTP/1.1. Every request carries `Authorization: Bearer <Lugh access to
 | `GET /v1/projects/{project}/tasks` | ListTasks | `louhi:{project}:read` |
 | `GET /v1/projects/{project}/tasks/{task}` | DescribeTasks | `louhi:{project}:read` |
 | `POST /v1/projects/{project}/tasks/{task}/stop` | StopTask | `louhi:{project}:run` |
+| `GET /v1/projects/{project}/tasks/{task}/logs` | GetTaskLogs | `louhi:{project}:read` |
 
 `/v1/openapi.json` is the OpenAPI document, written from the same route table the API
 dispatches from. `/v1/status` is the node as it sees itself: its id, version, readiness
@@ -399,10 +413,13 @@ What works today, on one node: the records and their codecs; the Docker driver w
 hardened profile, limits and storage bounds; images by digest from allowed registries;
 read-only host directories and bounded output directories; the agent, with restart,
 backoff, the parked state and the retention of finished tasks; `louhi-node`; the API with
-Lugh sign-in, project scopes, quota and node-capacity admission; and `louhi-ctl`, for a
-person or a service principal. Events on Lir are written and tested but wait for Lir's
-broker to take retained messages and wills (see "Events on Lir"). A task's logs come with
-Louhi's move to Dannan 0.10.x.
+Lugh sign-in, project scopes, quota and node-capacity admission, and a task's logs; and
+`louhi-ctl`, for a person or a service principal. Events on Lir are written and tested but
+wait for Lir's broker to take retained messages and wills (see "Events on Lir").
+
+A task's logs are read from the node it runs on (another node answers 409, `elsewhere`,
+naming it), while its containers are kept: for a finished task, `runtime.retain_finished_hours`.
+Each call answers at most 400 lines and a `next`, the last line's time, to pass as `after`.
 
 What it does not do yet:
 

@@ -25,7 +25,6 @@ add_library(louhi STATIC
   api/routes.cpp
   events/events.cpp
   model/codec.cpp
-  model/ids.cpp
   model/image.cpp
   model/keys.cpp
   model/names.cpp

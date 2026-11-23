@@ -32,6 +32,7 @@ constexpr Route table[] = {
     {"GET", "/v1/projects/{project}/tasks", Scope::read, Operation::list_tasks, "ListTasks", "A project's tasks"},
     {"GET", "/v1/projects/{project}/tasks/{task}", Scope::read, Operation::describe_task, "DescribeTasks", "A task and every node's status of it"},
     {"POST", "/v1/projects/{project}/tasks/{task}/stop", Scope::run, Operation::stop_task, "StopTask", "Ask a task to stop"},
+    {"GET", "/v1/projects/{project}/tasks/{task}/logs", Scope::read, Operation::get_task_logs, "GetTaskLogs", "What one of a task's containers wrote"},
 };
 
 }  // namespace

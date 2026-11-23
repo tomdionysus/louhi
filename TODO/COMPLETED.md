@@ -4,6 +4,53 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## 0.3.0 released: onto Dannan 0.11.1, a task's logs, and the neptune trial (2026-11-23)
+
+- **Pins:** Dannan 0.11.1, Dagda 0.4.0, Lugh 0.6.0; Lir develop `1223ea2`
+  (its client on Dannan 0.11.1) for the events build; the package builds
+  against `libdannan-dev (>= 0.11.1, << 0.12~)` and `libdagda-dev (>=
+  0.4.0, << 0.4.1~)`.
+- **Adopted from Dannan:** the node's own settings through
+  `add_node_settings` and `node_config` under `cluster.*` (renamed for
+  operators: README note); `RandomId<Tag>` for task and request ids
+  (`model/ids.cpp` gone); `encoding::base64url` for the registry
+  credential; `Prefix::parse`'s host-bits refusal (Louhi's own check
+  gone); the fuzz targets on `dannan::fuzz` with seeds, run by
+  `fuzz_smoke_test` in `louhi_tests` on every gate; `DANNAN_SANITIZE` in
+  the ASan and TSan steps with the library checked for the runtime.
+- **GetTaskLogs (step e):** `Driver::logs`, Docker's multiplexed log
+  stream parsed and bounded (`parse_logs`, fuzzed), nanosecond times,
+  text made UTF-8 by Dannan's `utf8_length`; `GET
+  /v1/projects/{project}/tasks/{task}/logs` (409 `elsewhere` from another
+  node, 404 once the containers are gone, 400 lines at most, `next` for
+  paging); `louhi-ctl logs`.
+- **Packaging:** the service keeps the `louhi` user with four
+  capabilities for output volumes (the maintainer, 2026-11-23: CAP_CHOWN,
+  CAP_FOWNER, CAP_SYS_ADMIN, and CAP_DAC_OVERRIDE to remove what a task
+  left); an output directory is bounded before it is given away, and its
+  quota limit is cleared when it is removed (found by the trial).
+- **The trial on neptune** (the maintainer's yes, 2026-11-22/23): a
+  `louhi-node` from the build tree, its own Dannan cluster (port 7637),
+  signed in against neptune's Lugh 0.6.0 (an admin client for the project
+  and quota, a service principal for the rest); Louhi's own tests ran as a
+  task in `debian:trixie` (the build tree and host libraries read-only, a
+  64 MiB output volume): **160 passed**, read back by `louhi-ctl logs` and
+  from the output directory (owned by the remapped root, xfs project
+  quota of 64 MiB confirmed with `xfs_io`). Everything removed after,
+  with board notes. A slip in the teardown script compared quota ids as
+  strings and cleared stale Docker project limits too; neptune had no
+  container or size-bounded volume then, so nothing was unbounded; fixed.
+- **Tests:** 422 to **429** (431 with Lir on).
+- **Gates:** release on node-d 427 passed, 2 skipped; release on node-c
+  **429 of 429** with the xfs quota test, twice (the trial's build and the
+  quota-limit fix); clang 427, ASan and TSan 427 each (no report, the
+  library instrumented), events 430 (2 skipped: no xfs); fuzz, four
+  targets 60 s each, no crash.
+- **Decided on the way:** service discovery depends on no other project's
+  DNS (the maintainer, 2026-11-23; a request to Manannan withdrawn);
+  Dannan's DNS client (0.13.0), process runner and node-program helper
+  (0.12.0) are noted in ACTIVE.md; no preferred node (the maintainer).
+
 ## 0.2.1 released: the node's offer on a shared machine (2026-11-23)
 
 - **Why:** on neptune Louhi's cores are one 2-core claim on the board, but

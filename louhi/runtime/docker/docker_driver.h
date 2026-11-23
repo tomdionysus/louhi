@@ -60,6 +60,7 @@ class DockerDriver final : public Driver {
   void stop(const std::string& id, std::chrono::seconds grace, Deadline deadline, Executor executor, Completion<Done> done) override;
   void remove(const std::string& id, Deadline deadline, Executor executor, Completion<Done> done) override;
   void list(Deadline deadline, Executor executor, Completion<std::vector<ContainerInfo>> done) override;
+  void logs(const std::string& id, const LogQuery& query, Deadline deadline, Executor executor, Completion<std::vector<LogLine>> done) override;
   uint64_t watch(Executor executor, std::function<void(ContainerEvent)> event, std::function<void(Error)> lost) override;
   void unwatch(uint64_t id) override;
 

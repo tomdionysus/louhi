@@ -90,6 +90,10 @@ class Api {
   // How long registering a definition waits on the registries to resolve its
   // images.
   static constexpr runtime::Deadline resolve_deadline{30'000};
+  // The most log lines one GetTaskLogs answers, and how long it waits on the
+  // runtime.
+  static constexpr uint32_t max_log_lines = 400;
+  static constexpr runtime::Deadline logs_deadline{30'000};
 
   // The store, the clock and the runtime outlive this. `self` is this node:
   // tasks are placed on it until placement across nodes exists (step 6).
@@ -127,6 +131,10 @@ class Api {
   void list_tasks(const Path& path, const Request& request, Done done);
   void describe_task(const Path& path, Done done);
   void stop_task(const Grant& grant, const Path& path, const Request& request, Done done);
+  // What one of a task's containers wrote, from this node's runtime: the
+  // task's node only (409, elsewhere, naming it, from any other), while its
+  // containers are kept (404 once retention has removed them).
+  void get_task_logs(const Path& path, const Request& request, Done done);
   void list_nodes(const Request& request, Done done);
   // This node as it sees itself: its last report and the store's state, the
   // report's detail for louhi:admin only.

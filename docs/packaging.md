@@ -22,7 +22,7 @@ CMake install rules decide where every file goes.
 
 ## Dependencies
 
-- `libdannan0.9` (at least 0.9.2) and `libdagda0.3.2`, the shared libraries of
+- `libdannan0.11` (at least 0.11.1) and `libdagda0.4.0`, the shared libraries of
   Dannan's and Dagda's packages, through `${shlibs:Depends}`. Neither is
   bundled. Building needs `libdannan-dev` and `libdagda-dev`.
 - Lugh's client has no package (Lugh 0.2.0 packages only its node). It is
@@ -90,7 +90,7 @@ lintian --fail-on error,warning build-deb/*.changes
 
 The packages are written to `build-deb/`. `debian/rules` configures with
 `LOUHI_FETCH_DEPENDENCIES=OFF`, so CMake finds the installed Dannan and Dagda
-(`find_package(dannan 0.9.2 CONFIG)`, `find_package(dagda 0.3.2 CONFIG)`)
+(`find_package(dannan 0.11.1 CONFIG)`, `find_package(dagda 0.4.0 CONFIG)`)
 rather than fetching them, `LOUHI_BUILD_LIR=OFF`, and `LOUHI_BUILD_TESTING=OFF`:
 the tests are the gate's (`tools/ci.sh release`), on the same sources. Lugh's
 client is cloned during the build from `LOUHI_LUGH_REPOSITORY`, else the

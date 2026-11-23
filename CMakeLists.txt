@@ -7,7 +7,7 @@
 
 cmake_minimum_required(VERSION 3.24)
 
-project(louhi VERSION 0.2.1 LANGUAGES CXX)
+project(louhi VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -46,7 +46,7 @@ include(FetchContent)
 # Not a cache variable: a moved pin must take effect in a build tree that
 # already exists. Installed, it is the least patch of the minor accepted
 # (Dannan keeps its ABI across a minor's patches).
-set(LOUHI_DANNAN_TAG "0.9.2")
+set(LOUHI_DANNAN_TAG "0.11.1")
 if(LOUHI_FETCH_DEPENDENCIES)
   # A string, not a path: CI names a URL, which a PATH cache entry would turn
   # into a directory under the source tree.
@@ -66,7 +66,7 @@ endif()
 # without the Dagda store, its records then kept in memory only.
 option(LOUHI_BUILD_DAGDA "Build the store on Dagda's head spaces" ON)
 if(LOUHI_BUILD_DAGDA)
-  set(LOUHI_DAGDA_TAG "0.3.2")
+  set(LOUHI_DAGDA_TAG "0.4.0")
   if(LOUHI_FETCH_DEPENDENCIES)
     set(LOUHI_DAGDA_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../dagda" CACHE STRING "Dagda's repository: a directory or a URL")
     FetchContent_Declare(dagda GIT_REPOSITORY "${LOUHI_DAGDA_REPOSITORY}" GIT_TAG "${LOUHI_DAGDA_TAG}" EXCLUDE_FROM_ALL)
@@ -85,8 +85,8 @@ endif()
 option(LOUHI_BUILD_LUGH "Build the Lugh plugin and the API's sign-in" ON)
 if(LOUHI_BUILD_LUGH)
   set(LOUHI_LUGH_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../lugh" CACHE STRING "Lugh's repository: a directory or a URL")
-  # Lugh's release, on the same Dannan (0.9.2).
-  set(LOUHI_LUGH_REF "0.2.0")
+  # Lugh's release, on the same Dannan minor (0.11).
+  set(LOUHI_LUGH_REF "0.6.0")
   FetchContent_Declare(lugh GIT_REPOSITORY "${LOUHI_LUGH_REPOSITORY}" GIT_TAG "${LOUHI_LUGH_REF}")
   set(LUGH_BUILD_NODE OFF CACHE BOOL "" FORCE)
   # Lugh's warnings are errors as Louhi's are: in the release and clang gates,
@@ -97,15 +97,16 @@ if(LOUHI_BUILD_LUGH)
 endif()
 
 # Lir's client, for publishing Louhi's events (design, "Events"), at a commit
-# of its develop on Louhi's Dannan, which it takes rather than fetching its
-# own. Only lir::mqtt and lir::client are built. Off by default, so a release
-# carries no events: Lir's releases ship no client until liblir-client0.1, and
-# this pin is the withdrawn one (2026-11-20). On builds and tests the events
-# code against it (tools/ci.sh events).
+# of its develop on Louhi's Dannan (0.11.1), which it takes rather than
+# fetching its own. Only lir::mqtt and lir::client are built. Off by default,
+# so a release carries no events: Lir's broker does not yet take the retained
+# messages and wills they depend on (Lir 0.3.0, after Dagda's D5 and D6), and
+# Lir's 0.2.0 release is on Dannan 0.10.2. On builds and tests the events code
+# against it (tools/ci.sh events); the pin moves to Lir 0.3.0's tag.
 option(LOUHI_BUILD_LIR "Build the events publisher on Lir's client (unreleased; see above)" OFF)
 if(LOUHI_BUILD_LIR)
   set(LOUHI_LIR_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../lir" CACHE STRING "Lir's repository: a directory or a URL")
-  set(LOUHI_LIR_REF "e40dd2e4fda06b24546b3f68df11fcc9344e7cab")
+  set(LOUHI_LIR_REF "1223ea237b54befaf873c51272ba747763fb869c")
   FetchContent_Declare(lir GIT_REPOSITORY "${LOUHI_LIR_REPOSITORY}" GIT_TAG "${LOUHI_LIR_REF}")
   set(LIR_BUILD_SERVER OFF CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(lir)

@@ -17,6 +17,12 @@ wiped that day.
 - **Gate** at `92cb640`: release, clang (with Docker), ASan and TSan on
   node-b and node-a, **420 passed, 2 skipped** each (no xfs), no sanitizer
   report; events (Lir on) **423 passed, 2 skipped**.
+- **The deb** from the tag on node-c: `louhi_0.2.1_arm64.deb` and its
+  dbgsym, lintian clean.
+- **Cut:** squashed onto `main` as `2b8cf32` "Release 0.2.1", tag `0.2.1`;
+  `main` merged back into `develop`, trees identical. The board's Mac guard
+  is off since (the maintainer, 2026-11-23): `build/pi.sh <pi> clang` runs
+  again under a claim.
 
 ## 0.2.0 released: what the build cluster needs to run on Louhi (2026-11-22)
 

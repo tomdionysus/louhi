@@ -42,8 +42,9 @@ class HostFiles {
   // Throws std::runtime_error when it cannot, naming why.
   virtual void make_output(const std::string& root, const std::string& name, uint32_t uid, uint32_t gid, uint64_t bytes) = 0;
 
-  // Removes root/name and all below it, following no link; no directory is
-  // no error. Throws std::runtime_error when it cannot.
+  // Removes root/name and all below it, following no link, and clears the
+  // limit of the project its bound was kept under; no directory is no error.
+  // Throws std::runtime_error when it cannot.
   virtual void remove_output(const std::string& root, const std::string& name) = 0;
 };
 

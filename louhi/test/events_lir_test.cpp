@@ -120,6 +120,8 @@ class FakeNodes final : public dannan::Nodes {
   void unwatch_partition(uint64_t) override {}
   std::set<NodeId> members() const override { return {}; }
   bool retire(const NodeId&) override { return false; }
+  std::optional<std::chrono::milliseconds> clock_offset(const NodeId&) const override { return std::nullopt; }
+  bool clock_in_bounds() const override { return true; }
 };
 
 // A node of Lir as the roster shows one: the "lir" advert, and where it

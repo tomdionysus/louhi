@@ -30,6 +30,7 @@
 #include "dannan/test/fixtures/stepped_time.h"
 #include "louhi/model/codec.h"
 #include "louhi/model/keys.h"
+#include "louhi/runtime/labels.h"
 #include "louhi/store/memory_store.h"
 #include "louhi/test/fixtures/fake_driver.h"
 #include "louhi/test/fixtures/records.h"
@@ -757,4 +758,94 @@ TEST_F(ApiTest, ADigestThatIsNotOneRegistersNothing) {
   EXPECT_EQ(code(r), "internal");
   images.digests["alpine:3.20"] = alpine_digest;
   EXPECT_EQ(register_definition(), 1u);
+}
+
+// GetTaskLogs: what one of a task's containers wrote, from the node it runs
+// on, while its containers are kept; the container named, or the only one;
+// paged by the last line's time.
+namespace {
+
+struct LogsTest : ApiTest {
+  std::string id;
+
+  void SetUp() override {
+    make_project();
+    register_definition();
+    auto run = call(web, "POST", "/v1/projects/web/tasks", R"({"family":"frontend"})");
+    id = std::string(run.body.at("tasks").as_array()[0].at("id").as_string());
+  }
+
+  // The task's container as the agent would have made it.
+  std::string launched(const std::string& container) {
+    runtime::ContainerSpec spec;
+    spec.name = runtime::container_name(*model::TaskId::parse(id), container);
+    spec.image = "alpine:3.20";
+    spec.labels = {{std::string(runtime::label_task), id}, {std::string(runtime::label_container), container}};
+    return images.add(spec, runtime::ContainerState::exited);
+  }
+};
+
+}  // namespace
+
+TEST_F(LogsTest, TheOnlyContainersLinesArePagedByTime) {
+  const std::string container = launched("app");
+  images.write_logs(container, {{runtime::LogStream::out, 1'000, "one", false},
+                                {runtime::LogStream::err, 2'000, "two", false},
+                                {runtime::LogStream::out, 3'000, std::string(10, 'x'), true}});
+  auto r = call(grant_of({"louhi:web:read"}), "GET", "/v1/projects/web/tasks/" + id + "/logs", "", {{"tail", "2"}});
+  ASSERT_EQ(r.status, 200u) << json::serialize(r.body);
+  EXPECT_EQ(r.body.at("container"), "app");
+  const auto& lines = r.body.at("lines").as_array();
+  ASSERT_EQ(lines.size(), 2u) << "the last two";
+  EXPECT_EQ(lines[0].at("stream"), "stderr");
+  EXPECT_EQ(lines[0].at("text"), "two");
+  EXPECT_EQ(lines[1].at("truncated"), true);
+  EXPECT_FALSE(lines[0].as_object().contains("truncated"));
+  EXPECT_EQ(r.body.at("next"), "3000");
+
+  auto after = call(grant_of({"louhi:web:read"}), "GET", "/v1/projects/web/tasks/" + id + "/logs", "", {{"after", "1000"}});
+  EXPECT_EQ(after.body.at("lines").as_array().size(), 2u);
+  auto none = call(grant_of({"louhi:web:read"}), "GET", "/v1/projects/web/tasks/" + id + "/logs", "", {{"after", "3000"}});
+  EXPECT_TRUE(none.body.at("lines").as_array().empty());
+  EXPECT_FALSE(none.body.as_object().contains("next")) << "nothing new: the caller keeps its after";
+}
+
+TEST_F(LogsTest, AContainerIsNamedWhenTheTaskHasMore) {
+  // The definition registered has one container; a revision of two needs a name.
+  auto two = call(
+      web, "POST", "/v1/projects/web/task-definitions",
+      R"({"family":"pair","cpu_millis":250,"memory_mib":128,"containers":[{"name":"app","image":"alpine:3.20"},{"name":"side","image":"alpine:3.20","essential":false}]})");
+  ASSERT_EQ(two.status, 200u) << json::serialize(two.body);
+  auto run = call(web, "POST", "/v1/projects/web/tasks", R"({"family":"pair"})");
+  id = std::string(run.body.at("tasks").as_array()[0].at("id").as_string());
+  images.write_logs(launched("side"), {{runtime::LogStream::out, 5, "from the side", false}});
+  launched("app");
+  EXPECT_EQ(call(web, "GET", "/v1/projects/web/tasks/" + id + "/logs").status, 400u);
+  auto side = call(web, "GET", "/v1/projects/web/tasks/" + id + "/logs", "", {{"container", "side"}});
+  ASSERT_EQ(side.status, 200u);
+  EXPECT_EQ(side.body.at("lines").as_array()[0].at("text"), "from the side");
+  EXPECT_EQ(call(web, "GET", "/v1/projects/web/tasks/" + id + "/logs", "", {{"container", "Side"}}).status, 400u);
+}
+
+TEST_F(LogsTest, AContainerNotHereIsNotFoundAndBoundsAreKept) {
+  EXPECT_EQ(call(web, "GET", "/v1/projects/web/tasks/" + id + "/logs").status, 404u) << "never launched, or removed";
+  launched("app");
+  for (const char* tail : {"0", "401", "x"}) EXPECT_EQ(call(web, "GET", "/v1/projects/web/tasks/" + id + "/logs", "", {{"tail", tail}}).status, 400u) << tail;
+  EXPECT_EQ(call(web, "GET", "/v1/projects/web/tasks/" + id + "/logs", "", {{"after", "-1"}}).status, 400u);
+  EXPECT_EQ(call(grant_of({"louhi:shop:read"}), "GET", "/v1/projects/web/tasks/" + id + "/logs").status, 403u);
+}
+
+TEST_F(LogsTest, ATaskOnAnotherNodeIsAskedThere) {
+  auto task = model::decode_task(*store.get(model::key([&] {
+    model::Task probe;
+    probe.id = *model::TaskId::parse(id);
+    probe.project = "web";
+    return probe;
+  }())));
+  task.node = test::node_id(0x77);
+  put_raw(model::key(task), model::encode(task));
+  auto r = call(web, "GET", "/v1/projects/web/tasks/" + id + "/logs");
+  EXPECT_EQ(r.status, 409u);
+  EXPECT_EQ(code(r), "elsewhere");
+  EXPECT_NE(std::string(r.body.at("message").as_string()).find(dannan::identity::to_string(test::node_id(0x77))), std::string::npos);
 }

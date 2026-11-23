@@ -7,32 +7,20 @@
 
 #pragma once
 
-#include <array>
-#include <compare>
-#include <cstdint>
-#include <optional>
-#include <string>
-#include <string_view>
-
 #include "dannan/identity/node_id.h"
+#include "dannan/identity/random_id.h"
 
 // Identifiers. A task is named by sixteen random bytes made where it is
 // created, never by a counter, because no node can hand out a cluster-wide
-// sequence. A node is Dannan's NodeId.
+// sequence: Dannan's RandomId, a type of its own (random(), parse() of
+// thirty-two hex digits, to_string() as thirty-two lowercase ones). A node is
+// Dannan's NodeId.
 namespace louhi::model {
 
 using NodeId = dannan::identity::NodeId;
 
-struct TaskId {
-  std::array<uint8_t, 16> bytes{};
-  auto operator<=>(const TaskId&) const = default;
-
-  static TaskId random();
-  // Thirty-two hex digits, either case; empty on anything else.
-  static std::optional<TaskId> parse(std::string_view text);
-};
-
-// Thirty-two lowercase hex digits.
-std::string to_string(const TaskId& id);
+struct TaskTag;
+using TaskId = dannan::identity::RandomId<TaskTag>;
+using dannan::identity::to_string;
 
 }  // namespace louhi::model

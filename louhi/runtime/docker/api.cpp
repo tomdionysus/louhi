@@ -10,7 +10,9 @@
 #include <algorithm>
 #include <boost/json.hpp>
 #include <limits>
+#include <span>
 
+#include "dannan/encoding/base.h"
 #include "dannan/encoding/percent.h"
 #include "louhi/model/image.h"
 #include "louhi/runtime/labels.h"
@@ -257,21 +259,7 @@ std::string registry_auth(const RegistryCredential& credential, const std::strin
   }
   auth["serveraddress"] = domain;
   const std::string text = json::serialize(auth);
-
-  static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-  std::string out;
-  out.reserve((text.size() + 2) / 3 * 4);
-  for (size_t i = 0; i < text.size(); i += 3) {
-    const size_t left = text.size() - i;
-    uint32_t group = static_cast<uint32_t>(static_cast<unsigned char>(text[i])) << 16;
-    if (left > 1) group |= static_cast<uint32_t>(static_cast<unsigned char>(text[i + 1])) << 8;
-    if (left > 2) group |= static_cast<uint32_t>(static_cast<unsigned char>(text[i + 2]));
-    out.push_back(alphabet[(group >> 18) & 0x3f]);
-    out.push_back(alphabet[(group >> 12) & 0x3f]);
-    out.push_back(left > 1 ? alphabet[(group >> 6) & 0x3f] : '=');
-    out.push_back(left > 2 ? alphabet[group & 0x3f] : '=');
-  }
-  return out;
+  return dannan::encoding::base64url(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(text.data()), text.size()), dannan::encoding::Padding::padded);
 }
 
 std::string url_encode(std::string_view text) { return dannan::encoding::percent_encode(text); }
@@ -494,8 +482,34 @@ std::string parse_error_message(std::string_view body) noexcept {
   }
 }
 
-uint64_t parse_time(std::string_view text) {
-  if (text.empty()) return 0;
+namespace {
+
+// A workload's bytes as text: valid UTF-8, each byte that begins no valid
+// sequence replaced by U+FFFD, so it reaches JSON whatever it was.
+std::string valid_text(std::string_view bytes) {
+  std::string out;
+  out.reserve(bytes.size());
+  for (size_t at = 0; at < bytes.size();) {
+    const size_t length = dannan::encoding::utf8_length(bytes, at);
+    if (length == 0) {
+      out += "\xEF\xBF\xBD";
+      ++at;
+    } else {
+      out.append(bytes.substr(at, length));
+      at += length;
+    }
+  }
+  return out;
+}
+
+// An RFC 3339 time in UTC as seconds since the epoch and nanoseconds past
+// them; before 1970, both zero.
+struct Instant {
+  uint64_t seconds = 0;
+  uint32_t nanos = 0;
+};
+
+Instant parse_instant(std::string_view text) {
   // YYYY-MM-DDTHH:MM:SS[.fraction]Z
   if (text.size() < 20 || text.size() > 35 || text[4] != '-' || text[7] != '-' || text[10] != 'T' || text[13] != ':' || text[16] != ':' || text.back() != 'Z') {
     malformed("time is not RFC 3339 in UTC");
@@ -506,18 +520,65 @@ uint64_t parse_time(std::string_view text) {
   const unsigned hour = digits(text, 11, 2);
   const unsigned minute = digits(text, 14, 2);
   const unsigned second = digits(text, 17, 2);
-  unsigned millis = 0;
+  uint32_t nanos = 0;
   if (text.size() > 20) {
     if (text[19] != '.' || text.size() < 22) malformed("time fraction is not RFC 3339");
     const size_t fraction = text.size() - 21;
     if (fraction > 9) malformed("time fraction has more than nine digits");
     digits(text, 20, fraction);
-    for (size_t i = 0; i < 3; ++i) millis = millis * 10 + (i < fraction ? static_cast<unsigned>(text[20 + i] - '0') : 0);
+    for (size_t i = 0; i < 9; ++i) nanos = nanos * 10 + (i < fraction ? static_cast<uint32_t>(text[20 + i] - '0') : 0);
   }
   if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 60) malformed("time field is out of range");
-  if (year < 1970) return 0;
+  if (year < 1970) return {};
   const int64_t days = days_from_civil(year, month, day);
-  return static_cast<uint64_t>(((days * 24 + hour) * 60 + minute) * 60 + second) * 1000 + millis;
+  return {static_cast<uint64_t>(((days * 24 + hour) * 60 + minute) * 60 + second), nanos};
+}
+
+}  // namespace
+
+uint64_t parse_time(std::string_view text) {
+  if (text.empty()) return 0;
+  const Instant at = parse_instant(text);
+  return at.seconds * 1000 + at.nanos / 1'000'000;
+}
+
+uint64_t parse_time_ns(std::string_view text) {
+  const Instant at = parse_instant(text);
+  // Past what 64 bits of nanoseconds hold (the year 2554): not a log's time.
+  if (at.seconds > std::numeric_limits<uint64_t>::max() / 1'000'000'000 - 1) malformed("time is past what nanoseconds hold");
+  return at.seconds * 1'000'000'000 + at.nanos;
+}
+
+std::vector<LogLine> parse_logs(std::string_view body, size_t max_lines) {
+  std::vector<LogLine> lines;
+  size_t at = 0;
+  while (at < body.size()) {
+    // Each frame: the stream (1 stdout, 2 stderr), three zero bytes, the
+    // payload's length (four bytes, big-endian), then the payload.
+    if (body.size() - at < 8) malformed("a log frame's header is cut short");
+    const auto byte = [&](size_t i) { return static_cast<uint8_t>(body[at + i]); };
+    const uint8_t stream = byte(0);
+    if ((stream != 1 && stream != 2) || byte(1) != 0 || byte(2) != 0 || byte(3) != 0) malformed("a log frame is not stdout's or stderr's");
+    const uint32_t size = (uint32_t{byte(4)} << 24) | (uint32_t{byte(5)} << 16) | (uint32_t{byte(6)} << 8) | uint32_t{byte(7)};
+    at += 8;
+    if (size > body.size() - at) malformed("a log frame runs past the reply");
+    std::string_view payload = body.substr(at, size);
+    at += size;
+    if (lines.size() == max_lines) malformed("more log lines than were asked for");
+    // With timestamps: "2026-11-15T17:39:37.123456789Z text\n".
+    const size_t space = payload.find(' ');
+    if (space == std::string_view::npos) malformed("a log line has no timestamp");
+    LogLine line;
+    line.stream = stream == 1 ? LogStream::out : LogStream::err;
+    line.unix_ns = parse_time_ns(payload.substr(0, space));
+    payload.remove_prefix(space + 1);
+    if (!payload.empty() && payload.back() == '\n') payload.remove_suffix(1);
+    line.truncated = payload.size() > max_log_line;
+    if (line.truncated) payload = payload.substr(0, max_log_line);
+    line.text = valid_text(payload);
+    lines.push_back(std::move(line));
+  }
+  return lines;
 }
 
 }  // namespace louhi::runtime::docker

@@ -46,6 +46,7 @@ inline constexpr size_t max_labels = 256;
 inline constexpr size_t max_label_text = 4096;
 inline constexpr size_t max_message = 512;
 inline constexpr size_t max_containers_listed = 10000;
+inline constexpr size_t max_log_line = 16 * 1024;
 
 class MalformedReply : public std::runtime_error {
  public:
@@ -102,5 +103,12 @@ std::string parse_error_message(std::string_view body) noexcept;
 // RFC 3339 in UTC ("2026-11-15T17:39:37.123456789Z") to Unix milliseconds;
 // Docker's zero time ("0001-01-01T00:00:00Z") is 0.
 uint64_t parse_time(std::string_view text);
+// The same to Unix nanoseconds, every digit of the fraction kept.
+uint64_t parse_time_ns(std::string_view text);
+// A container's logs as /containers/<id>/logs?timestamps=1 sends them, with
+// no TTY: frames of stdout and stderr, each one line with its time. At most
+// `max_lines`; a line past max_log_line bytes is cut and marked; text that is
+// not UTF-8 is made so (U+FFFD for each byte that begins no sequence).
+std::vector<LogLine> parse_logs(std::string_view body, size_t max_lines);
 
 }  // namespace louhi::runtime::docker

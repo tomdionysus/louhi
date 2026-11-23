@@ -257,6 +257,27 @@ class FakeDriver final : public runtime::Driver {
     complete(executor, std::move(done),
              failed ? runtime::Result<std::vector<runtime::ContainerInfo>>(*failed) : runtime::Result<std::vector<runtime::ContainerInfo>>(out));
   }
+  // The lines a container wrote, oldest first, kept by id.
+  void write_logs(const std::string& id, std::vector<runtime::LogLine> lines) {
+    std::lock_guard<std::mutex> lock(_mutex);
+    _logs[id] = std::move(lines);
+  }
+  void logs(const std::string& id, const runtime::LogQuery& query, runtime::Deadline, runtime::Executor executor,
+            runtime::Completion<std::vector<runtime::LogLine>> done) override {
+    auto failed = take("logs", id);
+    std::vector<runtime::LogLine> out;
+    if (!failed) {
+      std::lock_guard<std::mutex> lock(_mutex);
+      if (_containers.count(id) == 0) {
+        failed = runtime::Error{runtime::Error::Kind::not_found, "no such container"};
+      } else {
+        for (const auto& line : _logs[id])
+          if (line.unix_ns > query.after_unix_ns) out.push_back(line);
+        if (out.size() > query.tail) out.erase(out.begin(), out.end() - query.tail);
+      }
+    }
+    complete(executor, std::move(done), failed ? runtime::Result<std::vector<runtime::LogLine>>(*failed) : runtime::Result<std::vector<runtime::LogLine>>(out));
+  }
   uint64_t watch(runtime::Executor executor, std::function<void(runtime::ContainerEvent)> event, std::function<void(runtime::Error)> lost) override {
     std::lock_guard<std::mutex> lock(_mutex);
     _calls.push_back("watch");
@@ -310,6 +331,7 @@ class FakeDriver final : public runtime::Driver {
   std::mutex _mutex;
   std::map<std::string, Container> _containers;
   std::map<std::string, runtime::VolumeSpec> _volumes;
+  std::map<std::string, std::vector<runtime::LogLine>> _logs;
   std::map<std::string, runtime::Error> _failures;
   std::set<std::string> _refused_images;
   std::map<uint64_t, Watcher> _watchers;

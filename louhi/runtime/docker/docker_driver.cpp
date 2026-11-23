@@ -7,6 +7,7 @@
 
 #include "louhi/runtime/docker/docker_driver.h"
 
+#include <algorithm>
 #include <boost/asio/post.hpp>
 #include <chrono>
 #include <utility>
@@ -303,6 +304,27 @@ void DockerDriver::list(Deadline deadline, Executor executor, Completion<std::ve
     if (!ids.ok()) return walk->done(ids.error());
     walk->ids = std::move(ids.value());
     Walk::step(walk);
+  });
+}
+
+void DockerDriver::logs(const std::string& id, const LogQuery& query, Deadline deadline, Executor executor, Completion<std::vector<LogLine>> done) {
+  if (!safe_segment(id)) return complete<std::vector<LogLine>>(executor, std::move(done), unsafe("the container id"));
+  if (query.tail == 0) return complete<std::vector<LogLine>>(executor, std::move(done), std::vector<LogLine>{});
+  std::string target = path("/containers/" + id + "/logs?stdout=1&stderr=1&timestamps=1&tail=" + std::to_string(query.tail));
+  // The daemon's since takes a line at that very time too; one is dropped
+  // here, so a caller paging by the last time it saw never sees it twice.
+  if (query.after_unix_ns != 0) {
+    const std::string nanos = std::to_string(query.after_unix_ns % 1'000'000'000);
+    target += "&since=" + std::to_string(query.after_unix_ns / 1'000'000'000) + "." + std::string(9 - nanos.size(), '0') + nanos;
+  }
+  _http->request(http_verb::get, target, "", deadline, executor, [query, done = std::move(done)](Result<Reply> got) {
+    if (!got.ok()) return done(got.error());
+    if (got.value().status != 200) return done(from_status(got.value(), "reading a container's logs"));
+    auto lines = parsed<std::vector<LogLine>>(got.value(), "reading a container's logs", [&](const std::string& body) { return parse_logs(body, query.tail); });
+    if (!lines.ok()) return done(lines.error());
+    auto& kept = lines.value();
+    kept.erase(std::remove_if(kept.begin(), kept.end(), [&](const LogLine& line) { return line.unix_ns <= query.after_unix_ns; }), kept.end());
+    done(std::move(kept));
   });
 }
 

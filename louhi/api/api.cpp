@@ -21,6 +21,7 @@
 #include "louhi/model/codec.h"
 #include "louhi/model/keys.h"
 #include "louhi/model/names.h"
+#include "louhi/runtime/labels.h"
 #include "louhi/version.h"
 
 namespace louhi::api {
@@ -224,6 +225,8 @@ void Api::handle(const Grant& grant, const Request& request, Done done) {
         return describe_task(path, std::move(done));
       case Operation::stop_task:
         return stop_task(grant, path, request, std::move(done));
+      case Operation::get_task_logs:
+        return get_task_logs(path, request, std::move(done));
       case Operation::list_nodes:
         return list_nodes(request, std::move(done));
       case Operation::status:
@@ -655,6 +658,72 @@ void Api::stop_task(const Grant& grant, const Path& path, const Request& request
     if (response.status == 200 && _events) _events->task_stop_requested(task);
     done(std::move(response));
   });
+}
+
+void Api::get_task_logs(const Path& path, const Request& request, Done done) {
+  model::Task probe;
+  probe.id = path.task;
+  probe.project = path.project;
+  const auto bytes = _store.get(model::key(probe));
+  if (!bytes) return answer(done, not_found("the task"));
+  const auto task = model::decode_task(*bytes);
+  if (task.node != _self) {
+    const std::string where = task.node ? dannan::identity::to_string(*task.node) : std::string("no node yet");
+    return answer(done, error_response(409, "elsewhere", "the task's containers are on node " + where + ": ask its API"));
+  }
+
+  // Which container: named, or the definition's only one.
+  std::string container;
+  if (const auto it = request.query.find("container"); it != request.query.end()) {
+    if (!model::is_name(it->second)) throw Invalid("container is not a container's name");
+    container = it->second;
+  } else {
+    const auto definition_bytes = _store.get(model::task_definition_key(task.project, task.family, task.revision));
+    if (!definition_bytes) return answer(done, not_found("the task's revision"));
+    const auto definition = model::decode_task_definition(*definition_bytes);
+    if (definition.containers.size() != 1) throw Invalid("the task has more than one container: name one with container");
+    container = definition.containers[0].name;
+  }
+  runtime::LogQuery query;
+  if (const auto it = request.query.find("tail"); it != request.query.end()) {
+    const auto n = revision_of(it->second);
+    if (!n || *n > max_log_lines) throw Invalid("tail is not 1 to " + std::to_string(max_log_lines));
+    query.tail = *n;
+  }
+  if (const auto it = request.query.find("after"); it != request.query.end()) {
+    const std::string& text = it->second;
+    if (text.empty() || text.size() > 19 || text.find_first_not_of("0123456789") != std::string::npos) throw Invalid("after is not a time in Unix nanoseconds");
+    query.after_unix_ns = std::stoull(text);
+  }
+
+  _images.list(
+      logs_deadline, _executor, [this, task, container, query, done = std::move(done)](runtime::Result<std::vector<runtime::ContainerInfo>> listed) mutable {
+        if (!listed.ok()) return done(error_response(503, "runtime", "this node's runtime did not answer: " + listed.error().message));
+        std::string id;
+        for (const auto& c : listed.value()) {
+          const auto name = c.labels.find(std::string(runtime::label_container));
+          if (runtime::task_of(c.labels) == task.id && name != c.labels.end() && name->second == container) id = c.id;
+        }
+        if (id.empty()) return done(not_found("the container " + container + " on this node (never launched, or removed once its task finished)"));
+        _images.logs(id, query, logs_deadline, _executor, [container, done = std::move(done)](runtime::Result<std::vector<runtime::LogLine>> got) mutable {
+          if (!got.ok()) {
+            if (got.error().kind == runtime::Error::Kind::not_found) return done(not_found("the container " + container));
+            return done(error_response(503, "runtime", "this node's runtime did not give the logs: " + got.error().message));
+          }
+          json::array lines;
+          uint64_t last = 0;
+          for (const auto& line : got.value()) {
+            json::object out{{"stream", line.stream == runtime::LogStream::err ? "stderr" : "stdout"}, {"time_ns", line.unix_ns}, {"text", line.text}};
+            if (line.truncated) out["truncated"] = true;
+            lines.push_back(std::move(out));
+            last = std::max(last, line.unix_ns);
+          }
+          json::object body{{"container", container}, {"lines", std::move(lines)}};
+          // Where to go on from: the next call's after.
+          if (last != 0) body["next"] = std::to_string(last);
+          done({200, std::move(body)});
+        });
+      });
 }
 
 void Api::list_nodes(const Request& request, Done done) {

@@ -140,6 +140,14 @@ constexpr std::string_view components = R"json({
                       "properties": {"tasks": {"type": "array", "items": {"$ref": "#/components/schemas/Task"}}}},
     "NodeList": {"type": "object", "required": ["nodes"],
                  "properties": {"nodes": {"type": "array", "items": {"$ref": "#/components/schemas/NodeStatus"}}, "next": {"type": "string"}}},
+    "LogLine": {"type": "object", "required": ["stream", "time_ns", "text"],
+                "properties": {"stream": {"enum": ["stdout", "stderr"]}, "time_ns": {"type": "integer", "description": "Unix nanoseconds."},
+                               "text": {"type": "string", "description": "Without its newline; bytes that are not UTF-8 are U+FFFD."},
+                               "truncated": {"type": "boolean", "description": "Cut at 16 KiB."}}},
+    "TaskLogs": {"type": "object", "required": ["container", "lines"],
+                 "description": "Query: container (needed when the task has more than one), tail (1 to 400, 100 by default), after (Unix nanoseconds).",
+                 "properties": {"container": {"type": "string"}, "lines": {"type": "array", "items": {"$ref": "#/components/schemas/LogLine"}},
+                                "next": {"type": "string", "description": "The last line's time: the next call's after."}}},
     "OpenApi": {"type": "object", "description": "This document."}
   }
 })json";
@@ -180,6 +188,8 @@ Shape shape_of(Operation operation) {
       return {"", "DescribedTask", false};
     case Operation::stop_task:
       return {"StopTaskBody", "Task", false};
+    case Operation::get_task_logs:
+      return {"", "TaskLogs", false};
     case Operation::list_nodes:
       return {"", "NodeList", true};
     case Operation::status:

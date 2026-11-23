@@ -6,10 +6,10 @@ cluster:
   # The cluster key: a long random secret, the same file on every node.
   key: @CMAKE_INSTALL_FULL_SYSCONFDIR@/louhi/cluster.key
   # bootstrap: [10.0.0.10:7437]   # a running node to join by; a list
-node:
   state: @CMAKE_INSTALL_FULL_LOCALSTATEDIR@/lib/louhi
-  advertise: 10.0.0.10        # the address other nodes reach this one at
-  port: 7437                  # Dannan's port (the default)
+  listen:
+    advertise: 10.0.0.10      # the address other nodes reach this one at
+    port: 7437                # Dannan's port
 registries:
   allow: [docker.io]          # where images may come from; none listed allows none
 api:

@@ -5,17 +5,17 @@ of this file.
 
 ## Resume here
 
-**State.** **0.2.1 is released** (2026-11-23): tag `0.2.1` on `main`;
+**State.** **0.3.0 is released** (2026-11-23): tag `0.3.0` on `main`;
 `develop` is `main` merged back. No feature branch is open (COMPLETED.md,
-"0.2.1 released"). Item 1's trial is next, with the coordinating session;
-every other item waits on another project's release, or (item 4) on the
-maintainer's go-ahead.
+"0.3.0 released"). Items 1 and 2 are done, the trial included; every other
+item waits on another project's release (Dagda's register map, Dannan
+0.12.0 and 0.13.0, Lir 0.3.0), or (item 4) on the maintainer's go-ahead.
 
-- **Pins:** Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`; Lir `e40dd2e`
-  only when `LOUHI_BUILD_LIR` is on (off by default: Lir's broker does not
-  take retain and wills yet).
-- **Tests:** 422 with Lir off (420 run where there is no xfs with project
-  quotas, 2 skipped); 425 with it on.
+- **Pins:** Dannan `0.11.1`, Dagda `0.4.0`, Lugh `0.6.0`; Lir develop
+  `1223ea2` only when `LOUHI_BUILD_LIR` is on (off by default: Lir's broker
+  does not take retain and wills yet).
+- **Tests:** 429 with Lir off (427 run where there is no xfs with project
+  quotas, 2 skipped); 431 with it on.
 
 **The deb on node-c.** Dannan 0.9.2's and Dagda 0.3.2's packages and
 lintian are installed there (the maintainer's go-ahead, 2026-11-20, kept
@@ -31,7 +31,10 @@ Dannan and Dagda packages, which need not be built again.
 
 ## Next, in order
 
-1. **Louhi 0.2.0: what the build cluster needs to run on Louhi.** The
+1. **Done (0.2.0 to 0.3.0; the trial ran 2026-11-23, COMPLETED.md).** What
+   follows is kept for the record of how it was decided; the next step for
+   the build cluster on Louhi is the maintainer's, with the coordinating
+   session. **Louhi 0.2.0: what the build cluster needs to run on Louhi.** The
    maintainer said yes in principle (2026-11-22, by the coordinating
    session) to moving the build cluster onto Louhi: a trial on node-c
    alone, one project's test runs (not builds), Louhi's nodes their own
@@ -60,7 +63,7 @@ Dannan and Dagda packages, which need not be built again.
      through the driver (Docker's multiplexed log stream, a fuzzed
      parser). Log text is bytes from a workload: it reaches JSON only as
      valid UTF-8, which needs Dannan 0.10.x's `encoding::utf8_length`
-     (not in 0.9.2), so this step follows item 2 (the maintainer,
+     (not in 0.9.2), so this step comes with item 2 (the maintainer,
      2026-11-22: wait for Dannan 0.10.x; no base64 stand-in).
    - (f) **Host-directory mounts** (the maintainer, 2026-11-22): the
      operator lists host directories on the node; a task definition mounts
@@ -84,9 +87,41 @@ Dannan and Dagda packages, which need not be built again.
      adds the board claim for Louhi's cores. Output area
      `/var/lib/docker/louhi-output` on Docker's xfs (the maintainer,
      2026-11-22), removed after the trial; a Dannan cluster of Louhi's
-     own; one project's test runs.
-2. **Dannan 0.10.x**, once Dagda has released on it (one Dannan a
-   process; Dagda's 0.4.0 is under way). Lugh has: 0.4.0 (2026-11-22) is
+     own; one project's test runs. The maintainer's answers (2026-11-23):
+     the issuer is the Lugh already on the cluster, with a service
+     principal for project `louhi` (scopes `louhi:louhi:run` and
+     `louhi:louhi:read`, audience `louhi`, a client secret); the runs are
+     Louhi's own tests; all four cores, `--offer-cpu-millis 4000` under a
+     4-core claim, in a quiet window; whenever neptune has room. Still to
+     settle: the issuer's URL and the client (asked of Lugh), and how the
+     test binary runs in a container (the image and its libraries).
+     Lugh (2026-11-23): neptune's Lugh goes to 0.6.0 with issuer
+     `https://corvus-neptune`, client secrets allowed, an api app with the
+     scope prefix `louhi`, and the service client named `louhi-trial` (its
+     client_id is Lugh's, `app_` and 22 characters), its secret in
+     `/root/louhi-trial.secret` (0600) on neptune; the certificate is
+     self-signed (CN corvus-neptune). Lugh says when it is up. neptune has
+     `debian:trixie` locally; the test binary is
+     `build-ci/release/louhi_tests` on a Pi; its libraries are checked on
+     the day, under the claim. Lugh 0.6.0 is on Dannan 0.11.0 (item 2).
+     Lugh (2026-11-23, later): the issuer is up; client `louhi-trial` is
+     `app_b6w0VQ2OlQY2bk9gWUorPg`; asked for `louhi:louhi:register` on it
+     and an admin client (`louhi:admin`) for the project and quota. The
+     trial runs the `louhi-node` built on neptune (no package installed),
+     as root in a transient unit (`louhi-trial`): output directories and
+     their quotas need root, which the packaged `louhi` user lacks, a gap
+     for the package before a real deployment. The scripts are
+     `build/trial/` (untracked): `up.sh`, `run.sh`, `down.sh` and the
+     definition, Louhi's own tests in `debian:trixie` reading the build
+     tree and the host's libraries read-only, writing to an output volume.
+2. **Done in 0.3.0 (COMPLETED.md); what remains below is for Dannan 0.12.0
+   and 0.13.0.** **Dannan 0.11.1, Dagda 0.4.0, Lugh 0.6.0: unblocked** (the coordinating
+   session, 2026-11-23: Dagda 0.4.0 is tagged on Dannan 0.11.1; Lugh 0.6.0
+   is on Dannan 0.11.0, the same SONAME). The repin is Dannan 0.11.1, Dagda
+   0.4.0, Lugh 0.6.0, and step (e), GetTaskLogs, comes with it, since
+   `encoding::utf8_length` is in every Dannan since 0.10.0. Lir 0.2.0's
+   client is on Dannan 0.10.2, so the events build (`LOUHI_BUILD_LIR`)
+   waits on a Lir on 0.11. Earlier notes: Lugh had: 0.4.0 (2026-11-22) is
    on Dannan 0.10.2 and lir::mqtt 0.1.0, carries the five TokenSource cases,
    and leaves lugh_client's API as 0.2.0's; its `lugh-node` flags are
    renamed (`--server-address`, `--server-port`, `--oauth-issuer`,
@@ -156,7 +191,14 @@ Dannan and Dagda packages, which need not be built again.
 4. **Networking:** a task's network namespace on one node, the `nft`
    driver behind `net::Firewall` (the pieces are built and unit-tested). On
    a Pi it creates namespaces and loads nftables rules: the maintainer's
-   go-ahead first, a board note, everything removed after.
+   go-ahead first, a board note, everything removed after. Service
+   discovery (design step 10) depends on no other project's DNS (the
+   maintainer, 2026-11-23): names are resolved with the system's resolver,
+   or a resolver in Dannan if that is ever simpler; Dannan's DNS responder
+   is dropped, and Louhi asks nothing of Manannan (a request sent earlier
+   the same day on a wrong steer was withdrawn). How a service's name
+   reaches a task's resolver is decided with the maintainer when this item
+   starts. A Dannan seed stays HOST:PORT.
 5. **Steps 6, 7 and the rest of 9** on Dannan's agreement registers:
    placement, then services, then address allocation, on the same
    `AcceptorStore`. Nothing that places across nodes, allocates addresses
@@ -168,7 +210,9 @@ Dannan and Dagda packages, which need not be built again.
    contract header byte for byte, so Louhi's calls stand;
    `find_package(lir 0.2.0 CONFIG REQUIRED)` and `lir::client`, Build-Depends
    `liblir-dev (>= 0.2.0), liblir-dev (<< 0.3~)`. The broker that takes
-   retain and wills will be Lir 0.3.0, after Dannan 0.11.0. The client is on Dannan 0.10.2,
+   retain and wills will be Lir 0.3.0, which waits on Dagda's D6 (register
+   map) and D5 (leases, wills) (the maintainer's ruling, by the
+   coordinating session, 2026-11-23). The client is on Dannan 0.10.2,
    so it follows item 2, and `liblir-dev` now depends on `libboost-dev`. Until
    Dagda's nouns ship, that broker grants QoS 0 only (until D9), no retain
    (until D6), and refuses every will at CONNECT (until D5): the maintainer's
@@ -199,14 +243,30 @@ Dannan and Dagda packages, which need not be built again.
 
 ## Waiting on others
 
-- **Dagda:** 0.4.0 on Dannan 0.10.x; then the register map, the
-  `AcceptorStore` and caught-up (item 3).
-- **Lugh:** nothing now (0.4.0 is on Dannan 0.10.2); it says before
-  lugh_client's types move onto Dannan's completion (item 2).
-- **Lir:** its broker taking retain and wills once Dagda's D5 and D6 ship;
-  it says when (item 6). The client is out as Lir 0.2.0.
-- **Dannan:** the HTTP core (`api/client.cpp` moves onto its client) and
-  the process runner (`net/command.*` moves to it).
+- **Dagda:** 0.4.0 is out (on Dannan 0.11.1); the register map, the
+  `AcceptorStore` and caught-up (items 3, 5 and 8), which the coordinating
+  session has asked Dagda to put first.
+- **Dannan:** for 0.12.0: the HTTP core (`api/client.cpp` moves onto its
+  client), the process runner (`net/command.*` moves to it), the register
+  layer, and the credential helper and keyed limits (the dashboard). The
+  process runner is on Dannan's develop (2026-11-23):
+  `dannan/supervise/command.h`, `supervise::ProcessCommands(io).run(
+  Invocation, deadline, executor, done)` answering
+  `Outcome<CommandResult>`; each run its own process group, killed whole at
+  the deadline, on cancel and on stop; default signals and no descriptor of
+  the node in the child; `timed_out` and `cancelled` carry the output so
+  far. At 0.12.0, `net::Commands`' real implementation becomes a wrapper on
+  it, or goes; the fakes stay Louhi's. Also for 0.12.0, the node-program
+  helper (`supervise::run_node_program`, Dannan's
+  `TODO/2026-11-23-node-program.md`), which replaces `louhi_node.cpp`'s
+  scaffolding; Louhi asked (2026-11-23) for a default configuration path,
+  a hook that runs `--retire` instead of the node, a `node.seconds`, and
+  either status-line fields or none.
+- **Lugh:** nothing for item 2 (0.6.0 is out); neptune's issuer for the
+  trial waits on the maintainer's word in Lugh's session.
+- **Lir:** a client on Dannan 0.11 (for the events build), and its broker
+  taking retain and wills once Dagda's D5 and D6 ship; it says when (item
+  6). Lir 0.2.0's client is on Dannan 0.10.2.
 - **The maintainer:** a join to the standing Lir cluster
   needs his word each time.
 
@@ -254,10 +314,23 @@ namespaces. Each runs other projects' services: not Louhi's to touch.
 
 | Host | Memory | Storage bounds | Use |
 |---|---|---|---|
-| node-c | 15 GB | yes (xfs, `/var/lib/docker-xfs.img`) | gates; the deb |
-| node-b | 15 GB | no (ext4) | gates (1 test skipped) |
-| node-a | 15 GB, no memory controller | no | hosts the board; last |
-| node-d | 4 GB | no | gates; a heavy link at `-j1` |
+| node-c | 15 GB | yes (xfs, `/var/lib/docker-xfs.img`) | the xfs quota test; the trial |
+| node-b | 15 GB | no (ext4) | any job |
+| node-a | 15 GB, no memory controller | no | any job; TSan with clang 19 |
+| node-d | 4 GB | no | any job; a heavy link at `-j1` |
+
+**No preferred node** (the maintainer, 2026-11-23, by the coordinating
+session): a job that needs cores takes whichever Pi has them free now,
+never one because it holds a warm build tree or an earlier build. Sync the
+tree there and build from scratch; a missing tool or `-dev` package is
+installed there (claim one core, `nice -n 19 apt-get install -y`, a board
+note naming the package and the Pi). Wait only when no machine has the
+cores, then for any (`claim-board wait --any`). The exception is a job that
+must run on one machine, said in the claim's job text: for Louhi, the
+neptune trial and the xfs quota test (`LOUHI_TEST_XFS_OUTPUT`), which need
+node-c's xfs with project quotas. The deb builds on any Pi with Dannan
+0.11.1's and Dagda 0.4.0's `-dev` packages installed (node-c has them,
+2026-11-23).
 
 All four take any load, node-d included (the maintainer, 2026-11-20,
 confirmed by the coordinating session 2026-11-22); a Pi lost mid-job is

@@ -36,6 +36,12 @@ add_executable(louhi_tests
   runtime_registries_test.cpp
   store_test.cpp
   version_test.cpp
+  fuzz_smoke_test.cpp
+  # The fuzz targets, run here through Dannan's harness on every gate.
+  ../fuzz/record_fuzz.cpp
+  ../fuzz/image_reference_fuzz.cpp
+  ../fuzz/docker_reply_fuzz.cpp
+  ../fuzz/api_body_fuzz.cpp
 )
 if(LOUHI_BUILD_LUGH)
   target_sources(louhi_tests PRIVATE auth_lugh_test.cpp ctl_test.cpp)
@@ -45,14 +51,8 @@ endif()
 if(LOUHI_BUILD_LIR)
   target_sources(louhi_tests PRIVATE events_lir_test.cpp)
 endif()
-# Dannan's simulation harness: its header-only fixtures and its checkers,
-# which a fetched Dannan names without the dannan:: alias of an installed one
-# (libdannan-dev, LOUHI_FETCH_DEPENDENCIES off).
-if(TARGET dannan::sim_checkers)
-  set(louhi_sim_checkers dannan::sim_checkers)
-else()
-  set(louhi_sim_checkers dannan_sim_checkers)
-endif()
-target_link_libraries(louhi_tests PRIVATE louhi ${louhi_sim_checkers} GTest::gtest_main louhi_warnings)
+# Dannan's testing library: the simulation's checkers and the fuzz harness,
+# named dannan::testing fetched or installed (Dannan 0.10.0).
+target_link_libraries(louhi_tests PRIVATE louhi dannan::testing GTest::gtest_main louhi_warnings)
 # Dannan's fixtures (temp_dir.h) write only inside Louhi's build tree.
 target_compile_definitions(louhi_tests PRIVATE DANNAN_TEST_TEMP_ROOT="${PROJECT_BINARY_DIR}/test-tmp")

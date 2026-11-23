@@ -92,6 +92,15 @@ Dannan and Dagda packages, which need not be built again.
      4-core claim, in a quiet window; whenever neptune has room. Still to
      settle: the issuer's URL and the client (asked of Lugh), and how the
      test binary runs in a container (the image and its libraries).
+     Lugh (2026-11-23): neptune's Lugh goes to 0.6.0 with issuer
+     `https://corvus-neptune`, client secrets allowed, an api app with the
+     scope prefix `louhi`, and the service client named `louhi-trial` (its
+     client_id is Lugh's, `app_` and 22 characters), its secret in
+     `/root/louhi-trial.secret` (0600) on neptune; the certificate is
+     self-signed (CN corvus-neptune). Lugh says when it is up. neptune has
+     `debian:trixie` locally; the test binary is
+     `build-ci/release/louhi_tests` on a Pi; its libraries are checked on
+     the day, under the claim. Lugh 0.6.0 is on Dannan 0.11.0 (item 2).
 2. **Dannan 0.10.x**, once Dagda has released on it (one Dannan a
    process; Dagda's 0.4.0 is under way). Lugh has: 0.4.0 (2026-11-22) is
    on Dannan 0.10.2 and lir::mqtt 0.1.0, carries the five TokenSource cases,

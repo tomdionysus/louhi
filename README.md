@@ -28,7 +28,7 @@ On Debian 13, with Dannan's and Dagda's packages (`libdannan0.9`, `libdagda0.3.2
 where apt can find them, as the stack's apt repository has them:
 
 ```
-sudo apt install ./louhi_0.2.0_arm64.deb
+sudo apt install ./louhi_0.2.1_arm64.deb
 ```
 
 The package installs `louhi-node` and `louhi-ctl` in `/usr/bin`, the node's example
@@ -183,6 +183,7 @@ The settings, by key and flag:
 | `runtime.docker_socket` | `--docker-socket` | Docker's socket (default `/var/run/docker.sock`) |
 | `runtime.allow_*` | `--allow-*` | The three overrides above |
 | `runtime.retain_finished_hours` | `--retain-finished-hours` | Hours a finished task's containers and volumes are kept after it stopped (24) |
+| `runtime.offer_cpu_millis`, `runtime.offer_memory_mib` | `--offer-cpu-millis`, `--offer-memory-mib` | On a shared machine, the CPU (thousandths of a core) and memory (MiB) this node offers tasks; capacity admission counts against the smaller of these and the machine |
 | `runtime.host_directories` | `--host-directory` | `NAME=PATH`: a host directory tasks may mount read-only by `NAME`; a list |
 | `runtime.output_directory` | `--output-directory` | Where each output volume is made, a directory of its own (xfs with project quotas to bound them) |
 | `registries.allow` | `--registry` | A registry images may come from, by domain (`docker.io` for Docker Hub) |

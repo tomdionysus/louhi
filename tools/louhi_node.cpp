@@ -150,6 +150,8 @@ struct Options {
   std::chrono::hours retain_finished{24};
   std::map<std::string, std::string> host_directories;
   std::string output_directory;
+  uint32_t offer_cpu_millis = 0;
+  uint32_t offer_memory_mib = 0;
   std::vector<std::string> registries;
   std::map<std::string, louhi::runtime::RegistryCredential> registry_credentials;
   std::optional<dannan::net::Endpoint> api_http;
@@ -212,6 +214,9 @@ dannan::config::Reader reader() {
       "NAME=PATH: a host directory tasks may mount read-only, by NAME, at a path inside it; a list");
   add("runtime.output_directory", Kind::value, "--output-directory",
       "where each task's output volumes are made, one directory each, bounded by xfs project quotas");
+  add("runtime.offer_cpu_millis", Kind::value, "--offer-cpu-millis",
+      "the CPU this node offers tasks, in thousandths of a core, on a shared machine; all of it when absent");
+  add("runtime.offer_memory_mib", Kind::value, "--offer-memory-mib", "the memory this node offers tasks, in MiB, on a shared machine; all of it when absent");
   add("registries.allow", Kind::list, "--registry", "a registry images may come from, by domain (docker.io for Docker Hub); none allows none");
   add("registries.credentials", Kind::list, "--registry-credential",
       "DOMAIN=USER:PASSWORD, or DOMAIN=:IDENTITY_TOKEN, for an allowed registry; keep them in secrets.yaml");
@@ -273,6 +278,8 @@ Options parse(int argc, char** argv) {
       throw settings.refuse("runtime.host_directories", "each NAME once");
   }
   out.output_directory = settings.path_of("runtime.output_directory").value_or("");
+  out.offer_cpu_millis = static_cast<uint32_t>(settings.number("runtime.offer_cpu_millis", 1, 4'000'000).value_or(0));
+  out.offer_memory_mib = static_cast<uint32_t>(settings.number("runtime.offer_memory_mib", 4, 1'073'741'824).value_or(0));
   out.registries = settings.list("registries.allow");
   for (const auto& entry : settings.list("registries.credentials")) {
     // A user name never holds ':' (RFC 7617), so the first ':' ends it; an
@@ -339,6 +346,8 @@ louhi::node::Facts observe(louhi::runtime::Driver& driver, asio::io_context& io,
   facts.allow_without_user_namespaces = options.allow_without_user_namespaces;
   facts.allow_unbounded_storage = options.allow_unbounded_storage;
   facts.store_whole = store_whole;
+  facts.offer_cpu_millis = options.offer_cpu_millis;
+  facts.offer_memory_mib = options.offer_memory_mib;
   if (future.wait_for(deadline + 5s) != std::future_status::ready) {
     facts.runtime_error = "no answer within the deadline";
     return facts;

@@ -5,17 +5,17 @@ of this file.
 
 ## Resume here
 
-**State.** **0.2.0 is released** (2026-11-22): tag `0.2.0` on `main`;
+**State.** **0.2.1 is released** (2026-11-23): tag `0.2.1` on `main`;
 `develop` is `main` merged back. No feature branch is open (COMPLETED.md,
-"0.2.0 released"). Item 1's trial is next, with the coordinating session;
+"0.2.1 released"). Item 1's trial is next, with the coordinating session;
 every other item waits on another project's release, or (item 4) on the
 maintainer's go-ahead.
 
 - **Pins:** Dannan `0.9.2`, Dagda `0.3.2`, Lugh `0.2.0`; Lir `e40dd2e`
   only when `LOUHI_BUILD_LIR` is on (off by default: Lir's broker does not
   take retain and wills yet).
-- **Tests:** 421 with Lir off (419 run where there is no xfs with project
-  quotas, 2 skipped); 423 with it on.
+- **Tests:** 422 with Lir off (420 run where there is no xfs with project
+  quotas, 2 skipped); 425 with it on.
 
 **The deb on node-c.** Dannan 0.9.2's and Dagda 0.3.2's packages and
 lintian are installed there (the maintainer's go-ahead, 2026-11-20, kept

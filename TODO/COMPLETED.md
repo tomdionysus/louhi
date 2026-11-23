@@ -4,6 +4,20 @@ The record, newest first. `ACTIVE.md` is the plan. Paths under
 `/root/louhi-work` in entries before 2026-11-18 are gone: the Pis were
 wiped that day.
 
+## 0.2.1 released: the node's offer on a shared machine (2026-11-23)
+
+- **Why:** on neptune Louhi's cores are one 2-core claim on the board, but
+  the node reported the whole machine, so capacity admission could run 4
+  cores of work under it (the coordinating session's recommendation).
+- **What:** `--offer-cpu-millis` and `--offer-memory-mib`
+  (`runtime.offer_*`): the node reports, and admits against, the smaller
+  of the offer and the machine (`node::Facts`).
+- **Tests:** 421 to **422** (one: the offer caps the total, never past the
+  machine).
+- **Gate** at `92cb640`: release, clang (with Docker), ASan and TSan on
+  node-b and node-a, **420 passed, 2 skipped** each (no xfs), no sanitizer
+  report; events (Lir on) **423 passed, 2 skipped**.
+
 ## 0.2.0 released: what the build cluster needs to run on Louhi (2026-11-22)
 
 - **Why:** the maintainer said yes in principle to moving the build

@@ -87,6 +87,27 @@ TEST(NodeStatus, AllocatedCountsOnlyTasksWantedRunning) {
   EXPECT_EQ(s.tasks, 2u);
 }
 
+// The operator may offer less than the machine has (a node on a shared
+// machine, its share claimed elsewhere): the total is the smaller of each,
+// and admission counts against it. An offer larger than the machine offers
+// the machine.
+TEST(NodeStatus, TheOperatorsOfferCapsTheTotal) {
+  node::Facts facts;
+  facts.self = test::node_id(1);
+  facts.runtime = capable();
+  facts.offer_cpu_millis = 2000;
+  facts.offer_memory_mib = 4096;
+  auto s = node::node_status(facts, {}, 1, 1);
+  EXPECT_EQ(s.total.cpu_millis, 2000u);
+  EXPECT_EQ(s.total.memory_mib, 4096u);
+
+  facts.offer_cpu_millis = 64'000;
+  facts.offer_memory_mib = 0;
+  s = node::node_status(facts, {}, 1, 1);
+  EXPECT_EQ(s.total.cpu_millis, 4000u) << "never more than the machine";
+  EXPECT_EQ(s.total.memory_mib, 8192u) << "zero offers the machine";
+}
+
 TEST(NodeStatus, AFinishedTaskIsNotAllocated) {
   node::Facts facts;
   facts.self = test::node_id(1);

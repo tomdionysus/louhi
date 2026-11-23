@@ -35,6 +35,10 @@ struct Facts {
   bool allow_unbounded_storage = false;
   // Whether the store holds the whole desired state (store/store.h, ready).
   bool store_whole = true;
+  // What the operator offers of the machine, when it is shared (zero: all
+  // of it): the total reported, and admitted against, is the smaller.
+  uint32_t offer_cpu_millis = 0;
+  uint32_t offer_memory_mib = 0;
 };
 
 // The node is ready when its runtime answers, can enforce memory limits, can

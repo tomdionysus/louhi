@@ -84,7 +84,14 @@ Dannan and Dagda packages, which need not be built again.
      adds the board claim for Louhi's cores. Output area
      `/var/lib/docker/louhi-output` on Docker's xfs (the maintainer,
      2026-11-22), removed after the trial; a Dannan cluster of Louhi's
-     own; one project's test runs.
+     own; one project's test runs. The maintainer's answers (2026-11-23):
+     the issuer is the Lugh already on the cluster, with a service
+     principal for project `louhi` (scopes `louhi:louhi:run` and
+     `louhi:louhi:read`, audience `louhi`, a client secret); the runs are
+     Louhi's own tests; all four cores, `--offer-cpu-millis 4000` under a
+     4-core claim, in a quiet window; whenever neptune has room. Still to
+     settle: the issuer's URL and the client (asked of Lugh), and how the
+     test binary runs in a container (the image and its libraries).
 2. **Dannan 0.10.x**, once Dagda has released on it (one Dannan a
    process; Dagda's 0.4.0 is under way). Lugh has: 0.4.0 (2026-11-22) is
    on Dannan 0.10.2 and lir::mqtt 0.1.0, carries the five TokenSource cases,

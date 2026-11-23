@@ -22,9 +22,11 @@ CMake install rules decide where every file goes.
 
 ## Dependencies
 
-- `libdannan0.11` (at least 0.11.1) and `libdagda0.4.0`, the shared libraries of
-  Dannan's and Dagda's packages, through `${shlibs:Depends}`. Neither is
-  bundled. Building needs `libdannan-dev` and `libdagda-dev`.
+- `libdannan0.11` (at least 0.11.1), Dannan's shared library, through
+  `${shlibs:Depends}`; not bundled. `libdagda0.4.0` joins it once the node
+  keeps its records in Dagda: until then nothing of Dagda's is linked at run
+  time, so `${shlibs:Depends}` leaves it out (0.3.0's package, checked).
+  Building needs `libdannan-dev` and `libdagda-dev`.
 - Lugh's client has no package (Lugh 0.2.0 packages only its node). It is
   fetched at Lugh's `0.2.0` tag and linked into both binaries as a static
   library.

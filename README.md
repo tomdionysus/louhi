@@ -24,8 +24,9 @@ is to keep its records, [Lugh](https://github.com/tomdionysus/lugh) signs caller
 
 ### From the Debian package
 
-On Debian 13, with Dannan's and Dagda's packages (`libdannan0.11`, `libdagda0.4.0`)
-where apt can find them, as the stack's apt repository has them:
+On Debian 13, with Dannan's package (`libdannan0.11`) where apt can find it, as the stack's
+apt repository has it (Dagda's comes when records move to Dagda: today the node keeps
+them in memory, so nothing of Dagda's is linked at run time):
 
 ```
 sudo apt install ./louhi_0.3.0_arm64.deb

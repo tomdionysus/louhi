@@ -46,6 +46,13 @@ wiped that day.
   quota-limit fix); clang 427, ASan and TSan 427 each (no report, the
   library instrumented), events 430 (2 skipped: no xfs); fuzz, four
   targets 60 s each, no crash.
+- **The deb** from the tag on node-c: `louhi_0.3.0_arm64.deb` and its
+  dbgsym, lintian clean. Its Depends name `libdannan0.11 (>= 0.11.1)` and
+  not Dagda's (nothing of Dagda's is linked at run time yet): the README
+  and `docs/packaging.md` said otherwise, corrected on `develop` after the
+  tag. Lugh removed the trial's clients and the `louhi` api; Lugh keeps
+  tombstones, so neptune's Lugh never takes the scope prefix `louhi` again
+  (a later trial there takes another prefix, or a fresh Lugh).
 - **Decided on the way:** service discovery depends on no other project's
   DNS (the maintainer, 2026-11-23; a request to Manannan withdrawn);
   Dannan's DNS client (0.13.0), process runner and node-program helper
